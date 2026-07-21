@@ -1,0 +1,13 @@
+{
+  "ok": true,
+  "rules": 0,
+  "rules_by_action": {},
+  "mode": "enforce",
+  "runtime_mode": "sync",
+  "rule_version": "v-4f53cda18c",
+  "watcher_running": false,
+  "uptime_s": 85.64,
+  "version": "0.3.0",
+  "status": "ok",
+  "service": "agentguard-server"
+}

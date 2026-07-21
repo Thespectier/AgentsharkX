@@ -1,0 +1,12 @@
+{
+  "binds": [],
+  "backends": [],
+  "routes": {
+    "httpMesh": {},
+    "tcpMesh": {},
+    "routeGroups": {}
+  },
+  "policies": [],
+  "workloads": [],
+  "services": []
+}

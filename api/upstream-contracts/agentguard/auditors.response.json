@@ -1,0 +1,8 @@
+{
+  "auditors": [
+    {
+      "name": "trace_risk_summary",
+      "description": "Summarize a full trace into critical/high/warning/ok based on observed signals and decisions."
+    }
+  ]
+}

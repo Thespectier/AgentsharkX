@@ -1,0 +1,14 @@
+{
+  "request": {
+    "method": "POST",
+    "path": "/api/logs/analytics/summary",
+    "body": {
+      "bucketCount": 12
+    }
+  },
+  "response": {
+    "status": 500,
+    "contentType": "application/json",
+    "body": "request log database is not configured"
+  }
+}

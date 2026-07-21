@@ -1,0 +1,6 @@
+# HELP agentgateway_config_synchronized Whether the last configuration load/reload was successful or not, being synchronized with the on-disk configuration.
+# TYPE agentgateway_config_synchronized gauge
+agentgateway_config_synchronized 1
+# HELP agentgateway_tokio_global_queue_depth number of tasks currently scheduled in the runtime's global queue
+# TYPE agentgateway_tokio_global_queue_depth gauge
+agentgateway_tokio_global_queue_depth 0

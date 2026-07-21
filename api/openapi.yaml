@@ -1,0 +1,761 @@
+openapi: 3.1.0
+info:
+  title: AgentsharkX BFF API
+  version: 0.0.0-phase0
+  description: |
+    Source-preserving management API above agentgateway and AgentGuard.
+    Phase 0 freezes this contract skeleton; operations are implemented in later
+    phases according to `x-implementation-phase`.
+servers:
+  - url: /
+security:
+  - sessionCookie: []
+tags:
+  - name: Auth
+  - name: System
+  - name: Connect
+  - name: Trust
+  - name: Protect
+  - name: Audit
+
+paths:
+  /api/v1/auth/session:
+    post:
+      tags: [Auth]
+      operationId: createAdminSession
+      summary: Exchange the configured admin token for a browser session
+      x-implementation-phase: 2
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '204':
+          description: Session cookie created
+          headers:
+            X-CSRF-Token:
+              schema:
+                type: string
+              description: Token required by subsequent mutating requests
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/system/health:
+    get:
+      tags: [System]
+      operationId: getSystemHealth
+      summary: Return independent health state for both upstream sources
+      x-implementation-phase: 2
+      responses:
+        '200':
+          description: Source-scoped health result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthEnvelope'
+
+  /api/v1/system/capabilities:
+    get:
+      tags: [System]
+      operationId: getCapabilities
+      summary: Return the probe-based capability registry
+      x-implementation-phase: 2
+      responses:
+        '200':
+          description: Capability registry
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CapabilitiesEnvelope'
+
+  /api/v1/overview:
+    get:
+      tags: [System]
+      operationId: getOverview
+      summary: Aggregate health, metrics, approvals, and recent activity
+      x-implementation-phase: 2
+      responses:
+        '200':
+          description: Partial results are returned with source-scoped metadata
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DataEnvelope'
+
+  /api/v1/stream:
+    get:
+      tags: [System]
+      operationId: streamEvents
+      summary: Subscribe to normalized health, traffic, decision, and approval events
+      x-implementation-phase: 2
+      parameters:
+        - $ref: '#/components/parameters/LastEventId'
+      responses:
+        '200':
+          description: Server-sent event stream with heartbeat comments
+          content:
+            text/event-stream:
+              schema:
+                type: string
+
+  /api/v1/connect/summary:
+    get:
+      tags: [Connect]
+      operationId: getConnectSummary
+      summary: Summarize agentgateway listeners, routes, and backends
+      x-implementation-phase: 3
+      responses:
+        '200':
+          $ref: '#/components/responses/DataResponse'
+        '503':
+          $ref: '#/components/responses/UpstreamUnavailable'
+
+  /api/v1/connect/llm/providers:
+    get:
+      tags: [Connect]
+      operationId: listProviders
+      summary: List providers explicitly present in agentgateway configuration
+      x-implementation-phase: 3
+      responses:
+        '200':
+          $ref: '#/components/responses/DataResponse'
+
+  /api/v1/connect/llm/models:
+    get:
+      tags: [Connect]
+      operationId: listModels
+      summary: List models explicitly present in agentgateway configuration
+      x-implementation-phase: 3
+      responses:
+        '200':
+          $ref: '#/components/responses/DataResponse'
+
+  /api/v1/connect/mcp/servers:
+    get:
+      tags: [Connect]
+      operationId: listGatewayMcpServers
+      summary: List agentgateway MCP targets without merging AgentGuard resources
+      x-implementation-phase: 3
+      responses:
+        '200':
+          $ref: '#/components/responses/DataResponse'
+
+  /api/v1/connect/traffic/routes:
+    get:
+      tags: [Connect]
+      operationId: listTrafficRoutes
+      summary: List explicit agentgateway traffic routes
+      x-implementation-phase: 3
+      responses:
+        '200':
+          $ref: '#/components/responses/DataResponse'
+
+  /api/v1/trust/agents:
+    get:
+      tags: [Trust]
+      operationId: listAgents
+      summary: List identities constructed only from explicit AgentGuard fields
+      x-implementation-phase: 4
+      responses:
+        '200':
+          $ref: '#/components/responses/DataResponse'
+
+  /api/v1/trust/agents/{agentId}:
+    get:
+      tags: [Trust]
+      operationId: getAgent
+      summary: Return an AgentGuard-backed agent workspace
+      x-implementation-phase: 4
+      parameters:
+        - $ref: '#/components/parameters/AgentId'
+      responses:
+        '200':
+          $ref: '#/components/responses/DataResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/trust/resources:
+    get:
+      tags: [Trust]
+      operationId: listTrustResources
+      summary: List Tool, Skill, and MCP resources while preserving resource type
+      x-implementation-phase: 4
+      responses:
+        '200':
+          $ref: '#/components/responses/DataResponse'
+
+  /api/v1/trust/agents/{agentId}/tools/{tool}/labels:
+    patch:
+      tags: [Trust]
+      operationId: updateToolLabels
+      summary: Update AgentGuard labels for one tool
+      x-implementation-phase: 4
+      parameters:
+        - $ref: '#/components/parameters/AgentId'
+        - $ref: '#/components/parameters/ToolName'
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LabelUpdate'
+      responses:
+        '200':
+          $ref: '#/components/responses/DataResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/trust/agents/{agentId}/skills/detect:
+    post:
+      tags: [Trust]
+      operationId: detectSkills
+      summary: Trigger AgentGuard skill detection
+      x-implementation-phase: 4
+      parameters:
+        - $ref: '#/components/parameters/AgentId'
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DetectionRequest'
+      responses:
+        '202':
+          $ref: '#/components/responses/DataResponse'
+
+  /api/v1/trust/agents/{agentId}/mcps/detect:
+    post:
+      tags: [Trust]
+      operationId: detectMcps
+      summary: Trigger AgentGuard MCP detection
+      x-implementation-phase: 4
+      parameters:
+        - $ref: '#/components/parameters/AgentId'
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DetectionRequest'
+      responses:
+        '202':
+          $ref: '#/components/responses/DataResponse'
+
+  /api/v1/protect/policies:
+    get:
+      tags: [Protect]
+      operationId: listPolicies
+      summary: List source-grouped gateway policies and runtime rules
+      x-implementation-phase: 5
+      responses:
+        '200':
+          $ref: '#/components/responses/DataResponse'
+
+  /api/v1/protect/runtime-rules/check:
+    post:
+      tags: [Protect]
+      operationId: checkRuntimeRule
+      summary: Validate rule syntax with AgentGuard before publication
+      x-implementation-phase: 5
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RuleSource'
+      responses:
+        '200':
+          $ref: '#/components/responses/DataResponse'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+
+  /api/v1/protect/agents/{agentId}/runtime-rules:
+    post:
+      tags: [Protect]
+      operationId: publishRuntimeRule
+      summary: Publish a checked runtime rule to AgentGuard
+      x-implementation-phase: 5
+      parameters:
+        - $ref: '#/components/parameters/AgentId'
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RuleSource'
+      responses:
+        '201':
+          $ref: '#/components/responses/DataResponse'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+
+  /api/v1/protect/agents/{agentId}/runtime-rules/{ruleId}:
+    delete:
+      tags: [Protect]
+      operationId: deleteRuntimeRule
+      summary: Delete an AgentGuard runtime rule after explicit confirmation
+      x-implementation-phase: 5
+      parameters:
+        - $ref: '#/components/parameters/AgentId'
+        - $ref: '#/components/parameters/RuleId'
+        - $ref: '#/components/parameters/CsrfToken'
+      responses:
+        '204':
+          description: Rule deleted
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/protect/approvals:
+    get:
+      tags: [Protect]
+      operationId: listApprovals
+      summary: List pending AgentGuard approval tickets
+      x-implementation-phase: 5
+      responses:
+        '200':
+          $ref: '#/components/responses/DataResponse'
+
+  /api/v1/protect/approvals/{ticketId}/approve:
+    post:
+      tags: [Protect]
+      operationId: approveTicket
+      summary: Approve one pending ticket with an operator note
+      x-implementation-phase: 5
+      parameters:
+        - $ref: '#/components/parameters/TicketId'
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApprovalAction'
+      responses:
+        '200':
+          $ref: '#/components/responses/DataResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /api/v1/protect/approvals/{ticketId}/deny:
+    post:
+      tags: [Protect]
+      operationId: denyTicket
+      summary: Deny one pending ticket with an operator note
+      x-implementation-phase: 5
+      parameters:
+        - $ref: '#/components/parameters/TicketId'
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApprovalAction'
+      responses:
+        '200':
+          $ref: '#/components/responses/DataResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /api/v1/audit/analytics:
+    get:
+      tags: [Audit]
+      operationId: getAuditAnalytics
+      summary: Return source-preserving traffic and security trends
+      x-implementation-phase: 6
+      responses:
+        '200':
+          $ref: '#/components/responses/DataResponse'
+
+  /api/v1/audit/events:
+    get:
+      tags: [Audit]
+      operationId: listAuditEvents
+      summary: List normalized events without implied task correlation
+      x-implementation-phase: 6
+      parameters:
+        - $ref: '#/components/parameters/SourceFilter'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: Normalized activity page
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EventsEnvelope'
+
+  /api/v1/audit/events/{source}/{eventId}:
+    get:
+      tags: [Audit]
+      operationId: getAuditEvent
+      summary: Return redacted normalized and raw detail for one source event
+      x-implementation-phase: 6
+      parameters:
+        - $ref: '#/components/parameters/SourcePath'
+        - $ref: '#/components/parameters/EventId'
+      responses:
+        '200':
+          $ref: '#/components/responses/DataResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/audit/sessions:
+    get:
+      tags: [Audit]
+      operationId: listAuditSessions
+      summary: List explicit AgentGuard sessions and their runtime events
+      x-implementation-phase: 6
+      responses:
+        '200':
+          $ref: '#/components/responses/DataResponse'
+
+components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: agentshark_session
+
+  parameters:
+    AgentId:
+      name: agentId
+      in: path
+      required: true
+      schema:
+        type: string
+    ToolName:
+      name: tool
+      in: path
+      required: true
+      schema:
+        type: string
+    RuleId:
+      name: ruleId
+      in: path
+      required: true
+      schema:
+        type: string
+    TicketId:
+      name: ticketId
+      in: path
+      required: true
+      schema:
+        type: string
+    EventId:
+      name: eventId
+      in: path
+      required: true
+      schema:
+        type: string
+    SourcePath:
+      name: source
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/Source'
+    SourceFilter:
+      name: source
+      in: query
+      required: false
+      schema:
+        $ref: '#/components/schemas/Source'
+    Cursor:
+      name: cursor
+      in: query
+      required: false
+      schema:
+        type: string
+    LastEventId:
+      name: Last-Event-ID
+      in: header
+      required: false
+      schema:
+        type: string
+    CsrfToken:
+      name: X-CSRF-Token
+      in: header
+      required: true
+      schema:
+        type: string
+
+  responses:
+    DataResponse:
+      description: Source-preserving response
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/DataEnvelope'
+    Unauthorized:
+      description: Authentication failed or session missing
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    UpstreamUnavailable:
+      description: The required upstream source is unavailable
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    NotFound:
+      description: Upstream object was not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    Conflict:
+      description: Object was already modified or approval already resolved
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    ValidationFailed:
+      description: Upstream validation rejected the request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+
+  schemas:
+    Source:
+      type: string
+      enum: [agentgateway, agentguard]
+    LoginRequest:
+      type: object
+      additionalProperties: false
+      required: [token]
+      properties:
+        token:
+          type: string
+          minLength: 1
+          writeOnly: true
+    Meta:
+      type: object
+      required: [fetchedAt, stale]
+      properties:
+        source:
+          $ref: '#/components/schemas/Source'
+        sourceVersion:
+          type: string
+        fetchedAt:
+          type: string
+          format: date-time
+        stale:
+          type: boolean
+        partial:
+          type: boolean
+          default: false
+    DataEnvelope:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          description: Operation-specific normalized data
+        meta:
+          $ref: '#/components/schemas/Meta'
+    HealthSource:
+      type: object
+      required: [source, status, checkedAt]
+      properties:
+        source:
+          $ref: '#/components/schemas/Source'
+        status:
+          type: string
+          enum: [healthy, degraded, down, unknown]
+        version:
+          type: string
+        checkedAt:
+          type: string
+          format: date-time
+        message:
+          type: string
+    HealthEnvelope:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/HealthSource'
+        meta:
+          $ref: '#/components/schemas/Meta'
+    Capability:
+      type: object
+      required: [id, source, status, checkedAt]
+      properties:
+        id:
+          type: string
+        source:
+          $ref: '#/components/schemas/Source'
+        status:
+          type: string
+          enum: [supported, partial, link-out, unavailable]
+        checkedAt:
+          type: string
+          format: date-time
+        reason:
+          type: string
+    CapabilitiesEnvelope:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Capability'
+        meta:
+          $ref: '#/components/schemas/Meta'
+    LabelUpdate:
+      type: object
+      additionalProperties: false
+      properties:
+        boundary:
+          type: [string, 'null']
+        sensitivity:
+          type: [string, 'null']
+        integrity:
+          type: [string, 'null']
+        tags:
+          type: array
+          items:
+            type: string
+    DetectionRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        resourceIds:
+          type: array
+          items:
+            type: string
+        useLlm:
+          type: boolean
+          default: false
+    RuleSource:
+      type: object
+      additionalProperties: false
+      required: [source]
+      properties:
+        source:
+          type: string
+          minLength: 1
+    ApprovalAction:
+      type: object
+      additionalProperties: false
+      required: [note]
+      properties:
+        note:
+          type: string
+          minLength: 1
+          maxLength: 2000
+    UnifiedEvent:
+      type: object
+      required: [id, timestamp, source, kind, severity, summary, rawRef]
+      properties:
+        id:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+        source:
+          $ref: '#/components/schemas/Source'
+        kind:
+          type: string
+          enum: [traffic, decision, approval, audit, health]
+        severity:
+          type: string
+          enum: [info, low, medium, high, critical]
+        subject:
+          type: object
+          additionalProperties: false
+          properties:
+            agentId:
+              type: string
+            principalId:
+              type: string
+            sessionId:
+              type: string
+        target:
+          type: object
+          additionalProperties: false
+          properties:
+            provider:
+              type: string
+            model:
+              type: string
+            tool:
+              type: string
+            resource:
+              type: string
+        phase:
+          type: string
+        action:
+          type: string
+        decision:
+          type: string
+        correlation:
+          type: object
+          required: [verified]
+          properties:
+            traceId:
+              type: string
+            sessionId:
+              type: string
+            verified:
+              type: boolean
+        summary:
+          type: string
+        rawRef:
+          type: object
+          required: [source, id]
+          properties:
+            source:
+              type: string
+            id:
+              type: string
+    EventsEnvelope:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: object
+          required: [items]
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/UnifiedEvent'
+            nextCursor:
+              type: [string, 'null']
+        meta:
+          $ref: '#/components/schemas/Meta'
+    ErrorEnvelope:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message, requestId, retryable]
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+            source:
+              $ref: '#/components/schemas/Source'
+            requestId:
+              type: string
+            retryable:
+              type: boolean

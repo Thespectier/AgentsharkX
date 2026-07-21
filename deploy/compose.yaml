@@ -1,0 +1,63 @@
+name: agentsharkx
+
+services:
+  agentgateway:
+    image: ${AGENTGATEWAY_IMAGE}:${AGENTGATEWAY_VERSION}
+    command: ["-f", "/etc/agentgateway/config.yaml"]
+    restart: unless-stopped
+    environment:
+      ADMIN_ADDR: 0.0.0.0:15000
+      STATS_ADDR: 0.0.0.0:15020
+      READINESS_ADDR: 0.0.0.0:15021
+    ports:
+      - "${AGENTGATEWAY_ADMIN_BIND}:${AGENTGATEWAY_ADMIN_PORT}:15000"
+      - "${AGENTGATEWAY_METRICS_BIND}:${AGENTGATEWAY_METRICS_PORT}:15020"
+      - "${AGENTGATEWAY_READINESS_BIND}:${AGENTGATEWAY_READINESS_PORT}:15021"
+    volumes:
+      - ./agentgateway/config.yaml:/etc/agentgateway/config.yaml:ro
+
+  agentguard:
+    image: ${AGENTGUARD_IMAGE}:${AGENTGUARD_VERSION}
+    build:
+      context: ${AGENTGUARD_BUILD_CONTEXT}
+      dockerfile: Dockerfile
+    command: ["serve"]
+    restart: unless-stopped
+    environment:
+      AGENTGUARD_HOST: 0.0.0.0
+      AGENTGUARD_PORT: 38080
+      AGENTGUARD_API_KEY: ${AGENTGUARD_ADMIN_TOKEN}
+    ports:
+      - "${AGENTGUARD_API_BIND}:${AGENTGUARD_API_PORT}:38080"
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "curl -fsS -H \"X-Api-Key: $$AGENTGUARD_API_KEY\" http://127.0.0.1:38080/v1/backend/health",
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  agentguard-console:
+    image: ${AGENTGUARD_IMAGE}:${AGENTGUARD_VERSION}
+    build:
+      context: ${AGENTGUARD_BUILD_CONTEXT}
+      dockerfile: Dockerfile
+    command: ["frontend"]
+    restart: unless-stopped
+    environment:
+      FRONTEND_HOST: 0.0.0.0
+      FRONTEND_PORT: 38008
+      AGENTGUARD_API_BASE: http://agentguard:38080
+      AGENTGUARD_API_KEY: ${AGENTGUARD_ADMIN_TOKEN}
+    ports:
+      - "${AGENTGUARD_CONSOLE_BIND}:${AGENTGUARD_CONSOLE_PORT}:38008"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:38008/"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    depends_on:
+      agentguard:
+        condition: service_healthy

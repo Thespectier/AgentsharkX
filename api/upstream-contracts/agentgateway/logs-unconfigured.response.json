@@ -1,0 +1,15 @@
+{
+  "request": {
+    "method": "POST",
+    "path": "/api/logs/search",
+    "body": {
+      "limit": 5,
+      "includeAttributes": false
+    }
+  },
+  "response": {
+    "status": 500,
+    "contentType": "application/json",
+    "body": "request log database is not configured"
+  }
+}
