@@ -1,11 +1,12 @@
 openapi: 3.1.0
 info:
   title: AgentsharkX BFF API
-  version: 0.0.0-phase0
+  version: 0.1.0-phase1
   description: |
     Source-preserving management API above agentgateway and AgentGuard.
-    Phase 0 freezes this contract skeleton; operations are implemented in later
-    phases according to `x-implementation-phase`.
+    Phase 1 exercises this contract through explicitly labelled MSW fixtures;
+    BFF operations are implemented in later phases according to
+    `x-implementation-phase`.
 servers:
   - url: /
 security:

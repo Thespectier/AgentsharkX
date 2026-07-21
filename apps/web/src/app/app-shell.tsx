@@ -1,0 +1,251 @@
+import { Link, Outlet, useRouterState } from "@tanstack/react-router";
+import { useQuery } from "@tanstack/react-query";
+import {
+  Activity,
+  Bell,
+  Cable,
+  ChevronLeft,
+  ChevronRight,
+  CircleHelp,
+  Clock3,
+  Command,
+  Home,
+  Menu,
+  Settings,
+  ShieldCheck,
+  UserRoundCheck,
+} from "lucide-react";
+import { useEffect, useState } from "react";
+
+import { requestEnvelope } from "../lib/api";
+import type { OverviewData, Scenario } from "../types";
+import { CommandPalette } from "../components/command-palette";
+import { Button, SourceBadge, StatusOrb, cn } from "../components/ui";
+
+const navItems = [
+  { label: "Connect", route: "/connect/$section", section: "overview", icon: Cable },
+  { label: "Trust", route: "/trust/$section", section: "agents", icon: UserRoundCheck },
+  { label: "Protect", route: "/protect/$section", section: "policies", icon: ShieldCheck },
+  { label: "Audit", route: "/audit/$section", section: "analytics", icon: Activity },
+] as const;
+
+const scenarios: Array<{ value: Scenario; label: string }> = [
+  { value: "normal", label: "Live mock" },
+  { value: "empty", label: "No data" },
+  { value: "loading", label: "Loading" },
+  { value: "partial", label: "Partial failure" },
+  { value: "error", label: "Total failure" },
+];
+
+export function AppShell() {
+  const location = useRouterState({ select: (state) => state.location });
+  const [collapsed, setCollapsed] = useState(
+    () => localStorage.getItem("agentshark.sidebar") === "collapsed",
+  );
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const [commandOpen, setCommandOpen] = useState(false);
+  const scenario = (new URLSearchParams(location.searchStr).get("scenario") ??
+    "normal") as Scenario;
+  const overview = useQuery({
+    queryKey: ["overview", scenario],
+    queryFn: ({ signal }) => requestEnvelope<OverviewData>("/api/v1/overview", signal),
+    staleTime: 15_000,
+    retry: false,
+  });
+
+  useEffect(() => {
+    localStorage.setItem("agentshark.sidebar", collapsed ? "collapsed" : "expanded");
+  }, [collapsed]);
+  useEffect(() => setMobileOpen(false), [location.pathname]);
+
+  const pending =
+    overview.data?.data.metrics.find((metric) => metric.id === "approvals")?.value ?? 0;
+  const health = overview.data?.data.health ?? [];
+
+  return (
+    <div className={cn("app-shell", collapsed && "app-shell--collapsed")}>
+      <button
+        aria-label="Close navigation"
+        className={cn("mobile-scrim", mobileOpen && "mobile-scrim--visible")}
+        onClick={() => setMobileOpen(false)}
+      />
+      <aside className={cn("sidebar", mobileOpen && "sidebar--mobile-open")}>
+        <div className="brand">
+          <span aria-hidden="true" className="brand__mark">
+            <span />
+            <span />
+            <span />
+          </span>
+          <span className="brand__copy">
+            <strong>Agentshark</strong>
+            <small>CONTROL PLANE</small>
+          </span>
+        </div>
+        <div className="environment-card">
+          <span className="environment-card__glyph">PX</span>
+          <span>
+            <small>Environment</small>
+            <strong>Production</strong>
+          </span>
+          <StatusOrb label="Production healthy" status="healthy" />
+        </div>
+        <nav aria-label="Primary navigation" className="primary-nav">
+          <p className="nav-label">Workspaces</p>
+          <Link
+            aria-current={location.pathname === "/" ? "page" : undefined}
+            className={cn("nav-item", location.pathname === "/" && "nav-item--active")}
+            search={{ scenario: scenario === "normal" ? undefined : scenario }}
+            to="/"
+          >
+            <Home aria-hidden="true" size={18} />
+            <span>Home</span>
+          </Link>
+          {navItems.map((item) => {
+            const Icon = item.icon;
+            const active = location.pathname.startsWith(`/${item.label.toLowerCase()}`);
+            return (
+              <Link
+                aria-current={active ? "page" : undefined}
+                className={cn("nav-item", active && "nav-item--active")}
+                key={item.label}
+                params={{ section: item.section }}
+                search={{ scenario: scenario === "normal" ? undefined : scenario }}
+                to={item.route}
+              >
+                <Icon aria-hidden="true" size={18} />
+                <span>{item.label}</span>
+                {item.label === "Protect" && pending > 0 ? <em>{pending}</em> : null}
+              </Link>
+            );
+          })}
+        </nav>
+        <div className="sidebar__bottom">
+          <Link
+            className={cn("nav-item", location.pathname === "/system" && "nav-item--active")}
+            search={{ scenario: scenario === "normal" ? undefined : scenario }}
+            to="/system"
+          >
+            <Settings size={18} />
+            <span>System</span>
+          </Link>
+          <a
+            className="nav-item"
+            href="https://github.com/Thespectier/AgentsharkX"
+            rel="noreferrer"
+            target="_blank"
+          >
+            <CircleHelp size={18} />
+            <span>Documentation</span>
+          </a>
+          <button
+            aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+            className="sidebar-toggle"
+            onClick={() => setCollapsed((value) => !value)}
+          >
+            {collapsed ? (
+              <ChevronRight size={16} />
+            ) : (
+              <>
+                <ChevronLeft size={16} />
+                <span>Collapse</span>
+              </>
+            )}
+          </button>
+        </div>
+      </aside>
+
+      <div className="app-frame">
+        <header className="topbar">
+          <div className="topbar__left">
+            <Button
+              aria-label="Open navigation"
+              className="mobile-menu"
+              onClick={() => setMobileOpen(true)}
+              size="sm"
+              variant="ghost"
+            >
+              <Menu size={18} />
+            </Button>
+            <button
+              aria-label="Search or jump to commands"
+              className="command-trigger"
+              onClick={() => setCommandOpen(true)}
+            >
+              <Command aria-hidden="true" size={15} />
+              <span>Search or jump to…</span>
+              <kbd>⌘K</kbd>
+            </button>
+          </div>
+          <div className="topbar__right">
+            <div className="mock-indicator">
+              <span /> MOCK DATA
+            </div>
+            <label className="scenario-select">
+              <span className="sr-only">Demo state</span>
+              <select
+                aria-label="Demo state"
+                onChange={(event) => {
+                  const url = new URL(window.location.href);
+                  if (event.target.value === "normal") url.searchParams.delete("scenario");
+                  else url.searchParams.set("scenario", event.target.value);
+                  window.location.assign(url);
+                }}
+                value={scenario}
+              >
+                {scenarios.map((item) => (
+                  <option key={item.value} value={item.value}>
+                    {item.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <div className="source-health" aria-label="Upstream health">
+              {health.length ? (
+                health.map((item) => (
+                  <span key={item.source}>
+                    <StatusOrb
+                      label={`${item.label} ${item.status}`}
+                      status={
+                        scenario === "partial" && item.source === "agentguard"
+                          ? "degraded"
+                          : item.status
+                      }
+                    />
+                    <SourceBadge source={item.source} />
+                  </span>
+                ))
+              ) : (
+                <span>
+                  <StatusOrb status={overview.isError ? "down" : "connecting"} />
+                  Sources
+                </span>
+              )}
+            </div>
+            <button className="time-range">
+              <Clock3 size={15} />
+              <span>Last 60m</span>
+              <ChevronRight size={13} />
+            </button>
+            <Link
+              aria-label={`${pending} pending approvals`}
+              className="topbar-icon"
+              params={{ section: "approvals" }}
+              search={{ scenario: scenario === "normal" ? undefined : scenario }}
+              to="/protect/$section"
+            >
+              <Bell size={17} />
+              {pending ? <span>{pending}</span> : null}
+            </Link>
+            <button aria-label="AS, open user menu" className="avatar">
+              AS
+            </button>
+          </div>
+        </header>
+        <main className="main-content" id="main-content" tabIndex={-1}>
+          <Outlet />
+        </main>
+      </div>
+      <CommandPalette onOpenChange={setCommandOpen} open={commandOpen} />
+    </div>
+  );
+}

@@ -2,6 +2,12 @@
 
 Verified against agentgateway `v1.3.1` and AgentGuard `v2.1` on 2026-07-21.
 
+Phase 1 adds a Mock-backed presentation for every listed read surface. This is
+UI evidence only and does not upgrade an upstream capability status. Fixtures
+are labelled Mock, keep source ownership visible, and render unverified
+identity facts as `Unknown`; production adapters remain scheduled for Phases
+2–6.
+
 ## Status vocabulary
 
 | Status | Meaning |

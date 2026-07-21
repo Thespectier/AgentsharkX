@@ -2,6 +2,11 @@
 
 Last verified: 2026-07-21.
 
+Phase 1 does not contact either upstream from the browser. Its MSW paths,
+source ownership, and unknown-value handling follow `api/upstream-contracts/`
+and the capability matrix. Fixture values are review data, not new runtime
+evidence; the pinned versions and compatibility findings below are unchanged.
+
 ## Pinned baseline
 
 | Upstream | Selected release | Immutable revision | Runtime artifact |

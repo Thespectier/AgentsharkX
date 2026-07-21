@@ -1,0 +1,7 @@
+dist
+node_modules
+.cache
+playwright-report
+test-results
+public/mockServiceWorker.js
+tests/*-snapshots

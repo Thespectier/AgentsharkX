@@ -4,9 +4,9 @@ GO_VERSION := 1.26.5
 GO_IMAGE := golang:$(GO_VERSION)-alpine
 COMPOSE := docker compose --env-file deploy/versions.env --env-file deploy/example.env -f deploy/compose.yaml
 
-.PHONY: verify format-check test repository-check openapi-validate compose-validate upstream-smoke
+.PHONY: verify format-check test web-check repository-check openapi-validate compose-validate upstream-smoke
 
-verify: format-check test repository-check openapi-validate compose-validate
+verify: format-check test web-check repository-check openapi-validate compose-validate
 
 format-check:
 	@if command -v go >/dev/null 2>&1; then \
@@ -22,6 +22,9 @@ test:
 	else \
 		docker run --rm -v "$(CURDIR):/src" -w /src/apps/server $(GO_IMAGE) go test ./...; \
 	fi
+
+web-check:
+	@npm --prefix apps/web run check
 
 repository-check:
 	@./scripts/verify-repository.sh

@@ -7,9 +7,10 @@ information architecture for connection management, trusted runtime context,
 protection workflows, and audit views without entering the agent data plane or
 reimplementing either upstream.
 
-The repository is currently at **Phase 0**: the reproducible project skeleton,
-pinned upstream versions, and verified management-plane contracts are in place.
-No product UI or BFF business endpoint is implemented yet.
+The repository is currently at **Phase 1**: the reproducible project skeleton,
+pinned upstream contracts, and a complete reviewable web console are in place.
+The console uses clearly labelled MSW fixtures until the Go BFF starts in
+Phase 2; it does not send requests directly to either upstream.
 
 ## Product boundary
 
@@ -31,17 +32,32 @@ an adapter contract.
 
 - GNU Make
 - Docker with Compose v2
+- Node.js 24 and npm
 - Go 1.26.5 when developing the server locally (the Makefile can use the pinned
   Go container if Go is not installed)
 
 ## Verify the repository
 
 ```bash
+npm ci --prefix apps/web
 make verify
 ```
 
-This checks Go formatting/tests, repository invariants, the OpenAPI skeleton,
-and the fully rendered Compose model.
+This checks Go formatting/tests, the frontend format/type/unit/build suite,
+repository invariants, the OpenAPI contract, and the fully rendered Compose
+model.
+
+## Review the Phase 1 console
+
+```bash
+npm --prefix apps/web run dev
+```
+
+Open <http://127.0.0.1:5173>. The top-bar demo selector exposes the normal,
+empty, loading, partial-failure, and total-failure states. Browser acceptance
+requires Playwright Chromium; see [the web README](apps/web/README.md) for host
+and container commands. The checked-in 1440 px and 1280 px baselines are
+indexed under [docs/screenshots](docs/screenshots/README.md).
 
 ## Start the pinned upstreams
 
@@ -76,7 +92,7 @@ make upstream-smoke
 
 ```text
 apps/server/              Go BFF (implementation begins in Phase 2)
-apps/web/                 React console (implementation begins in Phase 1)
+apps/web/                 React console, MSW fixtures, and browser tests
 api/openapi.yaml          AgentsharkX-owned API contract
 api/upstream-contracts/   Sanitized, versioned upstream response samples
 deploy/                   Pinned Compose baseline and environment template

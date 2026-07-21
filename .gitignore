@@ -1,6 +1,7 @@
 .env
 .DS_Store
 node_modules/
+.cache/
 dist/
 coverage/
 playwright-report/

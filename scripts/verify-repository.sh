@@ -7,12 +7,18 @@ required_files=(
   LICENSE
   apps/server/go.mod
   apps/web/README.md
+  apps/web/package.json
+  apps/web/package-lock.json
+  apps/web/src/main.tsx
   api/openapi.yaml
   deploy/compose.yaml
   deploy/versions.env
   docs/architecture.md
   docs/capability-matrix.md
   docs/upstream-compatibility.md
+  docs/screenshots/home-1440.png
+  docs/screenshots/audit-1280.png
+  docs/screenshots/lighthouse-accessibility.json
 )
 
 for file in "${required_files[@]}"; do

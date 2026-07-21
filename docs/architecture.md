@@ -1,6 +1,6 @@
 # Architecture
 
-Status: Phase 0 baseline, verified 2026-07-21.
+Status: Phase 1 reviewable console, verified 2026-07-21.
 
 ## Context
 
@@ -51,6 +51,20 @@ Adapters expose upstream facts. Aggregation may reduce display differences but
 must retain `source`, upstream object ID, original-detail reference, scope, and
 phase. A correlation flag is allowed only when both sources provide the same
 identifier and the adapter explicitly verifies its meaning.
+
+## Phase 1 frontend boundary
+
+The React/Vite console is independently reviewable before the BFF exists. Its
+TanStack Router paths and TanStack Query requests target only the
+AgentsharkX-owned paths in `api/openapi.yaml`. MSW intercepts those paths in the
+browser and supplies source-labelled REST envelopes plus a bounded Mock SSE
+stream. No frontend module imports upstream code or receives an upstream
+credential.
+
+The five primary views are Home, Connect, Trust, Protect, and Audit. System is
+a supporting diagnostics page, not another product capability. URL search
+state preserves demo failure scenarios and Audit event selection so a detail
+drawer can be restored after refresh.
 
 ## Availability model
 

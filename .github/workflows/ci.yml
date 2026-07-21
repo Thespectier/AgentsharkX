@@ -16,5 +16,31 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: 1.26.5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - name: Install web dependencies
+        run: npm ci --prefix apps/web
       - name: Verify repository
         run: make verify
+
+  browser:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - name: Install web dependencies
+        run: npm ci --prefix apps/web
+      - name: Install Chromium and system dependencies
+        working-directory: apps/web
+        run: PLAYWRIGHT_BROWSERS_PATH=.cache/ms-playwright npm exec playwright -- install --with-deps chromium
+      - name: Run browser acceptance suite
+        run: npm --prefix apps/web run test:e2e
+      - name: Enforce Lighthouse accessibility score
+        run: npm --prefix apps/web run lighthouse

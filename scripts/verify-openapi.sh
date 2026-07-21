@@ -26,4 +26,4 @@ for path in "${required_paths[@]}"; do
   fi
 done
 
-echo "OpenAPI skeleton: ok"
+echo "OpenAPI contract: ok"
