@@ -14,6 +14,7 @@ import (
 	"github.com/Thespectier/AgentsharkX/apps/server/internal/api"
 	"github.com/Thespectier/AgentsharkX/apps/server/internal/auth"
 	"github.com/Thespectier/AgentsharkX/apps/server/internal/config"
+	"github.com/Thespectier/AgentsharkX/apps/server/internal/connect"
 	"github.com/Thespectier/AgentsharkX/apps/server/internal/gateway"
 	"github.com/Thespectier/AgentsharkX/apps/server/internal/guard"
 	"github.com/Thespectier/AgentsharkX/apps/server/internal/model"
@@ -43,10 +44,11 @@ func main() {
 	}
 
 	aggregator := aggregate.New(cfg.Environment, gatewayClient, guardClient)
+	connectService := connect.New(gatewayClient, cfg.Gateway.ConsoleURL)
 	hub := stream.NewHub()
 	sessions := auth.New(cfg.AdminToken.Value(), auth.Options{CookieSecure: cfg.CookieSecure, TTL: 8 * time.Hour})
 	handler := api.New(api.ServerConfig{
-		Sessions: sessions, Aggregate: aggregator, Stream: hub, Logger: logger, AuthEnabled: !cfg.AuthDisabled,
+		Sessions: sessions, Aggregate: aggregator, Connect: connectService, Stream: hub, Logger: logger, AuthEnabled: !cfg.AuthDisabled,
 	})
 
 	rootContext, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)

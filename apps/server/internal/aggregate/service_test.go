@@ -37,6 +37,6 @@ func TestRefreshPreservesHealthySourceWhenPeerIsDown(t *testing.T) {
 		t.Fatalf("expected partial overview with one source failure: %#v", overview.Meta)
 	}
 	if len(overview.Data.Metrics) != 0 || len(overview.Data.Events) != 0 {
-		t.Fatalf("Phase 2 overview must not fabricate traffic data: %#v", overview.Data)
+		t.Fatalf("health-only overview must not fabricate traffic data: %#v", overview.Data)
 	}
 }

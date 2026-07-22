@@ -1466,6 +1466,53 @@ kbd {
   gap: 14px;
 }
 
+.resource-toolbar {
+  display: flex;
+  min-height: 48px;
+  padding: 8px 12px;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  border-top: 1px solid var(--border-subtle);
+  border-bottom: 1px solid var(--border-subtle);
+}
+.resource-toolbar label {
+  flex: 1;
+}
+.resource-toolbar input {
+  width: min(360px, 100%);
+  min-height: 31px;
+  padding: 7px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: #090f18;
+  color: var(--text-primary);
+  font: inherit;
+}
+.resource-toolbar > span,
+.resource-note {
+  color: var(--text-tertiary);
+  font-size: 9px;
+}
+.resource-note {
+  margin: 15px 18px;
+  line-height: 1.55;
+}
+.native-links {
+  margin-top: 14px;
+}
+.native-links--compact {
+  margin: 0;
+  border: 0;
+  box-shadow: none;
+}
+.native-links__actions {
+  display: flex;
+  padding: 14px 18px 18px;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .setup-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1522,6 +1569,10 @@ kbd {
 .connection-check span {
   color: var(--text-tertiary);
   font-size: 8px;
+}
+.setup-grid .connection-check + .resource-note + .button,
+.setup-grid .connection-check + .button {
+  margin: 0 18px 18px;
 }
 .code-block {
   margin: 16px 18px 12px;

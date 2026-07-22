@@ -121,6 +121,16 @@ func (cfg Config) Validate() error {
 			validationErrors = append(validationErrors, fmt.Errorf("%s is invalid: %w", name, err))
 		}
 	}
+	for name, rawURL := range map[string]string{
+		"AGENTGATEWAY_CONSOLE_URL": cfg.Gateway.ConsoleURL,
+		"AGENTGUARD_CONSOLE_URL":   cfg.Guard.ConsoleURL,
+	} {
+		if rawURL != "" {
+			if err := validateURL(rawURL); err != nil {
+				validationErrors = append(validationErrors, fmt.Errorf("%s is invalid: %w", name, err))
+			}
+		}
+	}
 	if cfg.UpstreamTimeout < 100*time.Millisecond || cfg.UpstreamTimeout > 30*time.Second {
 		validationErrors = append(validationErrors, errors.New("AGENTSHARK_UPSTREAM_TIMEOUT must be between 100ms and 30s"))
 	}

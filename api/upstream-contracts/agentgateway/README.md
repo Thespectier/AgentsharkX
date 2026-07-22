@@ -12,6 +12,7 @@ management surface without configuring or sending business traffic.
 | `readiness.response.txt` | `GET :15021/healthz/ready` | 200 |
 | `runtime.response.json` | `GET :15000/api/runtime` | 200 |
 | `config.response.json` | `GET :15000/api/config` | 200 |
+| `config-populated.response.json` | `GET :15000/api/config` | Sanitized populated shape from the pinned upstream UI fixture |
 | `config-dump.response.json` | `GET :15000/config_dump` | 200, selected stable top-level fields |
 | `cost-models.response.json` | `GET :15000/api/costs/models` | 200 |
 | `logs-unconfigured.response.json` | `POST :15000/api/logs/search` | 500, no request-log DB |
@@ -21,3 +22,8 @@ management surface without configuring or sending business traffic.
 Provider/model/MCP/route summaries must be derived only from explicit
 config/config-dump fields. No dedicated resource-list API was found in this
 pinned standalone management surface.
+
+The populated shape and native console routes were cross-checked against
+agentgateway tag `v1.3.1`, commit
+`dbaaf7ed73671e7aec9195e35e7f726c0b14b84a`. Sensitive `params`, policy bodies,
+and API-key fixture values are intentionally excluded from the frozen sample.

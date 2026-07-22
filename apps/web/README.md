@@ -1,9 +1,10 @@
 # AgentsharkX web console
 
 The console supports two explicit modes. Mock mode is enabled by default for
-deterministic visual review. Setting `VITE_ENABLE_MOCKS=false` uses the Phase 2
-Go BFF, including the one-time admin-token exchange and live health/capability
-responses. Neither mode gives the browser an upstream credential.
+deterministic visual review. Setting `VITE_ENABLE_MOCKS=false` uses the Phase 3
+Go BFF, including the one-time admin-token exchange, live health/capability
+responses, and read-only Connect resources. Neither mode gives the browser an
+upstream credential.
 
 ## Commands
 
@@ -45,3 +46,16 @@ disabled with `VITE_ENABLE_MOCKS=false`. Vite proxies `/api` to
 `src/generated/api-client.ts` is
 deterministically generated from `api/openapi.yaml`; `npm run check` fails when
 the generated client is stale.
+
+An opt-in real-mode browser check is also available. Start a Phase 3 BFF and a
+Vite server with `VITE_ENABLE_MOCKS=false`, then run:
+
+```bash
+AGENTSHARK_REAL_CONNECT_URL=http://127.0.0.1:5173 \
+AGENTSHARK_REAL_ADMIN_TOKEN='your-local-admin-token' \
+  npm run test:e2e -- tests/connect-real.spec.ts
+```
+
+The test is skipped unless that URL is supplied. It verifies session exchange,
+the Connect empty-config state, Analytics unavailability, Setup verification,
+and the validated Raw Config deep link against a live BFF.

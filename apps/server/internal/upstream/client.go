@@ -2,6 +2,7 @@
 package upstream
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -19,6 +20,7 @@ const maxResponseBytes = 1 << 20
 
 type Error struct {
 	Source    model.Source
+	Method    string
 	Path      string
 	Status    int
 	Retryable bool
@@ -26,10 +28,14 @@ type Error struct {
 }
 
 func (err *Error) Error() string {
-	if err.Status > 0 {
-		return fmt.Sprintf("%s GET %s returned status %d", err.Source, err.Path, err.Status)
+	method := err.Method
+	if method == "" {
+		method = http.MethodGet
 	}
-	return fmt.Sprintf("%s GET %s failed: %s", err.Source, err.Path, err.Kind)
+	if err.Status > 0 {
+		return fmt.Sprintf("%s %s %s returned status %d", err.Source, method, err.Path, err.Status)
+	}
+	return fmt.Sprintf("%s %s %s failed: %s", err.Source, method, err.Path, err.Kind)
 }
 
 type Client struct {
@@ -53,8 +59,22 @@ func New(source model.Source, rawBaseURL, authName, authValue string, client *ht
 }
 
 func (client *Client) GetJSON(ctx context.Context, path string, destination any) (time.Duration, error) {
+	return client.doJSON(ctx, http.MethodGet, path, nil, destination, true)
+}
+
+// PostJSON performs a bounded JSON POST which callers must use only for verified,
+// side-effect-free upstream read contracts.
+func (client *Client) PostJSON(ctx context.Context, path string, body, destination any) (time.Duration, error) {
+	encoded, err := json.Marshal(body)
+	if err != nil {
+		return 0, &Error{Source: client.source, Method: http.MethodPost, Path: path, Kind: "request encoding failed"}
+	}
+	return client.doJSON(ctx, http.MethodPost, path, encoded, destination, true)
+}
+
+func (client *Client) doJSON(ctx context.Context, method, path string, body []byte, destination any, retrySafe bool) (time.Duration, error) {
 	started := time.Now()
-	response, err := client.get(ctx, path)
+	response, err := client.do(ctx, method, path, body, retrySafe)
 	duration := time.Since(started)
 	if err != nil {
 		return duration, err
@@ -62,7 +82,7 @@ func (client *Client) GetJSON(ctx context.Context, path string, destination any)
 	defer response.Body.Close()
 	decoder := json.NewDecoder(io.LimitReader(response.Body, maxResponseBytes))
 	if err := decoder.Decode(destination); err != nil {
-		return duration, &Error{Source: client.source, Path: path, Kind: "invalid JSON response"}
+		return duration, &Error{Source: client.source, Method: method, Path: path, Kind: "invalid JSON response"}
 	}
 	return duration, nil
 }
@@ -73,9 +93,9 @@ func (client *Client) ProbeJSON(ctx context.Context, path string) error {
 	return err
 }
 
-func (client *Client) get(ctx context.Context, path string) (*http.Response, error) {
+func (client *Client) do(ctx context.Context, method, path string, body []byte, retrySafe bool) (*http.Response, error) {
 	if !strings.HasPrefix(path, "/") || strings.Contains(path, "?") {
-		return nil, &Error{Source: client.source, Path: "[invalid-path]", Kind: "invalid request path"}
+		return nil, &Error{Source: client.source, Method: method, Path: "[invalid-path]", Kind: "invalid request path"}
 	}
 	endpoint := *client.baseURL
 	endpoint.Path = strings.TrimRight(client.baseURL.Path, "/") + path
@@ -83,11 +103,14 @@ func (client *Client) get(ctx context.Context, path string) (*http.Response, err
 	endpoint.Fragment = ""
 
 	for attempt := 0; attempt <= client.retryMax; attempt++ {
-		request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint.String(), nil)
+		request, err := http.NewRequestWithContext(ctx, method, endpoint.String(), bytes.NewReader(body))
 		if err != nil {
-			return nil, &Error{Source: client.source, Path: path, Kind: "request creation failed"}
+			return nil, &Error{Source: client.source, Method: method, Path: path, Kind: "request creation failed"}
 		}
 		request.Header.Set("Accept", "application/json")
+		if len(body) > 0 {
+			request.Header.Set("Content-Type", "application/json")
+		}
 		if client.authName != "" && client.authValue != "" {
 			request.Header.Set(client.authName, client.authValue)
 		}
@@ -96,24 +119,24 @@ func (client *Client) get(ctx context.Context, path string) (*http.Response, err
 			return response, nil
 		}
 
-		retryable := err != nil
+		retryable := retrySafe && err != nil
 		status := 0
 		kind := "request failed"
 		if response != nil {
 			status = response.StatusCode
-			retryable = status == http.StatusRequestTimeout || status == http.StatusTooManyRequests || status >= 500
+			retryable = retrySafe && (status == http.StatusRequestTimeout || status == http.StatusTooManyRequests || status >= 500)
 			_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 4096))
 			_ = response.Body.Close()
 			kind = "upstream response"
 		}
 		if !retryable || attempt == client.retryMax {
-			return nil, &Error{Source: client.source, Path: path, Status: status, Retryable: retryable, Kind: kind}
+			return nil, &Error{Source: client.source, Method: method, Path: path, Status: status, Retryable: retryable, Kind: kind}
 		}
 		select {
 		case <-ctx.Done():
-			return nil, &Error{Source: client.source, Path: path, Retryable: true, Kind: "request canceled"}
+			return nil, &Error{Source: client.source, Method: method, Path: path, Retryable: true, Kind: "request canceled"}
 		case <-time.After(time.Duration(attempt+1) * 25 * time.Millisecond):
 		}
 	}
-	return nil, &Error{Source: client.source, Path: path, Kind: "request failed"}
+	return nil, &Error{Source: client.source, Method: method, Path: path, Kind: "request failed"}
 }

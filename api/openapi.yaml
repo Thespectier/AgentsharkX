@@ -1,11 +1,12 @@
 openapi: 3.1.0
 info:
   title: AgentsharkX BFF API
-  version: 0.2.0-phase2
+  version: 0.3.0-phase3
   description: |
     Source-preserving management API above agentgateway and AgentGuard.
-    Phase 2 implements authentication, independent upstream health and
-    capability probes, the health-only overview, and normalized health SSE.
+    Phase 3 implements authentication, independent upstream health and
+    capability probes, the health-only overview, normalized health SSE, and
+    read-only agentgateway resources with setup verification.
     Later operations remain reserved according to `x-implementation-phase`.
 servers:
   - url: /
@@ -125,9 +126,18 @@ paths:
       operationId: getConnectSummary
       summary: Summarize agentgateway listeners, routes, and backends
       x-implementation-phase: 3
+      x-implementation-status: implemented
       responses:
         '200':
-          $ref: '#/components/responses/DataResponse'
+          description: Explicit configuration counts and bounded analytics summary
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConnectSummaryEnvelope'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '502':
+          $ref: '#/components/responses/BadGateway'
         '503':
           $ref: '#/components/responses/UpstreamUnavailable'
 
@@ -137,9 +147,51 @@ paths:
       operationId: listProviders
       summary: List providers explicitly present in agentgateway configuration
       x-implementation-phase: 3
+      x-implementation-status: implemented
+      parameters:
+        - $ref: '#/components/parameters/Search'
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
       responses:
         '200':
-          $ref: '#/components/responses/DataResponse'
+          description: Paginated provider resources
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProviderPageEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+        '503':
+          $ref: '#/components/responses/UpstreamUnavailable'
+
+  /api/v1/connect/llm/providers/{resourceId}:
+    get:
+      tags: [Connect]
+      operationId: getProvider
+      summary: Get one explicitly configured provider
+      x-implementation-phase: 3
+      x-implementation-status: implemented
+      parameters:
+        - $ref: '#/components/parameters/ResourceId'
+      responses:
+        '200':
+          description: Provider detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProviderEnvelope'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+        '503':
+          $ref: '#/components/responses/UpstreamUnavailable'
 
   /api/v1/connect/llm/models:
     get:
@@ -147,9 +199,51 @@ paths:
       operationId: listModels
       summary: List models explicitly present in agentgateway configuration
       x-implementation-phase: 3
+      x-implementation-status: implemented
+      parameters:
+        - $ref: '#/components/parameters/Search'
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
       responses:
         '200':
-          $ref: '#/components/responses/DataResponse'
+          description: Paginated direct and virtual model resources
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModelPageEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+        '503':
+          $ref: '#/components/responses/UpstreamUnavailable'
+
+  /api/v1/connect/llm/models/{resourceId}:
+    get:
+      tags: [Connect]
+      operationId: getModel
+      summary: Get one explicitly configured direct or virtual model
+      x-implementation-phase: 3
+      x-implementation-status: implemented
+      parameters:
+        - $ref: '#/components/parameters/ResourceId'
+      responses:
+        '200':
+          description: Model detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModelEnvelope'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+        '503':
+          $ref: '#/components/responses/UpstreamUnavailable'
 
   /api/v1/connect/mcp/servers:
     get:
@@ -157,9 +251,51 @@ paths:
       operationId: listGatewayMcpServers
       summary: List agentgateway MCP targets without merging AgentGuard resources
       x-implementation-phase: 3
+      x-implementation-status: implemented
+      parameters:
+        - $ref: '#/components/parameters/Search'
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
       responses:
         '200':
-          $ref: '#/components/responses/DataResponse'
+          description: Paginated MCP targets
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MCPPageEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+        '503':
+          $ref: '#/components/responses/UpstreamUnavailable'
+
+  /api/v1/connect/mcp/servers/{resourceId}:
+    get:
+      tags: [Connect]
+      operationId: getGatewayMcpServer
+      summary: Get one explicitly configured MCP target
+      x-implementation-phase: 3
+      x-implementation-status: implemented
+      parameters:
+        - $ref: '#/components/parameters/ResourceId'
+      responses:
+        '200':
+          description: MCP target detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MCPEnvelope'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+        '503':
+          $ref: '#/components/responses/UpstreamUnavailable'
 
   /api/v1/connect/traffic/routes:
     get:
@@ -167,9 +303,89 @@ paths:
       operationId: listTrafficRoutes
       summary: List explicit agentgateway traffic routes
       x-implementation-phase: 3
+      x-implementation-status: implemented
+      parameters:
+        - $ref: '#/components/parameters/Search'
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
       responses:
         '200':
-          $ref: '#/components/responses/DataResponse'
+          description: Paginated HTTP and TCP routes
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RoutePageEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+        '503':
+          $ref: '#/components/responses/UpstreamUnavailable'
+
+  /api/v1/connect/traffic/routes/{resourceId}:
+    get:
+      tags: [Connect]
+      operationId: getTrafficRoute
+      summary: Get one explicit traffic route
+      x-implementation-phase: 3
+      x-implementation-status: implemented
+      parameters:
+        - $ref: '#/components/parameters/ResourceId'
+      responses:
+        '200':
+          description: Traffic route detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RouteEnvelope'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+        '503':
+          $ref: '#/components/responses/UpstreamUnavailable'
+
+  /api/v1/connect/analytics:
+    get:
+      tags: [Connect]
+      operationId: getConnectAnalytics
+      summary: Return request-log analytics or an explicit unavailable state
+      x-implementation-phase: 3
+      x-implementation-status: implemented
+      responses:
+        '200':
+          description: Bounded agentgateway analytics summary
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnalyticsEnvelope'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+        '503':
+          $ref: '#/components/responses/UpstreamUnavailable'
+
+  /api/v1/connect/setup:
+    get:
+      tags: [Connect]
+      operationId: verifyGatewaySetup
+      summary: Verify the configured management runtime and readable configuration
+      x-implementation-phase: 3
+      x-implementation-status: implemented
+      responses:
+        '200':
+          description: Live setup verification and native console deep links
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConnectSetupEnvelope'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
 
   /api/v1/trust/agents:
     get:
@@ -496,6 +712,30 @@ components:
       required: false
       schema:
         type: string
+        maxLength: 256
+    Search:
+      name: q
+      in: query
+      required: false
+      schema:
+        type: string
+        maxLength: 200
+    Limit:
+      name: limit
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 25
+    ResourceId:
+      name: resourceId
+      in: path
+      required: true
+      schema:
+        type: string
+        minLength: 1
     LastEventId:
       name: Last-Event-ID
       in: header
@@ -546,6 +786,12 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/ErrorEnvelope'
+    BadGateway:
+      description: The upstream response no longer matches the pinned contract
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
     NotFound:
       description: Upstream object was not found
       content:
@@ -569,6 +815,9 @@ components:
     Source:
       type: string
       enum: [agentgateway, agentguard]
+    GatewaySource:
+      type: string
+      enum: [agentgateway]
     LoginRequest:
       type: object
       additionalProperties: false
@@ -774,6 +1023,256 @@ components:
           $ref: '#/components/schemas/OverviewData'
         meta:
           $ref: '#/components/schemas/Meta'
+    RawRef:
+      type: object
+      additionalProperties: false
+      required: [source, id]
+      properties:
+        source:
+          $ref: '#/components/schemas/Source'
+        id:
+          type: string
+    GatewayProvider:
+      type: object
+      additionalProperties: false
+      required: [id, source, fetchedAt, rawRef, name, kind, modelCount]
+      properties:
+        id: { type: string }
+        upstreamId: { type: string }
+        source: { $ref: '#/components/schemas/GatewaySource' }
+        fetchedAt: { type: string, format: date-time }
+        rawRef: { $ref: '#/components/schemas/RawRef' }
+        name: { type: string }
+        kind: { type: string }
+        modelCount: { type: integer, minimum: 0 }
+    GatewayModel:
+      type: object
+      additionalProperties: false
+      required: [id, source, fetchedAt, rawRef, name, kind]
+      properties:
+        id: { type: string }
+        upstreamId: { type: string }
+        source: { $ref: '#/components/schemas/GatewaySource' }
+        fetchedAt: { type: string, format: date-time }
+        rawRef: { $ref: '#/components/schemas/RawRef' }
+        name: { type: string }
+        kind: { type: string, enum: [direct, virtual] }
+        provider: { type: string }
+        targetModel: { type: string }
+        routing: { type: string, enum: [weighted, failover, conditional] }
+        targets:
+          type: array
+          items: { type: string }
+    GatewayMCPServer:
+      type: object
+      additionalProperties: false
+      required: [id, source, fetchedAt, rawRef, name, transport, scope]
+      properties:
+        id: { type: string }
+        upstreamId: { type: string }
+        source: { $ref: '#/components/schemas/GatewaySource' }
+        fetchedAt: { type: string, format: date-time }
+        rawRef: { $ref: '#/components/schemas/RawRef' }
+        name: { type: string }
+        transport: { type: string, enum: [sse, mcp, stdio, openapi] }
+        scope: { type: string }
+    GatewayRoute:
+      type: object
+      additionalProperties: false
+      required: [id, source, fetchedAt, rawRef, name, listener, protocol, port, hostnames, targets, backendCount, unavailableBackendCount]
+      properties:
+        id: { type: string }
+        upstreamId: { type: string }
+        source: { $ref: '#/components/schemas/GatewaySource' }
+        fetchedAt: { type: string, format: date-time }
+        rawRef: { $ref: '#/components/schemas/RawRef' }
+        name: { type: string }
+        listener: { type: string }
+        protocol: { type: string }
+        port: { type: integer, minimum: 0, maximum: 65535 }
+        hostnames:
+          type: array
+          items: { type: string }
+        path: { type: string }
+        targets:
+          type: array
+          items: { type: string }
+        backendCount: { type: integer, minimum: 0 }
+        unavailableBackendCount: { type: integer, minimum: 0 }
+    AnalyticsBucket:
+      type: object
+      additionalProperties: false
+      required: [start, requests, totalTokens, cost]
+      properties:
+        start: { type: string, format: date-time }
+        requests: { type: integer, minimum: 0 }
+        totalTokens: { type: integer, minimum: 0 }
+        cost: { type: number, minimum: 0 }
+    GatewayAnalytics:
+      type: object
+      additionalProperties: false
+      required: [status, requests, totalTokens, cost, bucketSeconds, buckets]
+      properties:
+        status: { type: string, enum: [available, unavailable] }
+        reason: { type: string }
+        requests: { type: [integer, 'null'], minimum: 0 }
+        totalTokens: { type: [integer, 'null'], minimum: 0 }
+        cost: { type: [number, 'null'], minimum: 0 }
+        bucketSeconds: { type: [integer, 'null'], minimum: 0 }
+        buckets:
+          type: array
+          items: { $ref: '#/components/schemas/AnalyticsBucket' }
+    ConnectCount:
+      type: object
+      additionalProperties: false
+      required: [id, label, value, status]
+      properties:
+        id: { type: string }
+        label: { type: string }
+        value: { type: [integer, 'null'], minimum: 0 }
+        status: { type: string, enum: [configured, unavailable] }
+        reason: { type: string }
+    ConsoleLinks:
+      type: object
+      additionalProperties: false
+      properties:
+        console: { type: string, format: uri }
+        rawConfig: { type: string, format: uri }
+        cel: { type: string, format: uri }
+        llmPlayground: { type: string, format: uri }
+        mcpPlayground: { type: string, format: uri }
+    ConnectSummary:
+      type: object
+      additionalProperties: false
+      required: [health, counts, analytics, links]
+      properties:
+        health: { $ref: '#/components/schemas/HealthSource' }
+        counts:
+          type: array
+          items: { $ref: '#/components/schemas/ConnectCount' }
+        analytics: { $ref: '#/components/schemas/GatewayAnalytics' }
+        links: { $ref: '#/components/schemas/ConsoleLinks' }
+    ConnectSummaryEnvelope:
+      type: object
+      additionalProperties: false
+      required: [data, meta]
+      properties:
+        data: { $ref: '#/components/schemas/ConnectSummary' }
+        meta: { $ref: '#/components/schemas/Meta' }
+    ProviderPage:
+      type: object
+      additionalProperties: false
+      required: [items, nextCursor, total]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/GatewayProvider' }
+        nextCursor: { type: [string, 'null'] }
+        total: { type: integer, minimum: 0 }
+    ProviderPageEnvelope:
+      type: object
+      required: [data, meta]
+      properties:
+        data: { $ref: '#/components/schemas/ProviderPage' }
+        meta: { $ref: '#/components/schemas/Meta' }
+    ProviderEnvelope:
+      type: object
+      required: [data, meta]
+      properties:
+        data: { $ref: '#/components/schemas/GatewayProvider' }
+        meta: { $ref: '#/components/schemas/Meta' }
+    ModelPage:
+      type: object
+      additionalProperties: false
+      required: [items, nextCursor, total]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/GatewayModel' }
+        nextCursor: { type: [string, 'null'] }
+        total: { type: integer, minimum: 0 }
+    ModelPageEnvelope:
+      type: object
+      required: [data, meta]
+      properties:
+        data: { $ref: '#/components/schemas/ModelPage' }
+        meta: { $ref: '#/components/schemas/Meta' }
+    ModelEnvelope:
+      type: object
+      required: [data, meta]
+      properties:
+        data: { $ref: '#/components/schemas/GatewayModel' }
+        meta: { $ref: '#/components/schemas/Meta' }
+    MCPPage:
+      type: object
+      additionalProperties: false
+      required: [items, nextCursor, total]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/GatewayMCPServer' }
+        nextCursor: { type: [string, 'null'] }
+        total: { type: integer, minimum: 0 }
+    MCPPageEnvelope:
+      type: object
+      required: [data, meta]
+      properties:
+        data: { $ref: '#/components/schemas/MCPPage' }
+        meta: { $ref: '#/components/schemas/Meta' }
+    MCPEnvelope:
+      type: object
+      required: [data, meta]
+      properties:
+        data: { $ref: '#/components/schemas/GatewayMCPServer' }
+        meta: { $ref: '#/components/schemas/Meta' }
+    RoutePage:
+      type: object
+      additionalProperties: false
+      required: [items, nextCursor, total]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/GatewayRoute' }
+        nextCursor: { type: [string, 'null'] }
+        total: { type: integer, minimum: 0 }
+    RoutePageEnvelope:
+      type: object
+      required: [data, meta]
+      properties:
+        data: { $ref: '#/components/schemas/RoutePage' }
+        meta: { $ref: '#/components/schemas/Meta' }
+    RouteEnvelope:
+      type: object
+      required: [data, meta]
+      properties:
+        data: { $ref: '#/components/schemas/GatewayRoute' }
+        meta: { $ref: '#/components/schemas/Meta' }
+    AnalyticsEnvelope:
+      type: object
+      required: [data, meta]
+      properties:
+        data: { $ref: '#/components/schemas/GatewayAnalytics' }
+        meta: { $ref: '#/components/schemas/Meta' }
+    ConnectSetup:
+      type: object
+      additionalProperties: false
+      required: [source, managementConfigured, configurationReadable, status, latencyMs, checkedAt, links]
+      properties:
+        source: { $ref: '#/components/schemas/GatewaySource' }
+        managementConfigured: { type: boolean }
+        configurationReadable: { type: boolean }
+        status: { type: string, enum: [healthy, degraded, down, unknown] }
+        version: { type: string }
+        latencyMs: { type: [integer, 'null'], minimum: 0 }
+        checkedAt: { type: string, format: date-time }
+        message: { type: string }
+        links: { $ref: '#/components/schemas/ConsoleLinks' }
+    ConnectSetupEnvelope:
+      type: object
+      required: [data, meta]
+      properties:
+        data: { $ref: '#/components/schemas/ConnectSetup' }
+        meta: { $ref: '#/components/schemas/Meta' }
     LabelUpdate:
       type: object
       additionalProperties: false

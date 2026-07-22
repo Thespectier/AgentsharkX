@@ -7,12 +7,13 @@ information architecture for connection management, trusted runtime context,
 protection workflows, and audit views without entering the agent data plane or
 reimplementing either upstream.
 
-The repository is currently at **Phase 2**: the reproducible project skeleton,
-pinned upstream contracts, reviewable web console, and secure Go BFF are in
-place. The BFF implements single-admin sessions, CSRF protection, independent
-upstream health and capability probes, a health-only overview, and health SSE.
-Business data integrations remain scheduled for Phases 3–6 and are not
-fabricated in the Phase 2 overview.
+The repository is currently at **Phase 3**. In addition to the secure Go BFF,
+sessions, capability registry, health-only overview, and health SSE, Connect now
+reads explicit agentgateway providers, models, MCP targets, and routes through
+the BFF. The UI supports server-side filtering, cursor pagination, details,
+analytics availability, live setup verification, and validated native-console
+deep links. Trust, Protect, and Audit business integrations remain scheduled
+for Phases 4–6 and are not fabricated.
 
 ## Product boundary
 
@@ -61,7 +62,7 @@ requires Playwright Chromium; see [the web README](apps/web/README.md) for host
 and container commands. The checked-in 1440 px and 1280 px baselines are
 indexed under [docs/screenshots](docs/screenshots/README.md).
 
-## Run the Phase 2 BFF locally
+## Run the Phase 3 BFF locally
 
 Start the pinned upstreams, then provide non-placeholder secrets and host-side
 URLs. Plain HTTP cookies are permitted only with an explicit local environment
@@ -73,6 +74,7 @@ export AGENTSHARK_ENVIRONMENT=local
 export AGENTSHARK_ADMIN_TOKEN='replace-with-at-least-16-characters'
 export AGENTSHARK_COOKIE_SECURE=false
 export AGENTGATEWAY_BASE_URL=http://127.0.0.1:15000
+export AGENTGATEWAY_CONSOLE_URL=http://127.0.0.1:15000/ui
 export AGENTGUARD_BASE_URL=http://127.0.0.1:38080
 export AGENTGUARD_ADMIN_TOKEN='replace-with-the-agentguard-api-key'
 export AGENTGUARD_VERSION=v2.1

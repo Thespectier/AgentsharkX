@@ -3,7 +3,6 @@ import { delay, http, HttpResponse } from "msw";
 import type {
   ApiFailure,
   AuditData,
-  ConnectData,
   Envelope,
   OverviewData,
   ProtectData,
@@ -143,13 +142,9 @@ const emptyOverview: OverviewData = {
   },
 };
 
-const emptyConnect: ConnectData = {
-  ...connectData,
-  summary: connectData.summary.map((item) => ({ ...item, value: 0, healthy: 0 })),
-  routes: [],
-  providers: [],
-  models: [],
-  mcpServers: [],
+const emptyConnectSummary = {
+  ...connectData.summary,
+  counts: connectData.summary.counts.map((item) => ({ ...item, value: 0 })),
 };
 
 const emptyTrust: TrustData = {
@@ -176,6 +171,24 @@ function listResponse<T>(request: Request, data: T[], source: Source) {
   return respond(request, data, [], source);
 }
 
+async function pageResponse<T>(request: Request, data: T[], source: Source) {
+  const url = new URL(request.url);
+  const search = (url.searchParams.get("q") ?? "").toLowerCase();
+  const offset = Number(url.searchParams.get("cursor") ?? "0") || 0;
+  const limit = Number(url.searchParams.get("limit") ?? "25") || 25;
+  const filtered = search
+    ? data.filter((item) => JSON.stringify(item).toLowerCase().includes(search))
+    : data;
+  const items = filtered.slice(offset, offset + limit);
+  const nextCursor = offset + limit < filtered.length ? String(offset + limit) : null;
+  return respond(
+    request,
+    { items, nextCursor, total: filtered.length },
+    { items: [], nextCursor: null, total: 0 },
+    source,
+  );
+}
+
 export const handlers = [
   http.get("/api/v1/overview", ({ request }) => respond(request, overviewData, emptyOverview)),
   http.get("/api/v1/system/health", ({ request }) =>
@@ -185,20 +198,65 @@ export const handlers = [
     listResponse(request, capabilityData, "agentgateway"),
   ),
   http.get("/api/v1/connect/summary", ({ request }) =>
-    respond(request, connectData, emptyConnect, "agentgateway"),
+    respond(request, connectData.summary, emptyConnectSummary, "agentgateway"),
+  ),
+  http.get("/api/v1/connect/analytics", ({ request }) =>
+    respond(request, connectData.summary.analytics, emptyConnectSummary.analytics, "agentgateway"),
+  ),
+  http.get("/api/v1/connect/setup", ({ request }) =>
+    respond(
+      request,
+      {
+        source: "agentgateway" as const,
+        managementConfigured: true,
+        configurationReadable: true,
+        status: "healthy" as const,
+        version: "1.3.1",
+        latencyMs: 18,
+        checkedAt: capturedAt,
+        links: connectData.summary.links,
+      },
+      {
+        source: "agentgateway" as const,
+        managementConfigured: true,
+        configurationReadable: true,
+        status: "healthy" as const,
+        version: "1.3.1",
+        latencyMs: 18,
+        checkedAt: capturedAt,
+        links: connectData.summary.links,
+      },
+      "agentgateway",
+    ),
   ),
   http.get("/api/v1/connect/llm/providers", ({ request }) =>
-    listResponse(request, connectData.providers, "agentgateway"),
+    pageResponse(request, connectData.providers, "agentgateway"),
   ),
+  http.get("/api/v1/connect/llm/providers/:resourceId", ({ request, params }) => {
+    const item = connectData.providers.find((provider) => provider.id === params.resourceId);
+    return item ? respond(request, item, item, "agentgateway") : failure("agentgateway");
+  }),
   http.get("/api/v1/connect/llm/models", ({ request }) =>
-    listResponse(request, connectData.models, "agentgateway"),
+    pageResponse(request, connectData.models, "agentgateway"),
   ),
+  http.get("/api/v1/connect/llm/models/:resourceId", ({ request, params }) => {
+    const item = connectData.models.find((model) => model.id === params.resourceId);
+    return item ? respond(request, item, item, "agentgateway") : failure("agentgateway");
+  }),
   http.get("/api/v1/connect/mcp/servers", ({ request }) =>
-    listResponse(request, connectData.mcpServers, "agentgateway"),
+    pageResponse(request, connectData.mcpServers, "agentgateway"),
   ),
+  http.get("/api/v1/connect/mcp/servers/:resourceId", ({ request, params }) => {
+    const item = connectData.mcpServers.find((server) => server.id === params.resourceId);
+    return item ? respond(request, item, item, "agentgateway") : failure("agentgateway");
+  }),
   http.get("/api/v1/connect/traffic/routes", ({ request }) =>
-    listResponse(request, connectData.routes, "agentgateway"),
+    pageResponse(request, connectData.routes, "agentgateway"),
   ),
+  http.get("/api/v1/connect/traffic/routes/:resourceId", ({ request, params }) => {
+    const item = connectData.routes.find((route) => route.id === params.resourceId);
+    return item ? respond(request, item, item, "agentgateway") : failure("agentgateway");
+  }),
   http.get("/api/v1/trust/agents", ({ request }) =>
     listResponse(request, trustData.agents, "agentguard"),
   ),

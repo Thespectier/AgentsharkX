@@ -1,6 +1,6 @@
 # Architecture
 
-Status: Phase 2 secure BFF and capability registry, verified 2026-07-21.
+Status: Phase 3 read-only Connect integration, verified 2026-07-22.
 
 ## Context
 
@@ -40,13 +40,15 @@ The Go BFF is organized into the following packages:
 - `config`: validated environment configuration with secret-safe diagnostics.
 - `auth`: one-admin session, strict cookie, CSRF, and write protection.
 - `gateway`: agentgateway management adapter.
+- `connect`: filtering, cursor pagination, details, setup verification, and
+  native-console links over sanitized gateway resources.
 - `guard`: AgentGuard management adapter.
 - `aggregate`: source-preserving view models and partial-result handling.
 - `stream`: non-blocking Phase 2 health-event fan-out; bounded business event
   buffers and resume semantics remain Phase 6 work.
 - `api`: OpenAPI-backed HTTP handlers and standard errors.
-- `model`: source-preserving health, capability, overview, event, and error
-  contracts.
+- `model`: source-preserving health, capability, Connect resource, overview,
+  event, and error contracts.
 - `upstream`: bounded retries and response-size limits shared by the two
   adapters without sharing their source state.
 
@@ -86,15 +88,18 @@ A gateway failure cannot suppress AgentGuard data, and an AgentGuard failure
 cannot suppress gateway data. Aggregated responses carry per-source metadata
 and stale markers rather than collapsing partial failures into a global 500.
 
-## Phase 2 runtime data and storage
+## Phase 3 runtime data and storage
 
 The BFF has no database. A background monitor polls only the two health
 contracts and publishes a normalized SSE event when status or version changes.
 New SSE connections first receive the current source-scoped health snapshot.
-Phase 2 does not poll traffic, approvals, decisions, or audit records and does
-not maintain a business-event ring buffer. `/overview` therefore returns empty
-business collections with `mode=health-only`; later phases may populate them
-only from verified contracts. Long-term logs remain in their upstream systems.
+Phase 3 adds no database. Connect reads a bounded `/api/config` snapshot per
+request and never returns raw config, params, policies, credentials, or prompt
+payloads. Analytics is a bounded read-only POST; an absent request-log database
+produces an explicit unavailable state with null metrics. The background
+monitor still polls only health. `/overview` remains `mode=health-only`, and no
+business-event ring buffer, traffic correlation, or durable storage is added.
+Long-term logs remain in their upstream systems.
 
 ## Security baseline
 

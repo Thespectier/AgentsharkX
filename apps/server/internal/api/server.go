@@ -1,4 +1,4 @@
-// Package api implements the OpenAPI-defined Phase 2 HTTP surface.
+// Package api implements the OpenAPI-defined management HTTP surface.
 package api
 
 import (
@@ -6,16 +6,22 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/Thespectier/AgentsharkX/apps/server/internal/aggregate"
 	"github.com/Thespectier/AgentsharkX/apps/server/internal/auth"
+	"github.com/Thespectier/AgentsharkX/apps/server/internal/connect"
+	"github.com/Thespectier/AgentsharkX/apps/server/internal/gateway"
 	"github.com/Thespectier/AgentsharkX/apps/server/internal/model"
 	"github.com/Thespectier/AgentsharkX/apps/server/internal/stream"
+	"github.com/Thespectier/AgentsharkX/apps/server/internal/upstream"
 )
 
 const maxLoginBodyBytes = 4096
@@ -27,6 +33,7 @@ const requestIDKey contextKey = "request-id"
 type ServerConfig struct {
 	Sessions    *auth.Manager
 	Aggregate   *aggregate.Service
+	Connect     *connect.Service
 	Stream      *stream.Hub
 	Logger      *slog.Logger
 	AuthEnabled bool
@@ -55,6 +62,17 @@ func (server *server) routes() {
 	server.mux.Handle("GET /api/v1/system/capabilities", server.requireAuth(http.HandlerFunc(server.capabilities)))
 	server.mux.Handle("GET /api/v1/overview", server.requireAuth(http.HandlerFunc(server.overview)))
 	server.mux.Handle("GET /api/v1/stream", server.requireAuth(http.HandlerFunc(server.eventStream)))
+	server.mux.Handle("GET /api/v1/connect/summary", server.requireAuth(http.HandlerFunc(server.connectSummary)))
+	server.mux.Handle("GET /api/v1/connect/analytics", server.requireAuth(http.HandlerFunc(server.connectAnalytics)))
+	server.mux.Handle("GET /api/v1/connect/setup", server.requireAuth(http.HandlerFunc(server.connectSetup)))
+	server.mux.Handle("GET /api/v1/connect/llm/providers", server.requireAuth(http.HandlerFunc(server.providers)))
+	server.mux.Handle("GET /api/v1/connect/llm/providers/{resourceId}", server.requireAuth(http.HandlerFunc(server.provider)))
+	server.mux.Handle("GET /api/v1/connect/llm/models", server.requireAuth(http.HandlerFunc(server.models)))
+	server.mux.Handle("GET /api/v1/connect/llm/models/{resourceId}", server.requireAuth(http.HandlerFunc(server.gatewayModel)))
+	server.mux.Handle("GET /api/v1/connect/mcp/servers", server.requireAuth(http.HandlerFunc(server.mcpServers)))
+	server.mux.Handle("GET /api/v1/connect/mcp/servers/{resourceId}", server.requireAuth(http.HandlerFunc(server.mcpServer)))
+	server.mux.Handle("GET /api/v1/connect/traffic/routes", server.requireAuth(http.HandlerFunc(server.trafficRoutes)))
+	server.mux.Handle("GET /api/v1/connect/traffic/routes/{resourceId}", server.requireAuth(http.HandlerFunc(server.route)))
 	server.mux.Handle("/api/v1/", server.requireAuth(http.HandlerFunc(server.notImplemented)))
 }
 
@@ -101,6 +119,156 @@ func (server *server) capabilities(writer http.ResponseWriter, request *http.Req
 func (server *server) overview(writer http.ResponseWriter, _ *http.Request) {
 	server.writeJSON(writer, http.StatusOK, server.config.Aggregate.Overview())
 }
+
+func (server *server) connectSummary(writer http.ResponseWriter, request *http.Request) {
+	if !server.connectAvailable(writer, request) {
+		return
+	}
+	envelope, err := server.config.Connect.Summary(request.Context())
+	server.writeConnectResult(writer, request, envelope, err)
+}
+
+func (server *server) connectAnalytics(writer http.ResponseWriter, request *http.Request) {
+	if !server.connectAvailable(writer, request) {
+		return
+	}
+	envelope, err := server.config.Connect.Analytics(request.Context())
+	server.writeConnectResult(writer, request, envelope, err)
+}
+
+func (server *server) connectSetup(writer http.ResponseWriter, request *http.Request) {
+	if !server.connectAvailable(writer, request) {
+		return
+	}
+	server.writeJSON(writer, http.StatusOK, server.config.Connect.Setup(request.Context()))
+}
+
+func (server *server) providers(writer http.ResponseWriter, request *http.Request) {
+	query, ok := server.resourceQuery(writer, request)
+	if !ok || !server.connectAvailable(writer, request) {
+		return
+	}
+	envelope, err := server.config.Connect.Providers(request.Context(), query.search, query.cursor, query.limit)
+	server.writeConnectResult(writer, request, envelope, err)
+}
+
+func (server *server) provider(writer http.ResponseWriter, request *http.Request) {
+	if !server.connectAvailable(writer, request) {
+		return
+	}
+	envelope, err := server.config.Connect.Provider(request.Context(), request.PathValue("resourceId"))
+	server.writeConnectResult(writer, request, envelope, err)
+}
+
+func (server *server) models(writer http.ResponseWriter, request *http.Request) {
+	query, ok := server.resourceQuery(writer, request)
+	if !ok || !server.connectAvailable(writer, request) {
+		return
+	}
+	envelope, err := server.config.Connect.Models(request.Context(), query.search, query.cursor, query.limit)
+	server.writeConnectResult(writer, request, envelope, err)
+}
+
+func (server *server) gatewayModel(writer http.ResponseWriter, request *http.Request) {
+	if !server.connectAvailable(writer, request) {
+		return
+	}
+	envelope, err := server.config.Connect.Model(request.Context(), request.PathValue("resourceId"))
+	server.writeConnectResult(writer, request, envelope, err)
+}
+
+func (server *server) mcpServers(writer http.ResponseWriter, request *http.Request) {
+	query, ok := server.resourceQuery(writer, request)
+	if !ok || !server.connectAvailable(writer, request) {
+		return
+	}
+	envelope, err := server.config.Connect.MCPServers(request.Context(), query.search, query.cursor, query.limit)
+	server.writeConnectResult(writer, request, envelope, err)
+}
+
+func (server *server) mcpServer(writer http.ResponseWriter, request *http.Request) {
+	if !server.connectAvailable(writer, request) {
+		return
+	}
+	envelope, err := server.config.Connect.MCPServer(request.Context(), request.PathValue("resourceId"))
+	server.writeConnectResult(writer, request, envelope, err)
+}
+
+func (server *server) trafficRoutes(writer http.ResponseWriter, request *http.Request) {
+	query, ok := server.resourceQuery(writer, request)
+	if !ok || !server.connectAvailable(writer, request) {
+		return
+	}
+	envelope, err := server.config.Connect.Routes(request.Context(), query.search, query.cursor, query.limit)
+	server.writeConnectResult(writer, request, envelope, err)
+}
+
+func (server *server) route(writer http.ResponseWriter, request *http.Request) {
+	if !server.connectAvailable(writer, request) {
+		return
+	}
+	envelope, err := server.config.Connect.Route(request.Context(), request.PathValue("resourceId"))
+	server.writeConnectResult(writer, request, envelope, err)
+}
+
+type listQuery struct {
+	search string
+	cursor string
+	limit  int
+}
+
+func (server *server) resourceQuery(writer http.ResponseWriter, request *http.Request) (listQuery, bool) {
+	query := listQuery{search: strings.TrimSpace(request.URL.Query().Get("q")), cursor: request.URL.Query().Get("cursor"), limit: 25}
+	if len(query.search) > 200 || len(query.cursor) > 256 {
+		server.writeError(writer, request, http.StatusBadRequest, "INVALID_REQUEST", "resource query is too long", nil, false)
+		return listQuery{}, false
+	}
+	if rawLimit := request.URL.Query().Get("limit"); rawLimit != "" {
+		limit, err := strconv.Atoi(rawLimit)
+		if err != nil || limit < 1 || limit > 100 {
+			server.writeError(writer, request, http.StatusBadRequest, "INVALID_REQUEST", "limit must be between 1 and 100", nil, false)
+			return listQuery{}, false
+		}
+		query.limit = limit
+	}
+	return query, true
+}
+
+func (server *server) connectAvailable(writer http.ResponseWriter, request *http.Request) bool {
+	if server.config.Connect != nil {
+		return true
+	}
+	server.writeError(writer, request, http.StatusServiceUnavailable, "CONNECT_UNAVAILABLE", "agentgateway integration is unavailable", source(model.SourceAgentGateway), true)
+	return false
+}
+
+func (server *server) writeConnectResult(writer http.ResponseWriter, request *http.Request, envelope any, err error) {
+	if err == nil {
+		server.writeJSON(writer, http.StatusOK, envelope)
+		return
+	}
+	if errors.Is(err, connect.ErrInvalidCursor) {
+		server.writeError(writer, request, http.StatusBadRequest, "INVALID_CURSOR", "pagination cursor is invalid", source(model.SourceAgentGateway), false)
+		return
+	}
+	if errors.Is(err, connect.ErrNotFound) {
+		server.writeError(writer, request, http.StatusNotFound, "NOT_FOUND", "agentgateway resource was not found", source(model.SourceAgentGateway), false)
+		return
+	}
+	var contractError *gateway.ContractError
+	if errors.As(err, &contractError) {
+		server.writeError(writer, request, http.StatusBadGateway, "UPSTREAM_CONTRACT_MISMATCH", contractError.Error(), source(model.SourceAgentGateway), false)
+		return
+	}
+	var upstreamError *upstream.Error
+	if errors.As(err, &upstreamError) {
+		server.writeError(writer, request, http.StatusServiceUnavailable, "UPSTREAM_UNAVAILABLE", "agentgateway management API is unavailable", source(model.SourceAgentGateway), upstreamError.Retryable)
+		return
+	}
+	server.writeError(writer, request, http.StatusInternalServerError, "INTERNAL_ERROR", "the request could not be completed", source(model.SourceAgentGateway), true)
+}
+
+func source(value model.Source) *model.Source { return &value }
 
 func (server *server) eventStream(writer http.ResponseWriter, request *http.Request) {
 	flusher, ok := writer.(http.Flusher)

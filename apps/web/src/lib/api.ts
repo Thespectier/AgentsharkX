@@ -1,11 +1,18 @@
 import type { ApiFailure, Envelope, Scenario } from "../types";
 import {
   implementedOperations,
+  type ImplementedOperationId,
   type OperationBodies,
   type OperationResponse,
 } from "../generated/api-client";
 
-type ReadOperation = "getCapabilities" | "getOverview" | "getSystemHealth";
+type ReadOperation = Exclude<ImplementedOperationId, "createAdminSession">;
+
+interface OperationOptions {
+  signal?: AbortSignal;
+  path?: Record<string, string>;
+  query?: Record<string, string | number | undefined>;
+}
 
 let csrfToken: string | undefined;
 
@@ -47,9 +54,21 @@ export async function requestEnvelope<T>(path: string, signal?: AbortSignal): Pr
 
 export async function requestOperation<K extends ReadOperation>(
   operation: K,
-  signal?: AbortSignal,
+  options?: AbortSignal | OperationOptions,
 ): Promise<OperationResponse<K>> {
-  return requestJSON<OperationResponse<K>>(implementedOperations[operation].path, { signal });
+  const normalized = options instanceof AbortSignal ? { signal: options } : (options ?? {});
+  let path: string = implementedOperations[operation].path;
+  for (const [name, value] of Object.entries(normalized.path ?? {})) {
+    path = path.replace(`{${name}}`, encodeURIComponent(value));
+  }
+  if (path.includes("{")) throw new Error(`Missing path parameter for ${operation}`);
+  const url = new URL(path, window.location.origin);
+  for (const [name, value] of Object.entries(normalized.query ?? {})) {
+    if (value !== undefined && value !== "") url.searchParams.set(name, String(value));
+  }
+  return requestJSON<OperationResponse<K>>(`${url.pathname}${url.search}`, {
+    signal: normalized.signal,
+  });
 }
 
 export async function createAdminSession(

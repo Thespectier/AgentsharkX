@@ -99,3 +99,26 @@ func TestLoadRejectsPlaceholderAndURLCredentials(t *testing.T) {
 		t.Fatalf("validation error leaked configuration values: %s", message)
 	}
 }
+
+func TestLoadRejectsUnsafeConsoleURL(t *testing.T) {
+	t.Parallel()
+
+	values := map[string]string{
+		"AGENTSHARK_LISTEN_ADDR":     "127.0.0.1:8080",
+		"AGENTSHARK_ENVIRONMENT":     "local",
+		"AGENTSHARK_ADMIN_TOKEN":     "admin-token-with-enough-entropy",
+		"AGENTGATEWAY_BASE_URL":      "http://gateway.test:15000",
+		"AGENTGATEWAY_CONSOLE_URL":   "https://user:secret@gateway.test/ui",
+		"AGENTGUARD_BASE_URL":        "http://guard.test:38080",
+		"AGENTGUARD_ADMIN_TOKEN":     "guard-secret-with-enough-entropy",
+		"AGENTSHARK_REDACT_PAYLOADS": "true",
+	}
+
+	_, err := Load(func(key string) (string, bool) {
+		value, ok := values[key]
+		return value, ok
+	})
+	if err == nil || !strings.Contains(err.Error(), "AGENTGATEWAY_CONSOLE_URL") || strings.Contains(err.Error(), "user:secret") {
+		t.Fatalf("expected secret-safe console URL rejection, got %v", err)
+	}
+}

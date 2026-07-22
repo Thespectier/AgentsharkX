@@ -16,6 +16,33 @@ test("all five primary pages render from labelled mock data", async ({ page }) =
   }
 });
 
+test("Connect filters explicit resources, opens details, and reruns setup verification", async ({
+  page,
+}) => {
+  await page.goto("/connect/overview");
+  await expect(page.getByText("Request-log analytics storage is not configured")).toBeVisible();
+  await expect(page.getByRole("link", { name: "Raw Config" })).toHaveAttribute(
+    "href",
+    "http://localhost:15000/ui/raw-config",
+  );
+
+  await page.goto("/connect/llm");
+  const modelFilter = page.getByPlaceholder("Filter explicit resources").nth(1);
+  await modelFilter.fill("fast");
+  const modelRow = page.getByRole("row", { name: /fast/ });
+  await expect(modelRow).toBeVisible();
+  await modelRow.click();
+  const drawer = page.getByRole("dialog");
+  await expect(drawer.getByRole("heading", { level: 2 })).toHaveText("fast");
+  await expect(drawer).toContainText("/mock/fast");
+  await page.keyboard.press("Escape");
+
+  await page.goto("/connect/setup");
+  await expect(page.getByText("Connection verified")).toBeVisible();
+  await page.getByRole("button", { name: "Run check" }).click();
+  await expect(page.getByText("Connection verified")).toBeVisible();
+});
+
 test("empty, loading, partial, and total failure states are explicit", async ({ page }) => {
   await page.goto("/?scenario=empty");
   await expect(

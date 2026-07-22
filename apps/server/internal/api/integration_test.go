@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/Thespectier/AgentsharkX/apps/server/internal/aggregate"
+	"github.com/Thespectier/AgentsharkX/apps/server/internal/connect"
 	"github.com/Thespectier/AgentsharkX/apps/server/internal/gateway"
 	"github.com/Thespectier/AgentsharkX/apps/server/internal/guard"
 	"github.com/Thespectier/AgentsharkX/apps/server/internal/model"
@@ -122,5 +123,64 @@ func TestStreamStartsWithNormalizedHealthEvents(t *testing.T) {
 	joined := strings.Join(lines, "\n")
 	if !strings.Contains(joined, "event: health") || !strings.Contains(joined, `"source":"agentgateway"`) {
 		t.Fatalf("unexpected initial SSE event: %s", joined)
+	}
+}
+
+func TestConnectResourcesFlowThroughBFFWithFilteringAndDetails(t *testing.T) {
+	t.Parallel()
+
+	gatewayServer := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		writer.Header().Set("Content-Type", "application/json")
+		switch request.URL.Path {
+		case "/api/config":
+			_, _ = writer.Write([]byte(`{"llm":{"providers":[{"name":"shared","provider":"openai"}],"models":[{"name":"fast","provider":{"reference":"shared"}}]},"binds":[]}`))
+		case "/api/runtime":
+			_, _ = writer.Write([]byte(`{"build":{"version":"1.3.1"}}`))
+		case "/api/logs/analytics/summary":
+			_, _ = writer.Write([]byte(`{"bucketSeconds":300,"buckets":[]}`))
+		default:
+			http.NotFound(writer, request)
+		}
+	}))
+	defer gatewayServer.Close()
+	gatewayClient, err := gateway.New(gatewayServer.URL, gatewayServer.Client(), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler := New(ServerConfig{
+		Connect: connect.New(gatewayClient, "http://localhost:15000/ui"), Logger: slog.New(slog.DiscardHandler), AuthEnabled: false,
+	})
+	server := httptest.NewServer(handler)
+	defer server.Close()
+
+	response, err := server.Client().Get(server.URL + "/api/v1/connect/llm/models?q=fast&limit=1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var page model.ResourcePageEnvelope[model.GatewayModel]
+	if err := json.NewDecoder(response.Body).Decode(&page); err != nil {
+		t.Fatal(err)
+	}
+	_ = response.Body.Close()
+	if response.StatusCode != http.StatusOK || page.Data.Total != 1 || page.Data.Items[0].Provider != "reference:shared" {
+		t.Fatalf("unexpected model page: status=%d page=%#v", response.StatusCode, page)
+	}
+
+	detailResponse, err := server.Client().Get(server.URL + "/api/v1/connect/llm/models/" + page.Data.Items[0].ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer detailResponse.Body.Close()
+	if detailResponse.StatusCode != http.StatusOK {
+		t.Fatalf("detail status = %d", detailResponse.StatusCode)
+	}
+
+	invalid, err := server.Client().Get(server.URL + "/api/v1/connect/llm/models?cursor=invalid")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer invalid.Body.Close()
+	if invalid.StatusCode != http.StatusBadRequest {
+		t.Fatalf("invalid cursor status = %d", invalid.StatusCode)
 	}
 }

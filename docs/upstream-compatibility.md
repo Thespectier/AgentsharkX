@@ -1,13 +1,13 @@
 # Upstream compatibility
 
-Last verified: 2026-07-21.
+Last verified: 2026-07-22.
 
-Phase 2 still prevents direct browser contact with either upstream. Separate Go
-clients now probe the verified read-only routes with independent timeouts,
-bounded retries, and source-scoped errors. AgentGuard requests use the verified
-`X-Api-Key` header. The pinned agentgateway admin token setting is not
-transmitted because the selected upstream exposes no verified native admin-auth
-header. Fixture values remain review data, not new runtime evidence.
+Phase 3 still prevents direct browser contact with either upstream. The
+agentgateway client now reads explicit resources from `/api/config` and invokes
+the verified read-only analytics POST with independent timeout, bounded retry,
+and source-scoped errors. AgentGuard requests use the verified `X-Api-Key`
+header. The pinned agentgateway admin token setting is not transmitted because
+the selected upstream exposes no verified native admin-auth header.
 
 ## Pinned baseline
 
@@ -52,6 +52,14 @@ config dump, logs, analytics, costs, and UI routes. It does not expose dedicated
 Provider, Model, MCP Server, Listener, Route, Policy, or Guardrail read APIs.
 Adapters must use explicit fields from config/config-dump and treat missing
 sections as unavailable. Advanced workflows remain in the native console.
+
+For Phase 3, the populated config shape and UI routes were also checked against
+the exact pinned source revision. The sanitized
+`config-populated.response.json` freezes providers, direct and virtual models,
+top-level MCP targets, HTTP routes, and TCP routes while excluding `params`,
+policies, API keys, and other sensitive fixture values. Contract tests fail
+with a field-scoped error when required names, provider shapes, routing
+strategies, or MCP transport shapes change.
 
 ### AgentGuard v2.1
 

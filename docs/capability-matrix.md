@@ -1,13 +1,13 @@
 # Capability matrix
 
-Verified against agentgateway `v1.3.1` and AgentGuard `v2.1` on 2026-07-21.
+Verified against agentgateway `v1.3.1` and AgentGuard `v2.1` on 2026-07-22.
 
-Phase 2 adds live BFF probes for agentgateway runtime, configuration and cost
-catalog routes, plus protected AgentGuard health, sessions, resources, rules,
-traffic, audit, approvals, and auditor routes. Every probe becomes a separate
-registry entry; one failed route or source does not suppress the others. The
-remaining business-data adapters stay scheduled for Phases 3–6. Mock fixtures
-remain UI evidence only and do not upgrade an upstream capability status.
+Phase 3 adds the read-only Connect adapter above the Phase 2 probes. It parses
+only verified `/api/config` fields, uses a bounded analytics summary request,
+and exposes paginated source-preserving resources. Protected AgentGuard routes
+remain independently probed; their business-data adapters stay scheduled for
+Phases 4–6. Mock fixtures remain UI evidence only and do not upgrade an
+upstream capability status.
 
 ## Status vocabulary
 
@@ -29,22 +29,23 @@ generated OpenAPI but a mutating request was intentionally not executed.
 | Readiness | agentgateway | supported | runtime `GET :15021/healthz/ready` | Treat only HTTP 200 plus `ready` as healthy. |
 | Version/build | agentgateway | supported | runtime `GET /api/runtime` | Preserve version and Git revision; do not infer API presence from version. |
 | Capability/config discovery | agentgateway | supported | runtime `GET /api/config`, `GET /config_dump` | Probe route availability and required fields independently. |
-| Providers and models | agentgateway | partial | runtime config/config-dump; no dedicated read API | Normalize explicit `llm` config only; unavailable when absent. |
-| MCP servers | agentgateway | partial | runtime config/config-dump; no dedicated read API | Normalize explicit MCP targets only and preserve transport. |
-| Listeners, gateways, routes, backends | agentgateway | partial | runtime `/config_dump` | Read-only snapshot; advanced edits link out. |
+| Providers and models | agentgateway | partial | Phase 3 adapter over runtime `/api/config`; no dedicated read API | Normalize explicit `llm` config only; preserve direct/virtual kind, source, fetched time, and raw reference. |
+| MCP servers | agentgateway | partial | Phase 3 adapter over runtime `/api/config`; no dedicated read API | Normalize top-level and inline explicit MCP targets only and preserve transport and scope. |
+| Listeners, routes, backends | agentgateway | partial | Phase 3 adapter over runtime `/api/config` | Apply only verified HTTP defaults; provide filter, cursor pagination, and detail without claiming backend health. |
 | Cost catalog | agentgateway | supported | runtime `GET /api/costs/models` | `loaded:false` is an empty state, not fabricated providers. |
 | Request logs | agentgateway | partial | runtime `POST /api/logs/search`; 500 without request-log DB | Capability probe must surface `request log database is not configured`. |
-| Analytics | agentgateway | partial | runtime `POST /api/logs/analytics/summary`; same DB dependency | Disable charts with a source-scoped setup message. |
+| Analytics | agentgateway | partial | Phase 3 bounded `POST /api/logs/analytics/summary` with `bucketCount=12`; same DB dependency | Sum non-overlapping returned buckets; return explicit `unavailable` and null metrics when storage is missing. |
 | Metrics | agentgateway | supported | runtime `GET :15020/metrics` | Metrics are diagnostics, not a substitute for request-log records. |
-| Raw config editor | agentgateway | link-out | upstream `/ui` | Do not reproduce the editor in Phase 3. |
-| CEL editor/evaluator | agentgateway | link-out | upstream `/ui`, `/api/cel` | BFF may create a contextual deep link only. |
-| Playground | agentgateway | link-out | upstream `/ui` | Never send provider keys through AgentsharkX frontend. |
+| Raw config editor | agentgateway | link-out | pinned UI `/raw-config` below its configured base path | Do not reproduce the editor in Phase 3. |
+| CEL editor/evaluator | agentgateway | link-out | pinned UI `/cel`; evaluation API remains upstream-owned | BFF creates a validated deep link only. |
+| Playground | agentgateway | link-out | pinned UI `/llm/playground`, `/mcp/playground` | Never send provider keys through AgentsharkX frontend. |
 | Admin API authentication | agentgateway | unavailable | pinned admin routes have no native auth middleware | Keep the admin listener private; BFF supplies browser authentication isolation. |
 
-The Phase 2 live registry uses `gateway.runtime`, `gateway.configuration`,
+The live registry uses `gateway.runtime`, `gateway.configuration`,
 `gateway.cost-catalog`, `gateway.request-logs`, and `gateway.admin-auth` IDs.
 `gateway.request-logs` remains `partial` from the verified database dependency;
-Phase 2 deliberately does not issue a guessed log-search request body.
+Phase 3 still does not issue a log-search request; only the separately verified
+analytics summary body is sent.
 
 ## Trust and AgentGuard resources
 

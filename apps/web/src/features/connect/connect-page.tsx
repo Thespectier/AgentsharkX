@@ -1,14 +1,15 @@
 import { useQuery } from "@tanstack/react-query";
 import {
-  ArrowRight,
+  Activity,
   Cable,
   CheckCircle2,
-  Copy,
   Network,
+  RefreshCw,
   Route,
   ServerCog,
   Waypoints,
 } from "lucide-react";
+import { useRef, useState } from "react";
 
 import { currentSection, PageFrame, WorkspaceTabs } from "../../components/workspace";
 import {
@@ -16,6 +17,8 @@ import {
   Card,
   CardHeader,
   DataTable,
+  DefinitionList,
+  DetailDrawer,
   EmptyState,
   ErrorState,
   ExternalButton,
@@ -27,9 +30,15 @@ import {
   StatusOrb,
   type Column,
 } from "../../components/ui";
-import { formatCount } from "../../lib/format";
-import { formatError, getScenario, requestEnvelope } from "../../lib/api";
-import type { ConnectData, GatewayRoute, McpServer, Model, Provider } from "../../types";
+import type {
+  ConnectSummary,
+  GatewayMCPServer,
+  GatewayModel,
+  GatewayProvider,
+  GatewayRoute,
+} from "../../generated/api-client";
+import { formatCount, formatTime } from "../../lib/format";
+import { formatError, getScenario, requestOperation } from "../../lib/api";
 
 const tabs = [
   { id: "overview", label: "Overview" },
@@ -39,47 +48,24 @@ const tabs = [
   { id: "setup", label: "Setup" },
 ];
 
-const routeColumns: Column<GatewayRoute>[] = [
-  {
-    key: "route",
-    header: "Route",
-    render: (item) => (
-      <div className="primary-cell">
-        <Route size={15} />
-        <span>
-          <strong>{item.id}</strong>
-          <small>{item.hostname}</small>
-        </span>
-      </div>
-    ),
-  },
-  { key: "protocol", header: "Protocol", render: (item) => <StatusBadge status={item.protocol} /> },
-  { key: "listener", header: "Listener", render: (item) => <code>{item.listener}</code> },
-  { key: "target", header: "Backend", render: (item) => item.target },
-  { key: "requests", header: "Requests", render: (item) => formatCount(item.requests) },
-  {
-    key: "status",
-    header: "Status",
-    render: (item) => (
-      <span className="status-cell">
-        <StatusOrb status={item.status} />
-        {item.status}
-      </span>
-    ),
-  },
-  { key: "source", header: "Source", render: (item) => <SourceBadge source={item.source} /> },
-];
+type Selection =
+  | { kind: "provider"; id: string }
+  | { kind: "model"; id: string }
+  | { kind: "mcp"; id: string }
+  | { kind: "route"; id: string };
 
 export function ConnectPage() {
   const section = currentSection("connect", "overview");
   const scenario = getScenario();
-  const query = useQuery({
-    queryKey: ["connect", scenario],
-    queryFn: ({ signal }) => requestEnvelope<ConnectData>("/api/v1/connect/summary", signal),
+  const [selection, setSelection] = useState<Selection>();
+  const triggerRef = useRef<HTMLElement | null>(null);
+  const summary = useQuery({
+    queryKey: ["connect-summary", scenario],
+    queryFn: ({ signal }) => requestOperation("getConnectSummary", signal),
     retry: false,
   });
-  if (query.isLoading) return <PageSkeleton label="Loading gateway resources" />;
-  if (query.isError || !query.data)
+  if (summary.isLoading) return <PageSkeleton label="Loading gateway resources" />;
+  if (summary.isError || !summary.data)
     return (
       <PageFrame>
         <PageHeader
@@ -87,14 +73,25 @@ export function ConnectPage() {
           eyebrow="Connect / agentgateway"
           title="Gateway data unavailable"
         />
-        <ErrorState description={formatError(query.error)} onRetry={() => void query.refetch()} />
+        <ErrorState
+          description={formatError(summary.error)}
+          onRetry={() => void summary.refetch()}
+        />
       </PageFrame>
     );
-  const { data, meta } = query.data;
+  const { data, meta } = summary.data;
+  const open = (next: Selection, trigger: HTMLTableRowElement) => {
+    triggerRef.current = trigger;
+    setSelection(next);
+  };
   return (
     <PageFrame>
       <PageHeader
-        actions={<ExternalButton href={data.consoleUrl}>Open in agentgateway</ExternalButton>}
+        actions={
+          data.links.console ? (
+            <ExternalButton href={data.links.console}>Open in agentgateway</ExternalButton>
+          ) : undefined
+        }
         description="Verified agentgateway configuration and traffic surfaces. Advanced editing stays in the native console."
         eyebrow="Connect / agentgateway"
         title="Connect agents to every destination"
@@ -102,155 +99,230 @@ export function ConnectPage() {
         <WorkspaceTabs area="connect" items={tabs} />
       </PageHeader>
       <PartialBanner meta={meta} />
-      {section === "overview" ? <ConnectOverview data={data} /> : null}
-      {section === "llm" ? <LlmView data={data} /> : null}
-      {section === "mcp" ? <McpView data={data} /> : null}
-      {section === "traffic" ? <TrafficView data={data} /> : null}
+      {section === "overview" ? (
+        <ConnectOverview summary={data} fetchedAt={meta.fetchedAt} />
+      ) : null}
+      {section === "llm" ? <LlmView onOpen={open} /> : null}
+      {section === "mcp" ? <McpView onOpen={open} /> : null}
+      {section === "traffic" ? <TrafficView onOpen={open} /> : null}
       {section === "setup" ? <SetupView /> : null}
+      <ResourceDetail
+        selection={selection}
+        onClose={() => setSelection(undefined)}
+        returnFocusRef={triggerRef}
+      />
     </PageFrame>
   );
 }
 
-function ConnectOverview({ data }: { data: ConnectData }) {
-  const icons = [Cable, Waypoints, Route, ServerCog];
+function ConnectOverview({ summary, fetchedAt }: { summary: ConnectSummary; fetchedAt: string }) {
+  const icons = [Cable, Route, Network, Waypoints];
+  const analytics = summary.analytics;
   return (
     <>
       <div className="summary-grid">
-        {data.summary.map((item, index) => {
-          const Icon = icons[index];
+        {summary.counts.map((item, index) => {
+          const Icon = icons[index] ?? Cable;
           return (
-            <Card className="summary-card" key={item.label}>
+            <Card className="summary-card" key={item.id}>
               <span className="summary-card__icon">
                 <Icon size={18} />
               </span>
               <div>
                 <p>{item.label}</p>
-                <strong>{item.value}</strong>
+                <strong>{item.value === null ? "Unavailable" : formatCount(item.value)}</strong>
                 <span>
-                  <CheckCircle2 size={12} /> {item.healthy} healthy
+                  <CheckCircle2 size={12} /> {item.status}
                 </span>
               </div>
             </Card>
           );
         })}
       </div>
-      {data.routes.length ? (
+      <div className="content-grid">
         <Card>
           <CardHeader
-            action={<span className="fetched-at">Fetched 12:42:10 UTC</span>}
-            description="Read-only normalized config dump; source and upstream IDs are preserved."
-            title="Active traffic routes"
+            action={<span className="fetched-at">Fetched {formatTime(fetchedAt)} UTC</span>}
+            description="Runtime and configuration were checked independently by the BFF."
+            title="Connection status"
           />
-          <DataTable columns={routeColumns} data={data.routes} label="Active gateway routes" />
+          <div className="connection-check">
+            <StatusOrb status={summary.health.status} />
+            <div>
+              <strong>{summary.health.status}</strong>
+              <span>
+                {summary.health.version ?? "Version unavailable"} ·{" "}
+                {summary.health.latencyMs ?? "—"} ms
+              </span>
+            </div>
+          </div>
         </Card>
-      ) : (
-        <EmptyState
-          description="Connect an agentgateway config source to reveal listeners, gateways, routes, and backends."
-          title="No gateway resources configured"
-        />
-      )}
+        <Card>
+          <CardHeader
+            action={<StatusBadge status={analytics.status} />}
+            description="Derived only from the verified request-log analytics contract."
+            title="Analytics summary"
+          />
+          {analytics.status === "available" ? (
+            <DefinitionList
+              items={[
+                { label: "Requests", value: formatNullable(analytics.requests) },
+                { label: "Total tokens", value: formatNullable(analytics.totalTokens) },
+                {
+                  label: "Estimated cost",
+                  value: analytics.cost === null ? "Not provided" : `$${analytics.cost.toFixed(4)}`,
+                },
+                { label: "Buckets", value: analytics.buckets.length },
+              ]}
+            />
+          ) : (
+            <p className="resource-note">{analytics.reason ?? "Analytics is unavailable."}</p>
+          )}
+        </Card>
+      </div>
+      <NativeLinks links={summary.links} />
     </>
   );
 }
 
-function LlmView({ data }: { data: ConnectData }) {
-  const providerColumns: Column<Provider>[] = [
-    {
-      key: "name",
-      header: "Provider",
-      render: (item) => (
-        <div className="primary-cell">
-          <ServerCog size={15} />
-          <span>
-            <strong>{item.name}</strong>
-            <small>{item.kind}</small>
-          </span>
-        </div>
-      ),
-    },
-    { key: "models", header: "Models", render: (item) => item.models },
-    { key: "requests", header: "Requests", render: (item) => formatCount(item.requests) },
-    { key: "cost", header: "Est. cost", render: (item) => `$${item.cost.toFixed(2)}` },
-    {
-      key: "status",
-      header: "Status",
-      render: (item) => (
-        <span className="status-cell">
-          <StatusOrb status={item.status} />
-          {item.status}
-        </span>
-      ),
-    },
-    { key: "source", header: "Source", render: (item) => <SourceBadge source={item.source} /> },
-  ];
-  const modelColumns: Column<Model>[] = [
-    {
-      key: "model",
-      header: "Model",
-      render: (item) => (
-        <div className="primary-cell">
-          <Network size={15} />
-          <span>
-            <strong>{item.name}</strong>
-            <small>{item.provider}</small>
-          </span>
-        </div>
-      ),
-    },
-    { key: "input", header: "Input tokens", render: (item) => formatCount(item.inputTokens) },
-    { key: "output", header: "Output tokens", render: (item) => formatCount(item.outputTokens) },
-    { key: "latency", header: "P95 latency", render: (item) => `${item.p95LatencyMs} ms` },
-    {
-      key: "status",
-      header: "Status",
-      render: (item) => (
-        <span className="status-cell">
-          <StatusOrb status={item.status} />
-          {item.status}
-        </span>
-      ),
-    },
-  ];
-  if (!data.providers.length)
-    return (
-      <EmptyState
-        description="The pinned config contains no explicit LLM providers or models. AgentsharkX will not invent catalog entries."
-        title="No LLM providers found"
-      />
-    );
+function LlmView({
+  onOpen,
+}: {
+  onOpen: (selection: Selection, trigger: HTMLTableRowElement) => void;
+}) {
   return (
     <div className="stack">
-      <Card>
-        <CardHeader
-          description="Providers explicitly present in agentgateway configuration."
-          title="Providers"
-        />
-        <DataTable columns={providerColumns} data={data.providers} label="LLM providers" />
-      </Card>
-      <Card>
-        <CardHeader
-          description="Usage values come from the mock request-log contract."
-          title="Models"
-        />
-        <DataTable columns={modelColumns} data={data.models} label="LLM models" />
-      </Card>
+      <ProviderTable onOpen={onOpen} />
+      <ModelTable onOpen={onOpen} />
     </div>
   );
 }
 
-function McpView({ data }: { data: ConnectData }) {
-  const columns: Column<McpServer>[] = [
+function ProviderTable({
+  onOpen,
+}: {
+  onOpen: (selection: Selection, trigger: HTMLTableRowElement) => void;
+}) {
+  const pager = usePager();
+  const query = useQuery({
+    queryKey: ["connect-providers", pager.search, pager.cursor, getScenario()],
+    queryFn: ({ signal }) =>
+      requestOperation("listProviders", {
+        signal,
+        query: { q: pager.search, cursor: pager.cursor, limit: 10 },
+      }),
+    retry: false,
+  });
+  const columns: Column<GatewayProvider>[] = [
+    {
+      key: "name",
+      header: "Provider",
+      render: (item) => (
+        <Primary
+          icon={ServerCog}
+          title={item.name}
+          subtitle={item.upstreamId ?? "No upstream ID"}
+        />
+      ),
+    },
+    { key: "kind", header: "Kind", render: (item) => <StatusBadge status={item.kind} /> },
+    { key: "models", header: "Explicit references", render: (item) => item.modelCount },
+    { key: "source", header: "Source", render: (item) => <SourceBadge source={item.source} /> },
+    { key: "fetched", header: "Fetched", render: (item) => `${formatTime(item.fetchedAt)} UTC` },
+  ];
+  return (
+    <ResourceCard
+      title="Providers"
+      description="Providers explicitly present in agentgateway configuration."
+      query={query}
+      pager={pager}
+      render={(page) => (
+        <DataTable
+          columns={columns}
+          data={page.items}
+          label="LLM providers"
+          onRowClick={(item, trigger) => onOpen({ kind: "provider", id: item.id }, trigger)}
+        />
+      )}
+    />
+  );
+}
+
+function ModelTable({
+  onOpen,
+}: {
+  onOpen: (selection: Selection, trigger: HTMLTableRowElement) => void;
+}) {
+  const pager = usePager();
+  const query = useQuery({
+    queryKey: ["connect-models", pager.search, pager.cursor, getScenario()],
+    queryFn: ({ signal }) =>
+      requestOperation("listModels", {
+        signal,
+        query: { q: pager.search, cursor: pager.cursor, limit: 10 },
+      }),
+    retry: false,
+  });
+  const columns: Column<GatewayModel>[] = [
+    {
+      key: "name",
+      header: "Model",
+      render: (item) => (
+        <Primary icon={Network} title={item.name} subtitle={item.upstreamId ?? "No upstream ID"} />
+      ),
+    },
+    { key: "kind", header: "Kind", render: (item) => <StatusBadge status={item.kind} /> },
+    {
+      key: "provider",
+      header: "Provider / routing",
+      render: (item) => <code>{item.provider ?? item.routing ?? "Not provided"}</code>,
+    },
+    { key: "source", header: "Source", render: (item) => <SourceBadge source={item.source} /> },
+    { key: "fetched", header: "Fetched", render: (item) => `${formatTime(item.fetchedAt)} UTC` },
+  ];
+  return (
+    <ResourceCard
+      title="Models"
+      description="Direct and virtual models remain explicitly distinguished."
+      query={query}
+      pager={pager}
+      render={(page) => (
+        <DataTable
+          columns={columns}
+          data={page.items}
+          label="LLM models"
+          onRowClick={(item, trigger) => onOpen({ kind: "model", id: item.id }, trigger)}
+        />
+      )}
+    />
+  );
+}
+
+function McpView({
+  onOpen,
+}: {
+  onOpen: (selection: Selection, trigger: HTMLTableRowElement) => void;
+}) {
+  const pager = usePager();
+  const query = useQuery({
+    queryKey: ["connect-mcp", pager.search, pager.cursor, getScenario()],
+    queryFn: ({ signal }) =>
+      requestOperation("listGatewayMcpServers", {
+        signal,
+        query: { q: pager.search, cursor: pager.cursor, limit: 10 },
+      }),
+    retry: false,
+  });
+  const columns: Column<GatewayMCPServer>[] = [
     {
       key: "name",
       header: "MCP server",
       render: (item) => (
-        <div className="primary-cell">
-          <Waypoints size={15} />
-          <span>
-            <strong>{item.name}</strong>
-            <small>{item.id}</small>
-          </span>
-        </div>
+        <Primary
+          icon={Waypoints}
+          title={item.name}
+          subtitle={item.upstreamId ?? "No upstream ID"}
+        />
       ),
     },
     {
@@ -258,93 +330,400 @@ function McpView({ data }: { data: ConnectData }) {
       header: "Transport",
       render: (item) => <StatusBadge status={item.transport} />,
     },
-    { key: "tools", header: "Federated tools", render: (item) => item.tools },
-    { key: "policy", header: "Policy", render: (item) => <code>{item.policy}</code> },
-    {
-      key: "status",
-      header: "Status",
-      render: (item) => (
-        <span className="status-cell">
-          <StatusOrb status={item.status} />
-          {item.status}
-        </span>
-      ),
-    },
+    { key: "scope", header: "Scope", render: (item) => <code>{item.scope}</code> },
     { key: "source", header: "Source", render: (item) => <SourceBadge source={item.source} /> },
+    { key: "fetched", header: "Fetched", render: (item) => `${formatTime(item.fetchedAt)} UTC` },
   ];
-  return data.mcpServers.length ? (
-    <Card>
-      <CardHeader
-        description="Gateway MCP targets remain distinct from AgentGuard MCP resources."
-        title="MCP federation"
-      />
-      <DataTable columns={columns} data={data.mcpServers} label="Gateway MCP servers" />
-    </Card>
-  ) : (
-    <EmptyState
-      description="No MCP targets are explicitly present in the pinned agentgateway configuration."
-      title="No MCP servers found"
+  return (
+    <ResourceCard
+      title="MCP federation"
+      description="Gateway MCP targets remain distinct from AgentGuard resources."
+      query={query}
+      pager={pager}
+      render={(page) => (
+        <DataTable
+          columns={columns}
+          data={page.items}
+          label="Gateway MCP servers"
+          onRowClick={(item, trigger) => onOpen({ kind: "mcp", id: item.id }, trigger)}
+        />
+      )}
     />
   );
 }
 
-function TrafficView({ data }: { data: ConnectData }) {
-  return data.routes.length ? (
-    <Card>
-      <CardHeader
-        description="HTTP, gRPC, and A2A routes from the verified gateway config surface."
-        title="Listeners & routes"
-      />
-      <DataTable columns={routeColumns} data={data.routes} label="Traffic routes" />
-    </Card>
-  ) : (
-    <EmptyState
-      description="Create routes in agentgateway, then refresh this read-only view."
-      title="No traffic routes found"
+function TrafficView({
+  onOpen,
+}: {
+  onOpen: (selection: Selection, trigger: HTMLTableRowElement) => void;
+}) {
+  const pager = usePager();
+  const query = useQuery({
+    queryKey: ["connect-routes", pager.search, pager.cursor, getScenario()],
+    queryFn: ({ signal }) =>
+      requestOperation("listTrafficRoutes", {
+        signal,
+        query: { q: pager.search, cursor: pager.cursor, limit: 10 },
+      }),
+    retry: false,
+  });
+  const columns: Column<GatewayRoute>[] = [
+    {
+      key: "name",
+      header: "Route",
+      render: (item) => (
+        <Primary
+          icon={Route}
+          title={item.name}
+          subtitle={item.hostnames.join(", ") || "No hostname"}
+        />
+      ),
+    },
+    {
+      key: "protocol",
+      header: "Protocol",
+      render: (item) => <StatusBadge status={item.protocol} />,
+    },
+    {
+      key: "listener",
+      header: "Listener",
+      render: (item) => (
+        <code>
+          {item.listener}:{item.port}
+        </code>
+      ),
+    },
+    { key: "target", header: "Backends", render: (item) => targetSummary(item) },
+    { key: "source", header: "Source", render: (item) => <SourceBadge source={item.source} /> },
+    { key: "fetched", header: "Fetched", render: (item) => `${formatTime(item.fetchedAt)} UTC` },
+  ];
+  return (
+    <ResourceCard
+      title="Listeners & routes"
+      description="HTTP and TCP routes from explicit configuration fields."
+      query={query}
+      pager={pager}
+      render={(page) => (
+        <DataTable
+          columns={columns}
+          data={page.items}
+          label="Traffic routes"
+          onRowClick={(item, trigger) => onOpen({ kind: "route", id: item.id }, trigger)}
+        />
+      )}
     />
   );
+}
+
+type Pager = ReturnType<typeof usePager>;
+
+function ResourceCard<T extends { id: string }>({
+  title,
+  description,
+  query,
+  pager,
+  render,
+}: {
+  title: string;
+  description: string;
+  query: {
+    isLoading: boolean;
+    isFetching: boolean;
+    isError: boolean;
+    error: unknown;
+    data?: { data: { items: T[]; nextCursor: string | null; total: number } };
+    refetch: () => unknown;
+  };
+  pager: Pager;
+  render: (page: { items: T[]; nextCursor: string | null; total: number }) => React.ReactNode;
+}) {
+  const page = query.data?.data;
+  return (
+    <Card>
+      <CardHeader description={description} title={title} />
+      <ResourceControls pager={pager} page={page} fetching={query.isFetching} />
+      {query.isLoading ? <div className="resource-note">Loading explicit resources…</div> : null}
+      {query.isError ? (
+        <ErrorState description={formatError(query.error)} onRetry={() => void query.refetch()} />
+      ) : null}
+      {page && page.items.length ? render(page) : null}
+      {page && !page.items.length ? (
+        <EmptyState
+          description="No explicit upstream resources match this query."
+          title={`No ${title.toLowerCase()} found`}
+        />
+      ) : null}
+    </Card>
+  );
+}
+
+function ResourceControls({
+  pager,
+  page,
+  fetching,
+}: {
+  pager: Pager;
+  page?: { nextCursor: string | null; total: number };
+  fetching: boolean;
+}) {
+  return (
+    <div className="resource-toolbar">
+      <label>
+        <span className="sr-only">Filter resources</span>
+        <input
+          placeholder="Filter explicit resources"
+          value={pager.search}
+          onChange={(event) => pager.setSearch(event.target.value)}
+        />
+      </label>
+      <span>{page ? `${page.total} total` : "—"}</span>
+      <Button
+        disabled={!pager.canPrevious || fetching}
+        onClick={pager.previous}
+        size="sm"
+        variant="ghost"
+      >
+        Previous
+      </Button>
+      <Button
+        disabled={!page?.nextCursor || fetching}
+        onClick={() => page?.nextCursor && pager.next(page.nextCursor)}
+        size="sm"
+        variant="ghost"
+      >
+        Next
+      </Button>
+    </div>
+  );
+}
+
+function usePager() {
+  const [search, updateSearch] = useState("");
+  const [cursor, setCursor] = useState("");
+  const [history, setHistory] = useState<string[]>([]);
+  return {
+    search,
+    cursor,
+    canPrevious: history.length > 0,
+    setSearch(value: string) {
+      updateSearch(value);
+      setCursor("");
+      setHistory([]);
+    },
+    next(value: string) {
+      setHistory((items) => [...items, cursor]);
+      setCursor(value);
+    },
+    previous() {
+      setHistory((items) => {
+        const next = [...items];
+        setCursor(next.pop() ?? "");
+        return next;
+      });
+    },
+  };
 }
 
 function SetupView() {
+  const query = useQuery({
+    queryKey: ["connect-setup", getScenario()],
+    queryFn: ({ signal }) => requestOperation("verifyGatewaySetup", signal),
+    retry: false,
+  });
+  if (query.isLoading) return <PageSkeleton label="Verifying agentgateway management access" />;
+  if (query.isError || !query.data)
+    return (
+      <ErrorState description={formatError(query.error)} onRetry={() => void query.refetch()} />
+    );
+  const setup = query.data.data;
   return (
     <div className="setup-grid">
       <Card elevated>
         <CardHeader
-          description="The BFF will read this URL server-side in Phase 2."
-          title="Management endpoint"
+          description="Live BFF checks against /api/runtime and /api/config."
+          title="Management verification"
         />
-        <label className="field">
-          <span>Base URL</span>
-          <div className="copy-field">
-            <code>http://agentgateway:15000</code>
-            <Button aria-label="Copy gateway base URL" size="sm" variant="ghost">
-              <Copy size={14} />
-            </Button>
-          </div>
-        </label>
         <div className="connection-check">
-          <StatusOrb status="healthy" />
+          <StatusOrb status={setup.status} />
           <div>
-            <strong>Connection verified</strong>
-            <span>Runtime v1.3.1 · 18 ms · standalone</span>
+            <strong>
+              {setup.configurationReadable ? "Connection verified" : "Configuration unreadable"}
+            </strong>
+            <span>
+              {setup.version ?? "Version unavailable"} · {setup.latencyMs ?? "—"} ms · checked{" "}
+              {formatTime(setup.checkedAt)} UTC
+            </span>
           </div>
         </div>
+        {setup.message ? <p className="resource-note">{setup.message}</p> : null}
+        <Button onClick={() => void query.refetch()} variant="secondary">
+          <RefreshCw size={14} /> Run check
+        </Button>
       </Card>
       <Card>
         <CardHeader
-          description="Run from the AgentsharkX host after the upstream starts."
-          title="Verification command"
+          description="Advanced editors stay in the pinned agentgateway console."
+          title="Native console tools"
         />
-        <pre className="code-block">
-          <code>curl -fsS http://127.0.0.1:15021/healthz/ready</code>
-        </pre>
-        <Button variant="secondary">
-          Run check <ArrowRight size={14} />
-        </Button>
-        <p className="form-hint">
-          Mock action in Phase 1. Real verification is implemented through the BFF in Phase 3.
-        </p>
+        <NativeLinks links={setup.links} compact />
       </Card>
     </div>
   );
+}
+
+function NativeLinks({
+  links,
+  compact = false,
+}: {
+  links: { rawConfig?: string; cel?: string; llmPlayground?: string; mcpPlayground?: string };
+  compact?: boolean;
+}) {
+  const values = [
+    ["Raw Config", links.rawConfig],
+    ["CEL Playground", links.cel],
+    ["LLM Playground", links.llmPlayground],
+    ["MCP Playground", links.mcpPlayground],
+  ] as const;
+  const available = values.flatMap(([label, href]) => (href ? [{ label, href }] : []));
+  if (!available.length)
+    return compact ? (
+      <p className="resource-note">No validated console URL is configured.</p>
+    ) : null;
+  return (
+    <Card className={compact ? "native-links native-links--compact" : "native-links"}>
+      {!compact ? (
+        <CardHeader
+          description="Use upstream-native tools for advanced editing and testing."
+          title="Open in agentgateway"
+        />
+      ) : null}
+      <div className="native-links__actions">
+        {available.map(({ label, href }) => (
+          <ExternalButton href={href} key={label}>
+            {label}
+          </ExternalButton>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
+function ResourceDetail({
+  selection,
+  onClose,
+  returnFocusRef,
+}: {
+  selection?: Selection;
+  onClose: () => void;
+  returnFocusRef: React.RefObject<HTMLElement | null>;
+}) {
+  const query = useQuery<{
+    data: GatewayProvider | GatewayModel | GatewayMCPServer | GatewayRoute;
+  }>({
+    queryKey: ["connect-detail", selection?.kind, selection?.id, getScenario()],
+    enabled: Boolean(selection),
+    retry: false,
+    queryFn: async ({ signal }) => {
+      if (!selection) throw new Error("No resource selected");
+      const options = { signal, path: { resourceId: selection.id } };
+      if (selection.kind === "provider") return await requestOperation("getProvider", options);
+      if (selection.kind === "model") return await requestOperation("getModel", options);
+      if (selection.kind === "mcp") return await requestOperation("getGatewayMcpServer", options);
+      return await requestOperation("getTrafficRoute", options);
+    },
+  });
+  const item = query.data?.data;
+  return (
+    <DetailDrawer
+      eyebrow="agentgateway resource"
+      onClose={onClose}
+      open={Boolean(selection)}
+      returnFocusRef={returnFocusRef}
+      title={item?.name ?? "Resource detail"}
+    >
+      {query.isLoading ? <div className="resource-note">Loading resource detail…</div> : null}
+      {query.isError ? (
+        <ErrorState description={formatError(query.error)} onRetry={() => void query.refetch()} />
+      ) : null}
+      {item && selection ? <DefinitionList items={detailItems(selection, item)} /> : null}
+    </DetailDrawer>
+  );
+}
+
+function detailItems(
+  selection: Selection,
+  item: GatewayProvider | GatewayModel | GatewayMCPServer | GatewayRoute,
+) {
+  const common = [
+    { label: "Source", value: <SourceBadge source={item.source} /> },
+    { label: "Upstream ID", value: <code>{item.upstreamId ?? "Not provided"}</code> },
+    { label: "Fetched", value: item.fetchedAt },
+    { label: "Raw reference", value: <code>{item.rawRef.id}</code> },
+  ];
+  if (selection.kind === "provider") {
+    const provider = item as GatewayProvider;
+    return [
+      { label: "Kind", value: provider.kind },
+      { label: "Explicit model references", value: provider.modelCount },
+      ...common,
+    ];
+  }
+  if (selection.kind === "model") {
+    const model = item as GatewayModel;
+    return [
+      { label: "Kind", value: model.kind },
+      { label: "Provider", value: model.provider ?? "Not provided" },
+      { label: "Routing", value: model.routing ?? "Not provided" },
+      { label: "Targets", value: model.targets?.join(", ") || model.targetModel || "Not provided" },
+      ...common,
+    ];
+  }
+  if (selection.kind === "mcp") {
+    const mcp = item as GatewayMCPServer;
+    return [
+      { label: "Transport", value: mcp.transport },
+      { label: "Scope", value: <code>{mcp.scope}</code> },
+      ...common,
+    ];
+  }
+  const route = item as GatewayRoute;
+  return [
+    { label: "Listener", value: `${route.listener}:${route.port}` },
+    { label: "Protocol", value: route.protocol },
+    { label: "Hostnames", value: route.hostnames.join(", ") || "Not provided" },
+    { label: "Path", value: route.path ?? "Not provided" },
+    { label: "Backends", value: targetSummary(route) },
+    ...common,
+  ];
+}
+
+function Primary({
+  icon: Icon,
+  title,
+  subtitle,
+}: {
+  icon: typeof Activity;
+  title: string;
+  subtitle: string;
+}) {
+  return (
+    <div className="primary-cell">
+      <Icon size={15} />
+      <span>
+        <strong>{title}</strong>
+        <small>{subtitle}</small>
+      </span>
+    </div>
+  );
+}
+
+function formatNullable(value: number | null) {
+  return value === null ? "Not provided" : formatCount(value);
+}
+
+function targetSummary(route: GatewayRoute) {
+  if (!route.targets.length) {
+    return route.backendCount ? `${route.backendCount} configured; details unavailable` : "None";
+  }
+  return `${route.targets.join(", ")}${route.unavailableBackendCount > 0 ? ` · ${route.unavailableBackendCount} unavailable` : ""}`;
 }

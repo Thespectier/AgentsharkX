@@ -106,60 +106,6 @@ export interface OverviewData {
   };
 }
 
-export interface GatewayRoute {
-  id: string;
-  listener: string;
-  protocol: "HTTP" | "gRPC" | "A2A";
-  hostname: string;
-  target: string;
-  status: HealthStatus;
-  requests: number;
-  source: "agentgateway";
-}
-
-export interface Provider {
-  id: string;
-  name: string;
-  kind: string;
-  models: number;
-  requests: number;
-  cost: number;
-  status: HealthStatus;
-  source: "agentgateway";
-}
-
-export interface Model {
-  id: string;
-  name: string;
-  provider: string;
-  inputTokens: number;
-  outputTokens: number;
-  p95LatencyMs: number;
-  status: HealthStatus;
-  source: "agentgateway";
-}
-
-export interface McpServer {
-  id: string;
-  name: string;
-  transport: "sse" | "stdio" | "openapi";
-  tools: number;
-  policy: string;
-  status: HealthStatus;
-  source: "agentgateway";
-}
-
-export interface ConnectData {
-  health: SourceHealth;
-  summary: Array<{ label: string; value: number; healthy: number }>;
-  routes: GatewayRoute[];
-  providers: Provider[];
-  models: Model[];
-  mcpServers: McpServer[];
-  consoleUrl: string;
-  fetchedAt: string;
-}
-
 export interface AgentIdentity {
   id: string;
   name: string;

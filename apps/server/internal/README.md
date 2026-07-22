@@ -1,6 +1,6 @@
 # Server package map
 
-Phase 2 package responsibilities:
+Phase 3 package responsibilities:
 
 - `api`: OpenAPI-owned handlers, request IDs, structured access logs, standard
   errors, authentication enforcement, and health SSE.
@@ -12,9 +12,12 @@ Phase 2 package responsibilities:
 - `upstream`: bounded retry transport and secret-safe adapter errors.
 - `aggregate`: source-scoped health, capability, partial-result, and health-only
   overview models.
+- `connect`: source-preserving agentgateway summaries, filtering, cursor
+  pagination, details, Setup verification, and validated console links.
 - `stream`: non-blocking in-memory health-event fan-out.
 - `model`: the shared source-preserving response model.
 
-Phase 2 intentionally has no database, business traffic polling, durable event
-buffer, task correlation, or replay. Those boundaries are not placeholders for
-unverified data.
+Phase 3 intentionally has no database, business traffic polling, durable event
+buffer, task correlation, or replay. Analytics is a bounded live read and does
+not create local storage. Those boundaries are not placeholders for unverified
+data.

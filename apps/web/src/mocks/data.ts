@@ -1,11 +1,11 @@
+import type { AuditData, OverviewData, ProtectData, TrustData, UnifiedEvent } from "../types";
 import type {
-  AuditData,
-  ConnectData,
-  OverviewData,
-  ProtectData,
-  TrustData,
-  UnifiedEvent,
-} from "../types";
+  ConnectSummary,
+  GatewayMCPServer,
+  GatewayModel,
+  GatewayProvider,
+  GatewayRoute,
+} from "../generated/api-client";
 
 export const baseEvents: UnifiedEvent[] = [
   {
@@ -211,151 +211,109 @@ export const overviewData: OverviewData = {
   },
 };
 
-export const connectData: ConnectData = {
-  health: overviewData.health[0],
-  summary: [
-    { label: "Listeners", value: 4, healthy: 4 },
-    { label: "Gateways", value: 3, healthy: 3 },
-    { label: "Routes", value: 12, healthy: 11 },
-    { label: "Backends", value: 9, healthy: 8 },
-  ],
-  routes: [
-    {
-      id: "route-chat-primary",
-      listener: "llm-public",
-      protocol: "HTTP",
-      hostname: "api.agents.internal",
-      target: "openai-primary",
+const connectFetchedAt = "2026-07-21T12:42:10Z";
+
+const resource = (id: string) => ({
+  id,
+  upstreamId: id,
+  source: "agentgateway" as const,
+  fetchedAt: connectFetchedAt,
+  rawRef: { source: "agentgateway" as const, id: `/mock/${id}` },
+});
+
+export const connectData: {
+  summary: ConnectSummary;
+  providers: GatewayProvider[];
+  models: GatewayModel[];
+  mcpServers: GatewayMCPServer[];
+  routes: GatewayRoute[];
+} = {
+  summary: {
+    health: {
+      source: "agentgateway",
+      label: "agentgateway",
       status: "healthy",
-      requests: 9821,
-      source: "agentgateway",
+      version: "1.3.1",
+      latencyMs: 18,
+      checkedAt: connectFetchedAt,
     },
-    {
-      id: "route-chat-fallback",
-      listener: "llm-public",
-      protocol: "HTTP",
-      hostname: "api.agents.internal",
-      target: "anthropic-fallback",
-      status: "healthy",
-      requests: 4382,
-      source: "agentgateway",
+    counts: [
+      { id: "listeners", label: "Listeners", value: 2, status: "configured" },
+      { id: "routes", label: "Routes", value: 2, status: "configured" },
+      { id: "backends", label: "Backends", value: 2, status: "configured" },
+      { id: "mcp-targets", label: "MCP targets", value: 1, status: "configured" },
+    ],
+    analytics: {
+      status: "unavailable",
+      reason: "Request-log analytics storage is not configured in this verified fixture.",
+      requests: null,
+      totalTokens: null,
+      cost: null,
+      bucketSeconds: null,
+      buckets: [],
     },
-    {
-      id: "route-mcp-inventory",
-      listener: "mcp-internal",
-      protocol: "HTTP",
-      hostname: "mcp.agents.internal",
-      target: "inventory-mcp",
-      status: "healthy",
-      requests: 2906,
-      source: "agentgateway",
+    links: {
+      console: "http://localhost:15000/ui",
+      rawConfig: "http://localhost:15000/ui/raw-config",
+      cel: "http://localhost:15000/ui/cel",
+      llmPlayground: "http://localhost:15000/ui/llm/playground",
+      mcpPlayground: "http://localhost:15000/ui/mcp/playground",
     },
-    {
-      id: "route-a2a-planner",
-      listener: "a2a-mesh",
-      protocol: "A2A",
-      hostname: "planner.agents.internal",
-      target: "planning-agent-pool",
-      status: "degraded",
-      requests: 1311,
-      source: "agentgateway",
-    },
-  ],
+  },
   providers: [
-    {
-      id: "openai-primary",
-      name: "OpenAI-compatible Primary",
-      kind: "openAI",
-      models: 3,
-      requests: 9821,
-      cost: 128.42,
-      status: "healthy",
-      source: "agentgateway",
-    },
-    {
-      id: "anthropic-fallback",
-      name: "Anthropic-compatible Fallback",
-      kind: "anthropic",
-      models: 2,
-      requests: 4382,
-      cost: 94.16,
-      status: "healthy",
-      source: "agentgateway",
-    },
-    {
-      id: "vertex-regional",
-      name: "Vertex Regional",
-      kind: "vertex",
-      models: 2,
-      requests: 1308,
-      cost: 31.88,
-      status: "degraded",
-      source: "agentgateway",
-    },
+    { ...resource("openai-shared"), name: "openai-shared", kind: "openai", modelCount: 1 },
   ],
   models: [
     {
-      id: "chat-primary-v1",
-      name: "chat-primary-v1",
-      provider: "OpenAI-compatible Primary",
-      inputTokens: 8291022,
-      outputTokens: 1320441,
-      p95LatencyMs: 612,
-      status: "healthy",
-      source: "agentgateway",
+      ...resource("openai-wildcard"),
+      upstreamId: "openai/*",
+      name: "openai/*",
+      kind: "direct",
+      provider: "openai",
     },
     {
-      id: "reasoning-fallback-v2",
-      name: "reasoning-fallback-v2",
-      provider: "Anthropic-compatible Fallback",
-      inputTokens: 3782011,
-      outputTokens: 816300,
-      p95LatencyMs: 742,
-      status: "healthy",
-      source: "agentgateway",
+      ...resource("fast"),
+      name: "fast",
+      kind: "direct",
+      provider: "reference:openai-shared",
+      targetModel: "gpt-5.4-nano",
     },
     {
-      id: "regional-fast-v1",
-      name: "regional-fast-v1",
-      provider: "Vertex Regional",
-      inputTokens: 1209051,
-      outputTokens: 286018,
-      p95LatencyMs: 884,
-      status: "degraded",
-      source: "agentgateway",
+      ...resource("resilient"),
+      name: "resilient",
+      kind: "virtual",
+      routing: "failover",
+      targets: ["openai/gpt-5.4-nano", "anthropic/claude-haiku-4-5"],
     },
   ],
   mcpServers: [
+    { ...resource("everything"), name: "everything", transport: "mcp", scope: "gateway" },
+  ],
+  routes: [
     {
-      id: "inventory-mcp",
-      name: "Inventory MCP",
-      transport: "sse",
-      tools: 18,
-      policy: "internal-tools",
-      status: "healthy",
-      source: "agentgateway",
+      ...resource("api"),
+      name: "api",
+      listener: "public-http",
+      protocol: "HTTP",
+      port: 8080,
+      hostnames: ["example.com"],
+      path: "/api",
+      targets: ["localhost:9000"],
+      backendCount: 1,
+      unavailableBackendCount: 0,
     },
     {
-      id: "docs-search",
-      name: "Documentation Search",
-      transport: "openapi",
-      tools: 7,
-      policy: "read-only",
-      status: "healthy",
-      source: "agentgateway",
-    },
-    {
-      id: "local-analysis",
-      name: "Local Analysis",
-      transport: "stdio",
-      tools: 4,
-      policy: "sandboxed",
-      status: "connecting",
-      source: "agentgateway",
+      ...resource("tcp-main"),
+      name: "tcp-main",
+      listener: "tcp",
+      protocol: "TCP",
+      port: 9090,
+      hostnames: ["tcp.example.com"],
+      targets: ["localhost:3306"],
+      backendCount: 1,
+      unavailableBackendCount: 0,
     },
   ],
-  consoleUrl: "http://localhost:15000/ui",
-  fetchedAt: "2026-07-21T12:42:10Z",
 };
 
 export const trustData: TrustData = {
