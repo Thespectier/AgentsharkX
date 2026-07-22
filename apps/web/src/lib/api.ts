@@ -144,6 +144,9 @@ async function requestJSON<T>(path: string, options: { signal?: AbortSignal } = 
     }
     throw error;
   }
+  const issuedCSRF = response.headers.get("X-CSRF-Token");
+  if (issuedCSRF) csrfToken = issuedCSRF;
+  if (response.status === 204) return undefined as T;
   return (await response.json()) as T;
 }
 

@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: AgentsharkX BFF API
-  version: 0.6.0-phase6
+  version: 0.7.0-preview
   description: |
     Source-preserving management API above agentgateway and AgentGuard.
     Authentication, independent upstream health and capability probes, and
@@ -25,7 +25,39 @@ tags:
   - name: Audit
 
 paths:
+  /healthz:
+    get:
+      tags: [System]
+      operationId: getLiveness
+      summary: Report that the AgentsharkX process is ready to serve requests
+      x-implementation-phase: 7
+      x-implementation-status: implemented
+      security: []
+      responses:
+        '200':
+          description: Process is serving requests
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Liveness'
+
   /api/v1/auth/session:
+    get:
+      tags: [Auth]
+      operationId: getAdminSession
+      summary: Validate the browser session and refresh its CSRF token
+      x-implementation-phase: 7
+      x-implementation-status: implemented
+      responses:
+        '204':
+          description: Session is valid
+          headers:
+            X-CSRF-Token:
+              schema:
+                type: string
+              description: Token required by subsequent mutating requests
+        '401':
+          $ref: '#/components/responses/Unauthorized'
     post:
       tags: [Auth]
       operationId: createAdminSession
@@ -85,6 +117,23 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/CapabilitiesEnvelope'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/system/diagnostics:
+    get:
+      tags: [System]
+      operationId: getSystemDiagnostics
+      summary: Return source-specific, secret-safe recovery guidance
+      x-implementation-phase: 7
+      x-implementation-status: implemented
+      responses:
+        '200':
+          description: Actionable diagnostics derived from independent health probes
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DiagnosticsEnvelope'
         '401':
           $ref: '#/components/responses/Unauthorized'
 
@@ -1128,6 +1177,14 @@ components:
             $ref: '#/components/schemas/ErrorEnvelope'
 
   schemas:
+    Liveness:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status:
+          type: string
+          const: ok
     Source:
       type: string
       enum: [agentgateway, agentguard]
@@ -1239,6 +1296,46 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/Capability'
+        meta:
+          $ref: '#/components/schemas/Meta'
+    DiagnosticIssue:
+      type: object
+      additionalProperties: false
+      required: [source, status, summary, checks, documentationPath]
+      properties:
+        source:
+          $ref: '#/components/schemas/Source'
+        status:
+          type: string
+          enum: [degraded, down, unknown]
+        summary:
+          type: string
+        checks:
+          type: array
+          minItems: 1
+          items:
+            type: string
+        documentationPath:
+          type: string
+    DiagnosticsData:
+      type: object
+      additionalProperties: false
+      required: [status, issues]
+      properties:
+        status:
+          type: string
+          enum: [healthy, degraded, down]
+        issues:
+          type: array
+          items:
+            $ref: '#/components/schemas/DiagnosticIssue'
+    DiagnosticsEnvelope:
+      type: object
+      additionalProperties: false
+      required: [data, meta]
+      properties:
+        data:
+          $ref: '#/components/schemas/DiagnosticsData'
         meta:
           $ref: '#/components/schemas/Meta'
     SetupStep:

@@ -610,10 +610,13 @@ function ApprovalsView({
   const approvals = envelope.data.items;
   if (!approvals.length) {
     return (
-      <EmptyState
-        description="No AgentGuard tickets need an operator decision."
-        title="Approval queue is clear"
-      />
+      <>
+        {receipt ? <MutationReceipt receipt={receipt} /> : null}
+        <EmptyState
+          description="No AgentGuard tickets need an operator decision."
+          title="Approval queue is clear"
+        />
+      </>
     );
   }
   const begin = (approval: Approval) => {

@@ -1,5 +1,7 @@
 // Generated from api/openapi.yaml by scripts/generate-api-client.mjs. Do not edit.
 
+export type Liveness = { status: string };
+
 export type Source = "agentgateway" | "agentguard";
 
 export type GatewaySource = "agentgateway";
@@ -42,6 +44,21 @@ export type Capability = {
 };
 
 export type CapabilitiesEnvelope = { data: Array<Capability>; meta: Meta };
+
+export type DiagnosticIssue = {
+  source: Source;
+  status: "degraded" | "down" | "unknown";
+  summary: string;
+  checks: Array<string>;
+  documentationPath: string;
+};
+
+export type DiagnosticsData = {
+  status: "healthy" | "degraded" | "down";
+  issues: Array<DiagnosticIssue>;
+};
+
+export type DiagnosticsEnvelope = { data: DiagnosticsData; meta: Meta };
 
 export type SetupStep = { id: string; label: string; complete: boolean; command?: string };
 
@@ -542,6 +559,7 @@ export const implementedOperations = {
   denyTicket: { method: "POST", path: "/api/v1/protect/approvals/{ticketId}/deny" },
   detectMcps: { method: "POST", path: "/api/v1/trust/agents/{agentId}/mcps/detect" },
   detectSkills: { method: "POST", path: "/api/v1/trust/agents/{agentId}/skills/detect" },
+  getAdminSession: { method: "GET", path: "/api/v1/auth/session" },
   getAgent: { method: "GET", path: "/api/v1/trust/agents/{agentId}" },
   getAuditAnalytics: { method: "GET", path: "/api/v1/audit/analytics" },
   getAuditEvent: { method: "GET", path: "/api/v1/audit/events/{source}/{eventId}" },
@@ -549,9 +567,11 @@ export const implementedOperations = {
   getConnectAnalytics: { method: "GET", path: "/api/v1/connect/analytics" },
   getConnectSummary: { method: "GET", path: "/api/v1/connect/summary" },
   getGatewayMcpServer: { method: "GET", path: "/api/v1/connect/mcp/servers/{resourceId}" },
+  getLiveness: { method: "GET", path: "/healthz" },
   getModel: { method: "GET", path: "/api/v1/connect/llm/models/{resourceId}" },
   getOverview: { method: "GET", path: "/api/v1/overview" },
   getProvider: { method: "GET", path: "/api/v1/connect/llm/providers/{resourceId}" },
+  getSystemDiagnostics: { method: "GET", path: "/api/v1/system/diagnostics" },
   getSystemHealth: { method: "GET", path: "/api/v1/system/health" },
   getTrafficRoute: { method: "GET", path: "/api/v1/connect/traffic/routes/{resourceId}" },
   getTrustScan: { method: "GET", path: "/api/v1/trust/scans/{scanId}" },
@@ -580,6 +600,7 @@ export interface OperationResponses {
   denyTicket: ProtectMutationEnvelope;
   detectMcps: TrustScanEnvelope;
   detectSkills: TrustScanEnvelope;
+  getAdminSession: undefined;
   getAgent: TrustAgentWorkspaceEnvelope;
   getAuditAnalytics: AuditEnvelope;
   getAuditEvent: EventEnvelope;
@@ -587,9 +608,11 @@ export interface OperationResponses {
   getConnectAnalytics: AnalyticsEnvelope;
   getConnectSummary: ConnectSummaryEnvelope;
   getGatewayMcpServer: MCPEnvelope;
+  getLiveness: Liveness;
   getModel: ModelEnvelope;
   getOverview: OverviewEnvelope;
   getProvider: ProviderEnvelope;
+  getSystemDiagnostics: DiagnosticsEnvelope;
   getSystemHealth: HealthEnvelope;
   getTrafficRoute: RouteEnvelope;
   getTrustScan: TrustScanEnvelope;

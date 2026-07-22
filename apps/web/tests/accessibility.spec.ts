@@ -3,6 +3,8 @@ import { expect, test } from "@playwright/test";
 
 const pages = ["/", "/connect/overview", "/trust/agents", "/protect/policies", "/audit/analytics"];
 
+test.use({ reducedMotion: "reduce" });
+
 for (const path of pages) {
   test(`${path} has no serious or critical accessibility violations`, async ({ page }) => {
     await page.goto(path);

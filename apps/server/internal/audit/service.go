@@ -124,7 +124,7 @@ func (service *Service) Refresh(ctx context.Context) model.AuditEnvelope {
 	previous := cloneData(service.data)
 	service.mu.RUnlock()
 	merged, fresh := mergeEvents(previous.Events, incoming, eventCapacity)
-	sessions := append([]model.AuditSession(nil), guardResultValue.sessions...)
+	sessions := append([]model.AuditSession{}, guardResultValue.sessions...)
 	applySessionCounts(sessions, merged)
 	metrics := buildMetrics(gatewayResultValue, guardResultValue)
 	applyMetricDeltas(previous.Metrics, metrics)
@@ -244,7 +244,7 @@ func verifySharedIdentifiers(events []model.UnifiedEvent) {
 
 func mergeEvents(previous, incoming []model.UnifiedEvent, capacity int) ([]model.UnifiedEvent, []model.UnifiedEvent) {
 	known := make(map[string]struct{}, len(previous))
-	merged := append([]model.UnifiedEvent(nil), previous...)
+	merged := append(make([]model.UnifiedEvent, 0, len(previous)+len(incoming)), previous...)
 	for _, event := range previous {
 		known[eventKey(event)] = struct{}{}
 	}
@@ -452,10 +452,10 @@ func bucketIndex(starts []time.Time, duration time.Duration, timestamp time.Time
 }
 
 func cloneData(data model.AuditData) model.AuditData {
-	data.Metrics = append([]model.Metric(nil), data.Metrics...)
-	data.Trend = append([]model.TrendPoint(nil), data.Trend...)
-	data.Events = append([]model.UnifiedEvent(nil), data.Events...)
-	data.Sessions = append([]model.AuditSession(nil), data.Sessions...)
+	data.Metrics = append([]model.Metric{}, data.Metrics...)
+	data.Trend = append([]model.TrendPoint{}, data.Trend...)
+	data.Events = append([]model.UnifiedEvent{}, data.Events...)
+	data.Sessions = append([]model.AuditSession{}, data.Sessions...)
 	return data
 }
 

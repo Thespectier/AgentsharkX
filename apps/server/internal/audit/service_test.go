@@ -102,6 +102,16 @@ func TestMergeEventsBoundsFiveThousandAndNeverTimeCorrelates(t *testing.T) {
 	}
 }
 
+func TestRefreshPreservesEmptyArrayContract(t *testing.T) {
+	t.Parallel()
+	service := New(fakeGateway{}, fakeGuard{}, nil)
+
+	snapshot := service.Refresh(t.Context())
+	if snapshot.Data.Metrics == nil || snapshot.Data.Trend == nil || snapshot.Data.Events == nil || snapshot.Data.Sessions == nil {
+		t.Fatalf("empty audit collections must serialize as arrays: %#v", snapshot.Data)
+	}
+}
+
 func auditEvent(source model.Source, id string, timestamp time.Time, traceID, sessionID string) model.UnifiedEvent {
 	correlation := (*model.EventCorrelation)(nil)
 	if traceID != "" || sessionID != "" {

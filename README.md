@@ -2,12 +2,12 @@
 
 AgentsharkX is a lightweight management console above
 [agentgateway](https://github.com/agentgateway/agentgateway) and
-[AgentGuard](https://github.com/WhitzardAgent/AgentGuard). It will provide one
+[AgentGuard](https://github.com/WhitzardAgent/AgentGuard). It provides one
 information architecture for connection management, trusted runtime context,
 protection workflows, and audit views without entering the agent data plane or
 reimplementing either upstream.
 
-The repository is currently at **Phase 6**. Connect reads explicit agentgateway
+The repository is at the **0.7.0 Phase 7 preview**. Connect reads explicit agentgateway
 providers, models, MCP targets, and routes. Trust now reads AgentGuard sessions,
 tools, skills, and MCP resources, builds Agents only from explicit AgentGuard
 identity fields, and supports tool-label updates plus polled Skill/MCP detection
@@ -18,6 +18,9 @@ write requires a note, explicit confirmation, CSRF, a request ID, and a result
 receipt. Audit now polls redacted agentgateway request logs/Analytics and
 AgentGuard Traffic/Audit/Sessions independently, retains a bounded 1000-event
 window, and streams normalized events with SSE resume and client-side dedupe.
+The preview adds a reproducible non-root production image with the real Web
+bundle embedded in the Go BFF, source-specific System diagnostics, a full-path
+release E2E, supply-chain artifacts, and six screenshot baselines.
 
 ## Product boundary
 
@@ -39,9 +42,28 @@ an adapter contract.
 
 - GNU Make
 - Docker with Compose v2
+- OpenSSL and Python 3.11+ for the first-event quickstart
 - Node.js 24 and npm
 - Go 1.26.5 when developing the server locally (the Makefile can use the pinned
   Go container if Go is not installed)
+
+## See the first real event in 10 minutes
+
+```bash
+make preview-bootstrap
+make preview-up
+```
+
+Open <http://localhost:8080>, log in with the generated
+`AGENTSHARK_ADMIN_TOKEN` from the ignored `.env`, then follow
+[the 10-minute quickstart](docs/quickstart.md) to run the pinned minimal
+AgentGuard client. Its real tool event appears under **Audit → Security events**
+within three seconds. The example does not require an LLM or provider key.
+
+The bootstrap command refuses to overwrite `.env`, generates random
+non-placeholder credentials with mode `0600`, and leaves every published port
+on loopback. An unchanged `deploy/example.env` is intentionally rejected by the
+BFF; there is no default password or token.
 
 ## Verify the repository
 
@@ -66,7 +88,7 @@ requires Playwright Chromium; see [the web README](apps/web/README.md) for host
 and container commands. The checked-in 1440 px and 1280 px baselines are
 indexed under [docs/screenshots](docs/screenshots/README.md).
 
-## Run the Phase 6 BFF locally
+## Run the BFF locally for development
 
 Start the pinned upstreams, then provide non-placeholder secrets and host-side
 URLs. Plain HTTP cookies are permitted only with an explicit local environment
@@ -97,7 +119,9 @@ VITE_ENABLE_MOCKS=false npm --prefix apps/web run dev
 ```
 
 The browser exchanges the admin token for an `HttpOnly`, `SameSite=Strict`
-session cookie. The token is not persisted in browser storage. Production
+session cookie. The token is not persisted in browser storage. After a reload,
+the authenticated session endpoint restores only the in-memory CSRF value.
+Production
 deployments must keep `AGENTSHARK_COOKIE_SECURE=true` and terminate HTTPS before
 the BFF. Trust and Protect write requests additionally require the session CSRF
 token. Rule check tokens, scan jobs, and the Audit event window are bounded in
@@ -105,21 +129,20 @@ memory and are lost when the BFF restarts. AgentGuard mutations are never
 automatically retried. Request-log payloads and attributes are never requested
 by the Audit poller; event detail is an allow-listed redacted projection.
 
-## Start the pinned upstreams
+## Compose and pinned upstreams
 
 The AgentGuard release does not publish an upstream image. Compose therefore
 builds it directly from the verified `v2.1` commit and assigns a local image
 name; no source is vendored into this repository.
 
 ```bash
-cp deploy/example.env .env
-# Replace every change-me value before exposing services beyond loopback.
-docker compose --env-file deploy/versions.env --env-file .env \
-  -f deploy/compose.yaml up --build
+make preview-bootstrap
+make preview-up
 ```
 
 Default local endpoints:
 
+- AgentsharkX preview: <http://localhost:8080>
 - agentgateway console/admin: <http://127.0.0.1:15000/ui>
 - agentgateway readiness: <http://127.0.0.1:15021/healthz/ready>
 - AgentGuard server: <http://127.0.0.1:38080/v1/backend/health>
@@ -134,6 +157,24 @@ set +a
 make upstream-smoke
 ```
 
+`make preview-down` stops the stack. The BFF starts even if one source is down,
+and `/system` provides source-specific recovery checks. `/healthz` reports only
+that the AgentsharkX process is serving; it does not hide upstream degradation.
+
+## Release gates and evidence
+
+```bash
+make release-gate
+```
+
+The release gate runs Go/Web/contract tests, tracked-file and browser-bundle
+secret scans, SPDX/license generation, the production dependency audit, the
+multi-stage image build, and the full real-BFF browser flow: start → login →
+connect → emit gateway and guard events → view Audit → approve. Supply-chain
+evidence is indexed under [docs/release](docs/release/README.md), screenshots
+under [docs/screenshots](docs/screenshots/README.md), and operational guidance
+under [Troubleshooting](docs/troubleshooting.md).
+
 ## Repository layout
 
 ```text
@@ -143,6 +184,7 @@ api/openapi.yaml          AgentsharkX-owned API contract
 api/upstream-contracts/   Sanitized, versioned upstream response samples
 deploy/                   Pinned Compose baseline and environment template
 docs/                     Architecture, capability, and compatibility records
+examples/                 Minimal pinned AgentGuard client event example
 scripts/                  Repository and live-upstream verification helpers
 ```
 

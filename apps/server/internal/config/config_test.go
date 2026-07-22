@@ -75,6 +75,31 @@ func TestLoadRejectsUnsafeDevelopmentAuth(t *testing.T) {
 	}
 }
 
+func TestLoadRejectsMissingTokensBeforeNonLoopbackStartup(t *testing.T) {
+	t.Parallel()
+
+	values := map[string]string{
+		"AGENTSHARK_LISTEN_ADDR":     "0.0.0.0:8080",
+		"AGENTSHARK_ENVIRONMENT":     "preview",
+		"AGENTGATEWAY_BASE_URL":      "http://gateway.test:15000",
+		"AGENTGUARD_BASE_URL":        "http://guard.test:38080",
+		"AGENTSHARK_REDACT_PAYLOADS": "true",
+	}
+	_, err := Load(func(key string) (string, bool) {
+		value, ok := values[key]
+		return value, ok
+	})
+	if err == nil {
+		t.Fatal("expected missing startup credentials to be rejected")
+	}
+	message := err.Error()
+	for _, name := range []string{"AGENTSHARK_ADMIN_TOKEN", "AGENTGUARD_ADMIN_TOKEN"} {
+		if !strings.Contains(message, name) {
+			t.Fatalf("missing validation for %s: %s", name, message)
+		}
+	}
+}
+
 func TestLoadRejectsPlaceholderAndURLCredentials(t *testing.T) {
 	t.Parallel()
 

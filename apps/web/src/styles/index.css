@@ -2572,6 +2572,41 @@ kbd {
 .source-card-grid .text-link {
   margin: 0 19px 18px;
 }
+.recovery-guide {
+  display: grid;
+  margin: 0 19px 18px;
+  padding: 13px;
+  gap: 10px;
+  border: 1px solid rgba(244, 177, 92, 0.24);
+  border-radius: 10px;
+  background: rgba(244, 177, 92, 0.055);
+  color: var(--text-secondary);
+  font-size: 9px;
+}
+.recovery-guide__summary {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  color: var(--status-warning);
+  line-height: 1.5;
+}
+.recovery-guide__summary svg {
+  flex: none;
+}
+.recovery-guide ol {
+  display: grid;
+  margin: 0;
+  padding-left: 18px;
+  gap: 6px;
+  line-height: 1.5;
+}
+.recovery-guide a {
+  display: inline-flex;
+  width: max-content;
+  align-items: center;
+  gap: 5px;
+  color: var(--accent-blue);
+}
 .capability-list > div {
   display: grid;
   min-height: 58px;

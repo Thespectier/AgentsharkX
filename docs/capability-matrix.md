@@ -2,8 +2,9 @@
 
 Verified against agentgateway `v1.3.1` and AgentGuard `v2.1` on 2026-07-22.
 
-Phase 6 adds source-preserving Audit polling, bounded normalized activity, and
-resumable SSE above the existing Connect, Trust, and Protect integrations. Mock
+Phase 7 adds reproducible deployment, session/CSRF reload recovery,
+source-specific diagnostics, release E2E, and supply-chain gates above the
+source-preserving Connect, Trust, Protect, and Audit integrations. Mock
 fixtures remain UI evidence only and do not upgrade an upstream capability
 status.
 
@@ -38,6 +39,8 @@ generated OpenAPI but a mutating request was intentionally not executed.
 | CEL editor/evaluator | agentgateway | link-out | pinned UI `/cel`; evaluation API remains upstream-owned | BFF creates a validated deep link only. |
 | Playground | agentgateway | link-out | pinned UI `/llm/playground`, `/mcp/playground` | Never send provider keys through AgentsharkX frontend. |
 | Admin API authentication | agentgateway | unavailable | pinned admin routes have no native auth middleware | Keep the admin listener private; BFF supplies browser authentication isolation. |
+| Source-specific diagnostics | AgentsharkX | supported | Phase 7 aggregate/API/UI tests for each disconnected source | Derive advice only from independent health probes; never return configured URLs, tokens, or raw responses. |
+| Process/container readiness | AgentsharkX | supported | Phase 7 `/healthz`, embedded SPA, and image healthcheck verification | Readiness means the process serves; upstream degradation remains visible in System. |
 
 The live registry uses `gateway.runtime`, `gateway.configuration`,
 `gateway.cost-catalog`, `gateway.request-logs`, and `gateway.admin-auth` IDs.
@@ -96,3 +99,14 @@ probe-only because this phase does not add an auditor-management surface.
 | Verified cross-source correlation | both | partial | Phase 6 exact shared-ID and negative no-ID tests | Default is uncorrelated; time windows are prohibited. |
 | Task graph | neither | unavailable | outside product boundary | Must not be implemented. |
 | Replay/payload vault | neither | unavailable | outside product boundary | Must not be implemented. |
+
+## Release evidence
+
+| Gate | Status | Evidence |
+|---|---|---|
+| Go and Web | supported | `make verify`, race tests, generated-client check, browser suite |
+| Contract | supported | OpenAPI `0.7.0-preview`, upstream samples, Compose render check |
+| Full path | supported | real BFF fixture E2E: login → Connect → emit → Audit → approve |
+| Container | supported | pinned multi-stage build, embedded production Web, non-root runtime, healthcheck |
+| Secret boundary | supported | tracked-file patterns plus production browser-bundle sentinel scan |
+| Supply chain | supported | SPDX 2.3 SBOM, lockfile license inventory, Go vet and npm production audit record |

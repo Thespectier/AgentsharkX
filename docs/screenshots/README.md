@@ -1,11 +1,17 @@
 # Screenshot baselines
 
-Phase 1 stores deterministic Playwright baselines here:
+Phase 7 stores deterministic Playwright release baselines here:
 
 - [`home-1440.png`](home-1440.png): 1440 × 1000 desktop Home with LiveFlow,
   metrics, chart, and source-distinct activity.
 - [`audit-1280.png`](audit-1280.png): 1280 × 800 laptop Audit security-event
   table with explicit source and correlation state.
+- [`connect-1280.png`](connect-1280.png): 1280 × 900 Connect overview.
+- [`trust-1280.png`](trust-1280.png): 1280 × 900 Trust agent inventory.
+- [`protect-1280.png`](protect-1280.png): 1280 × 900 source-separated Protect
+  policies.
+- [`system-degraded-1440.png`](system-degraded-1440.png): full-page 1440 px
+  System view with AgentGuard disconnected and actionable recovery checks.
 - [`lighthouse-accessibility.json`](lighthouse-accessibility.json): Lighthouse
   13.4.1 accessibility result; the committed run scored 100/100.
 
@@ -20,6 +26,6 @@ npm --prefix apps/web run test:e2e
 npm --prefix apps/web run lighthouse
 ```
 
-All displayed business data is explicitly labelled Mock. The screenshots are
-visual evidence of the Phase 1 frontend, not evidence of a live upstream
-connection.
+All displayed business data is explicitly labelled Mock. Screenshots are
+deterministic visual evidence, while `make release-e2e` separately proves the
+real BFF login, connection, event, Audit, and approval path.

@@ -11,7 +11,7 @@ describe("admin session gate", () => {
   it("exchanges the token without persisting it in browser storage", async () => {
     let authenticated = false;
     server.use(
-      http.get("/api/v1/system/health", () => {
+      http.get("/api/v1/auth/session", () => {
         if (!authenticated) {
           return HttpResponse.json(
             {
@@ -25,9 +25,9 @@ describe("admin session gate", () => {
             { status: 401 },
           );
         }
-        return HttpResponse.json({
-          data: [],
-          meta: { fetchedAt: new Date().toISOString(), stale: false, partial: false },
+        return new HttpResponse(null, {
+          status: 204,
+          headers: { "X-CSRF-Token": "csrf-test" },
         });
       }),
       http.post("/api/v1/auth/session", async ({ request }) => {

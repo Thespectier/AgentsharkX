@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { Database, ServerCog, ShieldCheck } from "lucide-react";
+import { AlertTriangle, Database, ExternalLink, ServerCog, ShieldCheck } from "lucide-react";
 
 import { PageFrame } from "../components/workspace";
 import {
@@ -26,11 +26,23 @@ export function SystemPage() {
     queryFn: ({ signal }) => requestOperation("getCapabilities", signal),
     retry: false,
   });
+  const diagnostics = useQuery({
+    queryKey: ["system-diagnostics"],
+    queryFn: ({ signal }) => requestOperation("getSystemDiagnostics", signal),
+    retry: false,
+  });
 
-  if (health.isLoading || capabilities.isLoading) {
+  if (health.isLoading || capabilities.isLoading || diagnostics.isLoading) {
     return <PageSkeleton label="Probing upstream capabilities" />;
   }
-  if (health.isError || capabilities.isError || !health.data || !capabilities.data) {
+  if (
+    health.isError ||
+    capabilities.isError ||
+    diagnostics.isError ||
+    !health.data ||
+    !capabilities.data ||
+    !diagnostics.data
+  ) {
     return (
       <PageFrame>
         <PageHeader
@@ -39,10 +51,11 @@ export function SystemPage() {
           title="Sources, versions & capabilities"
         />
         <ErrorState
-          description={formatError(health.error ?? capabilities.error)}
+          description={formatError(health.error ?? capabilities.error ?? diagnostics.error)}
           onRetry={() => {
             void health.refetch();
             void capabilities.refetch();
+            void diagnostics.refetch();
           }}
         />
       </PageFrame>
@@ -60,6 +73,9 @@ export function SystemPage() {
       <div className="source-card-grid">
         {health.data.data.map((source) => {
           const gateway = source.source === "agentgateway";
+          const issue = diagnostics.data.data.issues.find(
+            (candidate) => candidate.source === source.source,
+          );
           return (
             <Card elevated key={source.source}>
               <CardHeader
@@ -92,6 +108,22 @@ export function SystemPage() {
                 </li>
                 {source.message ? <li>{source.message}</li> : null}
               </ul>
+              {issue ? (
+                <div className="recovery-guide" role="status">
+                  <div className="recovery-guide__summary">
+                    <AlertTriangle aria-hidden="true" size={15} />
+                    <strong>{issue.summary}</strong>
+                  </div>
+                  <ol>
+                    {issue.checks.map((check) => (
+                      <li key={check}>{check}</li>
+                    ))}
+                  </ol>
+                  <a href={issue.documentationPath} rel="noreferrer" target="_blank">
+                    Troubleshooting guide <ExternalLink aria-hidden="true" size={12} />
+                  </a>
+                </div>
+              ) : null}
             </Card>
           );
         })}

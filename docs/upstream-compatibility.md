@@ -2,7 +2,7 @@
 
 Last verified: 2026-07-22.
 
-Phase 6 still prevents direct browser contact with either upstream. The
+Phase 7 still prevents direct browser contact with either upstream. The
 agentgateway adapter remains read-only and now also reads redacted request-log
 and Analytics contracts. The AgentGuard adapter reads Trust, Protect, and Audit
 resources and invokes
@@ -135,6 +135,18 @@ the same explicit non-empty identifier appears in both sources.
 AgentGuard does not publish a prebuilt container image for this release. The
 Compose build context points at the release's full Git revision instead of
 copying or vendoring GPL source into AgentsharkX.
+
+For Phase 7, the production image embeds only the AgentsharkX Web build and Go
+BFF. agentgateway and AgentGuard remain separate Compose services and SPDX
+packages connected over HTTP. The AgentGuard quickstart client is installed
+from the exact pinned Git revision in a disposable virtual environment; it is
+not copied into or linked with the AgentsharkX image.
+
+The release E2E fixtures implement only already-frozen contract shapes and run
+outside default Compose. They prove BFF/browser orchestration, including a hard
+navigation followed by CSRF recovery and one approval, but do not replace live
+upstream compatibility verification. The image and Compose build passed on
+2026-07-22 with the pinned Node 24.13.0, Go 1.26.5, and Alpine 3.23.3 digests.
 
 ## Authentication and exposure
 

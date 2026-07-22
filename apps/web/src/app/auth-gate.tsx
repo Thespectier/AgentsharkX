@@ -23,7 +23,10 @@ export function AuthGate({
   const [sessionLost, setSessionLost] = useState(false);
   const session = useQuery({
     queryKey: ["admin-session"],
-    queryFn: ({ signal }) => requestOperation("getSystemHealth", signal),
+    queryFn: async ({ signal }) => {
+      await requestOperation("getAdminSession", signal);
+      return true;
+    },
     enabled,
     retry: false,
     staleTime: 10_000,

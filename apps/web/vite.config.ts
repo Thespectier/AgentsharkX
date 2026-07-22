@@ -7,6 +7,7 @@ export default defineConfig({
   server: {
     port: 5173,
     strictPort: true,
+    allowedHosts: ["host.docker.internal"],
     proxy: {
       "/api": {
         target: process.env.VITE_BFF_PROXY_TARGET ?? "http://127.0.0.1:8080",
@@ -17,6 +18,12 @@ export default defineConfig({
   preview: {
     port: 4173,
     strictPort: true,
+    proxy: {
+      "/api": {
+        target: process.env.VITE_BFF_PROXY_TARGET ?? "http://127.0.0.1:8080",
+        changeOrigin: false,
+      },
+    },
   },
   test: {
     environment: "jsdom",

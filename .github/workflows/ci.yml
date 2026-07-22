@@ -9,7 +9,46 @@ permissions:
   contents: read
 
 jobs:
-  verify:
+  go:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: 1.26.5
+      - name: Format, unit, and race tests
+        run: make format-check test race-test
+      - name: Vet server
+        working-directory: apps/server
+        run: go vet ./...
+
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - run: npm ci --prefix apps/web
+      - name: Generated client, format, type, unit, and production build
+        run: make web-check
+
+  contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - run: npm ci --prefix apps/web
+      - name: OpenAPI, repository, and Compose contracts
+        run: make repository-check openapi-validate compose-validate
+
+  e2e:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -21,26 +60,46 @@ jobs:
           node-version: 24
           cache: npm
           cache-dependency-path: apps/web/package-lock.json
-      - name: Install web dependencies
-        run: npm ci --prefix apps/web
-      - name: Verify repository
-        run: make verify
+      - run: npm ci --prefix apps/web
+      - name: Install pinned Chromium and system dependencies
+        working-directory: apps/web
+        run: PLAYWRIGHT_BROWSERS_PATH=.cache/ms-playwright npm exec playwright -- install --with-deps chromium
+      - name: Mock browser acceptance and visual baselines
+        run: AGENTSHARK_PLAYWRIGHT_PORT=4174 npm --prefix apps/web run test:e2e
+      - name: Real BFF release path
+        run: make release-e2e
+      - name: Lighthouse accessibility
+        run: npm --prefix apps/web run lighthouse
 
-  browser:
+  container:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Build pinned non-root preview image
+        run: make container-build
+      - name: Verify runtime identity and healthcheck
+        run: |
+          test "$(docker image inspect agentsharkx/preview:verification --format '{{.Config.User}}')" = "65532:65532"
+          test "$(docker image inspect agentsharkx/preview:verification --format '{{json .Config.Healthcheck.Test}}')" != "null"
+
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: 1.26.5
       - uses: actions/setup-node@v4
         with:
           node-version: 24
           cache: npm
           cache-dependency-path: apps/web/package-lock.json
-      - name: Install web dependencies
-        run: npm ci --prefix apps/web
-      - name: Install Chromium and system dependencies
-        working-directory: apps/web
-        run: PLAYWRIGHT_BROWSERS_PATH=.cache/ms-playwright npm exec playwright -- install --with-deps chromium
-      - name: Run browser acceptance suite
-        run: npm --prefix apps/web run test:e2e
-      - name: Enforce Lighthouse accessibility score
-        run: npm --prefix apps/web run lighthouse
+      - run: npm ci --prefix apps/web
+      - name: Build production browser bundle
+        run: VITE_ENABLE_MOCKS=false npm --prefix apps/web run build
+      - name: Secret and production dependency scans
+        run: make secret-scan security-scan
+      - name: Reproduce SBOM and license inventory
+        run: |
+          make sbom
+          git diff --exit-code -- docs/release/sbom.spdx.json docs/release/dependency-licenses.md

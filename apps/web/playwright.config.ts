@@ -1,5 +1,7 @@
 import { defineConfig, devices } from "@playwright/test";
 
+const previewPort = Number(process.env.AGENTSHARK_PLAYWRIGHT_PORT ?? "4173");
+
 export default defineConfig({
   testDir: "./tests",
   snapshotPathTemplate: "../../docs/screenshots/{arg}{ext}",
@@ -16,7 +18,7 @@ export default defineConfig({
     },
   },
   use: {
-    baseURL: "http://127.0.0.1:4173",
+    baseURL: `http://127.0.0.1:${previewPort}`,
     trace: "on-first-retry",
     screenshot: "only-on-failure",
     colorScheme: "dark",
@@ -28,8 +30,9 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: "npm run build && npm run preview",
-    url: "http://127.0.0.1:4173",
+    command: `npm run build && npm run preview -- --port ${previewPort}`,
+    env: { VITE_ENABLE_MOCKS: "true" },
+    url: `http://127.0.0.1:${previewPort}`,
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
   },

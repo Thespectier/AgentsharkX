@@ -22,6 +22,12 @@ import (
 	"github.com/Thespectier/AgentsharkX/apps/server/internal/protect"
 	"github.com/Thespectier/AgentsharkX/apps/server/internal/stream"
 	"github.com/Thespectier/AgentsharkX/apps/server/internal/trust"
+	webconsole "github.com/Thespectier/AgentsharkX/apps/server/internal/web"
+)
+
+var (
+	version  = "development"
+	revision = "unknown"
 )
 
 func main() {
@@ -31,7 +37,7 @@ func main() {
 		logger.Error("configuration rejected", "error", err.Error())
 		os.Exit(1)
 	}
-	logger.Info("configuration loaded", "summary", cfg.SafeSummary())
+	logger.Info("configuration loaded", "version", version, "revision", revision, "summary", cfg.SafeSummary())
 
 	gatewayHTTP := &http.Client{Timeout: cfg.UpstreamTimeout}
 	guardHTTP := &http.Client{Timeout: cfg.UpstreamTimeout}
@@ -68,10 +74,11 @@ func main() {
 	auditService := audit.New(gatewayClient, guardClient, hub)
 	aggregator.SetOperational(auditService)
 	sessions := auth.New(cfg.AdminToken.Value(), auth.Options{CookieSecure: cfg.CookieSecure, TTL: 8 * time.Hour})
-	handler := api.New(api.ServerConfig{
+	apiHandler := api.New(api.ServerConfig{
 		Sessions: sessions, Aggregate: aggregator, Connect: connectService, Trust: trustService, Protect: protectService,
 		Audit: auditService, Stream: hub, Logger: logger, AuthEnabled: !cfg.AuthDisabled,
 	})
+	handler := webconsole.New(apiHandler)
 
 	for _, health := range aggregator.Refresh(rootContext) {
 		hub.Publish(newHealthEvent(health))

@@ -110,3 +110,65 @@ func TestSessionAuthenticationPartialHealthAndSecretSafeLogging(t *testing.T) {
 		t.Fatalf("access log leaked admin token: %s", logs.String())
 	}
 }
+
+func TestLivenessIsPublicButDiagnosticsRequireAuthentication(t *testing.T) {
+	t.Parallel()
+
+	handler := New(ServerConfig{
+		Sessions:  auth.New("admin-token-with-enough-entropy", auth.Options{TTL: time.Hour}),
+		Aggregate: aggregate.New("test", apiFakeSource{}, apiFakeSource{}),
+		Logger:    slog.New(slog.DiscardHandler), AuthEnabled: true,
+	})
+	server := httptest.NewServer(handler)
+	defer server.Close()
+
+	health, err := server.Client().Get(server.URL + "/healthz")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if health.StatusCode != http.StatusOK {
+		t.Fatalf("liveness status = %d", health.StatusCode)
+	}
+	_ = health.Body.Close()
+
+	diagnostics, err := server.Client().Get(server.URL + "/api/v1/system/diagnostics")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if diagnostics.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("unauthenticated diagnostics status = %d", diagnostics.StatusCode)
+	}
+	_ = diagnostics.Body.Close()
+}
+
+func TestAuthenticatedSessionCanRecoverCSRFTokenAfterReload(t *testing.T) {
+	t.Parallel()
+
+	const adminToken = "admin-token-with-enough-entropy"
+	handler := New(ServerConfig{
+		Sessions:  auth.New(adminToken, auth.Options{TTL: time.Hour}),
+		Aggregate: aggregate.New("test", apiFakeSource{}, apiFakeSource{}),
+		Logger:    slog.New(slog.DiscardHandler), AuthEnabled: true,
+	})
+	server := httptest.NewServer(handler)
+	defer server.Close()
+
+	login, err := server.Client().Post(server.URL+"/api/v1/auth/session", "application/json", strings.NewReader(`{"token":"`+adminToken+`"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	issued := login.Header.Get("X-CSRF-Token")
+	cookies := login.Cookies()
+	_ = login.Body.Close()
+
+	request, _ := http.NewRequest(http.MethodGet, server.URL+"/api/v1/auth/session", nil)
+	request.AddCookie(cookies[0])
+	recovered, err := server.Client().Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer recovered.Body.Close()
+	if recovered.StatusCode != http.StatusNoContent || issued == "" || recovered.Header.Get("X-CSRF-Token") != issued {
+		t.Fatalf("CSRF recovery failed: status=%d issued=%q recovered=%q", recovered.StatusCode, issued, recovered.Header.Get("X-CSRF-Token"))
+	}
+}

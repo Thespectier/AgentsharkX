@@ -65,9 +65,12 @@ func New(config ServerConfig) http.Handler {
 }
 
 func (server *server) routes() {
+	server.mux.HandleFunc("GET /healthz", server.liveness)
 	server.mux.HandleFunc("POST /api/v1/auth/session", server.login)
+	server.mux.Handle("GET /api/v1/auth/session", server.requireAuth(http.HandlerFunc(server.sessionInfo)))
 	server.mux.Handle("GET /api/v1/system/health", server.requireAuth(http.HandlerFunc(server.health)))
 	server.mux.Handle("GET /api/v1/system/capabilities", server.requireAuth(http.HandlerFunc(server.capabilities)))
+	server.mux.Handle("GET /api/v1/system/diagnostics", server.requireAuth(http.HandlerFunc(server.diagnostics)))
 	server.mux.Handle("GET /api/v1/overview", server.requireAuth(http.HandlerFunc(server.overview)))
 	server.mux.Handle("GET /api/v1/stream", server.requireAuth(http.HandlerFunc(server.eventStream)))
 	server.mux.Handle("GET /api/v1/connect/summary", server.requireAuth(http.HandlerFunc(server.connectSummary)))
@@ -103,6 +106,10 @@ func (server *server) routes() {
 	server.mux.Handle("/api/v1/", server.requireAuth(http.HandlerFunc(server.notImplemented)))
 }
 
+func (server *server) liveness(writer http.ResponseWriter, _ *http.Request) {
+	server.writeJSON(writer, http.StatusOK, map[string]string{"status": "ok"})
+}
+
 func (server *server) login(writer http.ResponseWriter, request *http.Request) {
 	if !server.config.AuthEnabled {
 		writer.WriteHeader(http.StatusNoContent)
@@ -135,12 +142,30 @@ func (server *server) login(writer http.ResponseWriter, request *http.Request) {
 	writer.WriteHeader(http.StatusNoContent)
 }
 
+func (server *server) sessionInfo(writer http.ResponseWriter, request *http.Request) {
+	if !server.config.AuthEnabled {
+		writer.WriteHeader(http.StatusNoContent)
+		return
+	}
+	session, ok := server.config.Sessions.Authenticate(request)
+	if !ok {
+		server.writeError(writer, request, http.StatusUnauthorized, "UNAUTHORIZED", "authentication is required", nil, false)
+		return
+	}
+	writer.Header().Set("X-CSRF-Token", server.config.Sessions.CSRFToken(session))
+	writer.WriteHeader(http.StatusNoContent)
+}
+
 func (server *server) health(writer http.ResponseWriter, request *http.Request) {
 	server.writeJSON(writer, http.StatusOK, server.config.Aggregate.Health())
 }
 
 func (server *server) capabilities(writer http.ResponseWriter, request *http.Request) {
 	server.writeJSON(writer, http.StatusOK, server.config.Aggregate.Capabilities(request.Context()))
+}
+
+func (server *server) diagnostics(writer http.ResponseWriter, _ *http.Request) {
+	server.writeJSON(writer, http.StatusOK, server.config.Aggregate.Diagnostics())
 }
 
 func (server *server) overview(writer http.ResponseWriter, _ *http.Request) {

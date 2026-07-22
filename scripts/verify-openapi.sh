@@ -3,9 +3,11 @@ set -euo pipefail
 
 spec=api/openapi.yaml
 required_paths=(
+  /healthz
   /api/v1/auth/session
   /api/v1/system/health
   /api/v1/system/capabilities
+  /api/v1/system/diagnostics
   /api/v1/overview
   /api/v1/stream
   /api/v1/connect/summary
@@ -35,7 +37,7 @@ required_paths=(
 )
 
 rg -q '^openapi: 3\.1\.0$' "$spec"
-rg -q '^  version: 0\.6\.0-phase6$' "$spec"
+rg -q '^  version: 0\.7\.0-preview$' "$spec"
 rg -q '^paths:$' "$spec"
 for path in "${required_paths[@]}"; do
   if ! rg -Fq "  $path:" "$spec"; then

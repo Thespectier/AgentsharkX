@@ -1,7 +1,7 @@
 # AgentsharkX web console
 
 The console supports two explicit modes. Mock mode is enabled by default for
-deterministic visual review. Setting `VITE_ENABLE_MOCKS=false` uses the Phase 6
+deterministic visual review. Setting `VITE_ENABLE_MOCKS=false` uses the Phase 7
 Go BFF, including the one-time admin-token exchange, live health/capability
 responses, Connect/Trust/Protect workflows, and live Audit REST/SSE data.
 Neither mode gives the browser an upstream credential.
@@ -34,7 +34,7 @@ docker run --rm --ipc=host --network=host --user "$(id -u):$(id -g)" \
   mcr.microsoft.com/playwright:v1.61.1-noble npm run lighthouse
 ```
 
-Protect and Audit Mock workflows exercise the same generated Phase 6 contract as real
+Protect and Audit Mock workflows exercise the same generated Phase 7 contract as real
 mode. Rule publication requires a current syntax check, note, and confirmation;
 deletion and approval decisions require a note and confirmation. The partial
 scenario makes the first approval mutation time out so the explicit manual
@@ -59,7 +59,7 @@ disabled with `VITE_ENABLE_MOCKS=false`. Vite proxies `/api` to
 deterministically generated from `api/openapi.yaml`; `npm run check` fails when
 the generated client is stale.
 
-An opt-in real-mode browser check is also available. Start a Phase 6 BFF and a
+An opt-in real-mode browser check is also available. Start a Phase 7 BFF and a
 Vite server with `VITE_ENABLE_MOCKS=false`, then run:
 
 ```bash
@@ -71,3 +71,9 @@ AGENTSHARK_REAL_ADMIN_TOKEN='your-local-admin-token' \
 The test is skipped unless that URL is supplied. It verifies session exchange,
 the Connect empty-config state, Analytics unavailability, Setup verification,
 and the validated Raw Config deep link against a live BFF.
+
+The repository release gate additionally runs `make release-e2e`. It starts the
+real BFF plus separate contract-shaped upstream fixtures and verifies login,
+Connect setup, gateway and AgentGuard event polling, source-separated Audit
+views, session CSRF recovery after hard navigation, and an approval mutation.
+The fixture suite is release-path evidence, not upstream compatibility evidence.

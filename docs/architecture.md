@@ -72,7 +72,9 @@ AgentsharkX-owned paths in `api/openapi.yaml`. MSW intercepts those paths in the
 browser and supplies source-labelled REST envelopes plus a bounded Mock SSE
 stream. With `VITE_ENABLE_MOCKS=false`, an OpenAPI-generated client uses the
 same paths through the Go BFF. The real mode exchanges the admin token for a
-strict session and keeps the CSRF token only in module memory. No frontend
+strict session and keeps the CSRF token only in module memory; after a hard
+reload, `GET /api/v1/auth/session` validates the HttpOnly cookie and reissues
+that session's CSRF value without persisting the administrator token. No frontend
 module imports upstream code or receives an upstream credential.
 
 The five primary views are Home, Connect, Trust, Protect, and Audit. System is
@@ -95,7 +97,7 @@ A gateway failure cannot suppress AgentGuard data, and an AgentGuard failure
 cannot suppress gateway data. Aggregated responses carry per-source metadata
 and stale markers rather than collapsing partial failures into a global 500.
 
-## Phase 6 runtime data and storage
+## Phase 7 runtime data and storage
 
 The BFF has no database. Background monitors poll the two health contracts and,
 every two seconds by default, the verified Audit read contracts. New normalized
@@ -166,6 +168,28 @@ task model, DAG, payload vault, replay engine, or traffic collector.
   default. Raw event views use a redacted copy.
 - The Phase 0 Compose baseline publishes upstream management ports on loopback.
   It is a development topology, not an internet-facing deployment.
+
+## Phase 7 deployment boundary
+
+The production Dockerfile has independent pinned Node and Go build stages. It
+builds Web with `VITE_ENABLE_MOCKS=false`, replaces the development placeholder
+assets before compiling, and embeds the resulting SPA into the Go binary. The
+runtime stage contains only Alpine CA certificates and the static binary, runs
+as UID/GID `65532:65532`, and exposes one same-origin port. `/healthz` is public
+and reports process readiness only; authenticated `/system` diagnostics remain
+the authority for independent upstream state.
+
+Compose builds AgentGuard from its immutable revision, pulls agentgateway by
+tag plus digest, and builds AgentsharkX locally. AgentsharkX has no dependency
+condition on either upstream so it can start degraded and explain recovery.
+Every published port remains loopback in the example environment. Missing or
+placeholder AgentsharkX/AgentGuard credentials cause configuration validation
+to fail before the HTTP listener opens.
+
+The release E2E runs contract-shaped upstream fixtures as separate processes
+and exercises the actual BFF session, Connect probe, Audit poll/SSE path, and
+AgentGuard approval mutation. It does not promote fixture data to compatibility
+evidence; pinned upstream samples and smoke checks remain authoritative.
 
 ## Phase 0 deployment decisions
 

@@ -103,6 +103,10 @@ func (*Manager) ValidCSRF(session Session, provided string) bool {
 	return subtle.ConstantTimeCompare(expectedHash[:], providedHash[:]) == 1
 }
 
+func (*Manager) CSRFToken(session Session) string {
+	return session.csrf
+}
+
 func randomToken() (string, error) {
 	buffer := make([]byte, 32)
 	if _, err := rand.Read(buffer); err != nil {

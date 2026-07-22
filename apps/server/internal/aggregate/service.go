@@ -92,6 +92,55 @@ func (service *Service) Capabilities(ctx context.Context) model.CapabilitiesEnve
 	return model.CapabilitiesEnvelope{Data: capabilities, Meta: metaFor(service.Snapshot())}
 }
 
+func (service *Service) Diagnostics() model.DiagnosticsEnvelope {
+	health := service.Snapshot()
+	status := model.HealthHealthy
+	issues := make([]model.DiagnosticIssue, 0, len(health))
+	down := 0
+	for _, source := range health {
+		if source.Status == model.HealthHealthy {
+			continue
+		}
+		if source.Status == model.HealthDown || source.Status == model.HealthUnknown {
+			down++
+		}
+		issue := model.DiagnosticIssue{
+			Source: source.Source, Status: source.Status,
+			Summary: "The upstream management API is not ready.",
+			Checks: []string{
+				"Confirm the configured base URL reaches the upstream management port from the AgentsharkX container.",
+				"Inspect the upstream container health and logs, then retry the probe.",
+			},
+			DocumentationPath: "https://github.com/Thespectier/AgentsharkX/blob/main/docs/troubleshooting.md#upstream-connectivity",
+		}
+		switch source.Source {
+		case model.SourceAgentGateway:
+			issue.Summary = "agentgateway management probes are unavailable. Connect and gateway audit data may be incomplete."
+			issue.Checks = append(issue.Checks,
+				"Verify AGENTGATEWAY_BASE_URL targets the admin listener, not an agent traffic listener.",
+				"Run the read-only upstream smoke check after agentgateway reports ready.",
+			)
+		case model.SourceAgentGuard:
+			issue.Summary = "AgentGuard management probes are unavailable. Trust, runtime protection, and approvals may be incomplete."
+			issue.Checks = append(issue.Checks,
+				"Verify AGENTGUARD_BASE_URL and that AGENTGUARD_ADMIN_TOKEN matches the AgentGuard API key.",
+				"Confirm GET /v1/backend/health succeeds from the AgentsharkX network.",
+			)
+		}
+		issues = append(issues, issue)
+	}
+	if len(issues) > 0 {
+		status = model.HealthDegraded
+	}
+	if len(health) > 0 && down == len(health) {
+		status = model.HealthDown
+	}
+	return model.DiagnosticsEnvelope{
+		Data: model.DiagnosticsData{Status: status, Issues: issues},
+		Meta: metaFor(health),
+	}
+}
+
 func (service *Service) Overview() model.OverviewEnvelope {
 	health := service.Snapshot()
 	service.mu.RLock()

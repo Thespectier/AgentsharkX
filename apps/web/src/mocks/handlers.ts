@@ -12,6 +12,7 @@ import type {
 } from "../types";
 import type {
   ConfirmedActionRequest,
+  DiagnosticsData,
   LabelUpdate,
   MCPDetectionRequest,
   ProtectSnapshot,
@@ -284,13 +285,55 @@ async function startMockScan(request: Request, agentId: string, resourceType: "s
 }
 
 export const handlers = [
-  http.get("/api/v1/overview", ({ request }) => respond(request, overviewData, emptyOverview)),
-  http.get("/api/v1/system/health", ({ request }) =>
-    listResponse(request, overviewData.health, "agentgateway"),
+  http.get(
+    "/api/v1/auth/session",
+    () => new HttpResponse(null, { status: 204, headers: { "X-CSRF-Token": "mock-csrf" } }),
   ),
+  http.get("/api/v1/overview", ({ request }) => respond(request, overviewData, emptyOverview)),
+  http.get("/api/v1/system/health", ({ request }) => {
+    const health =
+      scenarioFrom(request) === "partial"
+        ? overviewData.health.map((source) =>
+            source.source === "agentguard"
+              ? {
+                  ...source,
+                  status: "down" as const,
+                  latencyMs: null,
+                  message: "AgentGuard mock probe timed out",
+                }
+              : source,
+          )
+        : overviewData.health;
+    return listResponse(request, health, "agentgateway");
+  }),
   http.get("/api/v1/system/capabilities", ({ request }) =>
     listResponse(request, capabilityData, "agentgateway"),
   ),
+  http.get("/api/v1/system/diagnostics", ({ request }) => {
+    const partial = scenarioFrom(request) === "partial";
+    const data: DiagnosticsData = {
+      status: partial ? "degraded" : "healthy",
+      issues: partial
+        ? [
+            {
+              source: "agentguard",
+              status: "down",
+              summary:
+                "AgentGuard management probes are unavailable. Trust, runtime protection, and approvals may be incomplete.",
+              checks: [
+                "Confirm the configured base URL reaches the upstream management port from the AgentsharkX container.",
+                "Inspect the upstream container health and logs, then retry the probe.",
+                "Verify AGENTGUARD_BASE_URL and that AGENTGUARD_ADMIN_TOKEN matches the AgentGuard API key.",
+                "Confirm GET /v1/backend/health succeeds from the AgentsharkX network.",
+              ],
+              documentationPath:
+                "https://github.com/Thespectier/AgentsharkX/blob/main/docs/troubleshooting.md#upstream-connectivity",
+            },
+          ]
+        : [],
+    };
+    return respond(request, data, { status: "healthy", issues: [] }, "agentguard");
+  }),
   http.get("/api/v1/connect/summary", ({ request }) =>
     respond(request, connectData.summary, emptyConnectSummary, "agentgateway"),
   ),

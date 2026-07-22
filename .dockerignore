@@ -1,0 +1,10 @@
+.git
+.github
+**/.cache
+.env
+**/node_modules
+**/dist
+**/playwright-report
+**/test-results
+docs/screenshots
+*.log

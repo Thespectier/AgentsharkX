@@ -71,6 +71,24 @@ type CapabilitiesEnvelope struct {
 	Meta Meta         `json:"meta"`
 }
 
+type DiagnosticIssue struct {
+	Source            Source       `json:"source"`
+	Status            HealthStatus `json:"status"`
+	Summary           string       `json:"summary"`
+	Checks            []string     `json:"checks"`
+	DocumentationPath string       `json:"documentationPath"`
+}
+
+type DiagnosticsData struct {
+	Status HealthStatus      `json:"status"`
+	Issues []DiagnosticIssue `json:"issues"`
+}
+
+type DiagnosticsEnvelope struct {
+	Data DiagnosticsData `json:"data"`
+	Meta Meta            `json:"meta"`
+}
+
 type SetupStep struct {
 	ID       string `json:"id"`
 	Label    string `json:"label"`
