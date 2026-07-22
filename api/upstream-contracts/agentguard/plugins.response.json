@@ -1,0 +1,35 @@
+{
+  "config": {
+    "agent_id": "agent-demo",
+    "plugin_config": {
+      "phases": {
+        "tool_before": {
+          "client": ["tool_invoke"],
+          "server": [
+            { "name": "rule_based_plugin", "params": "<redacted>" }
+          ]
+        }
+      }
+    },
+    "config_source": "agent_override"
+  },
+  "available": {
+    "agent_id": "agent-demo",
+    "local_plugins": [
+      {
+        "name": "tool_invoke",
+        "description": "Tool interception",
+        "event_types": ["tool_invoke"],
+        "phases": ["tool_before"]
+      }
+    ],
+    "remote_plugins": [
+      {
+        "name": "rule_based_plugin",
+        "description": "Runtime rules",
+        "event_types": ["tool_invoke"],
+        "phases": ["tool_before"]
+      }
+    ]
+  }
+}

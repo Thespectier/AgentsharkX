@@ -39,6 +39,8 @@ func New(gateway Gateway, consoleURL string) *Service {
 	return &Service{gateway: gateway, links: consoleLinks(consoleURL)}
 }
 
+func (service *Service) Links() model.ConsoleLinks { return service.links }
+
 func (service *Service) Summary(ctx context.Context) (model.ConnectSummaryEnvelope, error) {
 	snapshot, err := service.gateway.Snapshot(ctx)
 	if err != nil {

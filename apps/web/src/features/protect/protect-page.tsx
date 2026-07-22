@@ -1,15 +1,17 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowRight,
   CheckCircle2,
   ExternalLink,
   FileCode2,
   GitPullRequestArrow,
+  LoaderCircle,
   ShieldAlert,
   ShieldCheck,
   Sparkles,
+  Trash2,
 } from "lucide-react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
 import { currentSection, PageFrame, WorkspaceTabs } from "../../components/workspace";
 import {
@@ -28,68 +30,50 @@ import {
   StatusBadge,
   type Column,
 } from "../../components/ui";
-import { formatCount } from "../../lib/format";
-import { formatError, getScenario, requestEnvelope } from "../../lib/api";
-import type { Approval, Policy, ProtectData } from "../../types";
+import type {
+  Approval,
+  ApprovalPageEnvelope,
+  ProtectMutationReceipt,
+  ProtectPolicy,
+  ProtectSnapshot,
+  RuntimeRule,
+  RuntimeRuleCheck,
+} from "../../generated/api-client";
+import {
+  ApiError,
+  formatError,
+  getScenario,
+  mutateOperation,
+  requestOperation,
+} from "../../lib/api";
+import type { Severity } from "../../types";
 
 const tabs = [
   { id: "policies", label: "Policies" },
   { id: "guardrails", label: "Guardrails" },
   { id: "runtime-rules", label: "Runtime rules" },
   { id: "plugins", label: "Plugins" },
-  { id: "approvals", label: "Approvals", badge: 3 },
+  { id: "approvals", label: "Approvals" },
 ];
 
-export function ProtectPage() {
-  const section = currentSection("protect", "policies");
-  const scenario = getScenario();
-  const query = useQuery({
-    queryKey: ["protect", scenario],
-    queryFn: ({ signal }) => requestEnvelope<ProtectData>("/api/v1/protect/policies", signal),
-    retry: false,
-  });
-  if (query.isLoading) return <PageSkeleton label="Loading protection controls" />;
-  if (query.isError || !query.data)
-    return (
-      <PageFrame>
-        <PageHeader
-          description="Gateway policies, guardrails, runtime rules, plugins, and human approvals."
-          eyebrow="Protect / Controls"
-          title="Protection controls unavailable"
-        />
-        <ErrorState description={formatError(query.error)} onRetry={() => void query.refetch()} />
-      </PageFrame>
-    );
-  const { data, meta } = query.data;
-  const dynamicTabs = tabs.map((item) =>
-    item.id === "approvals" ? { ...item, badge: data.approvals.length } : item,
-  );
-  return (
-    <PageFrame>
-      <PageHeader
-        description="Keep source, scope, phase, and action visible. Gateway and runtime policy models remain separate."
-        eyebrow="Protect / Policies & intervention"
-        title="Enforce every critical boundary"
-      >
-        <WorkspaceTabs area="protect" items={dynamicTabs} />
-      </PageHeader>
-      <PartialBanner meta={meta} />
-      {section === "policies" ? <PolicyView data={data} /> : null}
-      {section === "guardrails" ? <GuardrailView data={data} /> : null}
-      {section === "runtime-rules" ? <RuntimeRulesView data={data} /> : null}
-      {section === "plugins" ? <PluginsView data={data} /> : null}
-      {section === "approvals" ? <ApprovalsView approvals={data.approvals} /> : null}
-    </PageFrame>
-  );
-}
+type PolicyRow = {
+  id: string;
+  name: string;
+  type: string;
+  source: "agentgateway" | "agentguard";
+  scope: string;
+  phase: string;
+  action: string;
+  status: string;
+};
 
-const policyColumns: Column<Policy>[] = [
+const policyColumns: Column<PolicyRow>[] = [
   {
     key: "policy",
     header: "Policy",
     render: (item) => (
       <div className="primary-cell">
-        <ShieldCheck size={15} />
+        <ShieldCheck aria-hidden="true" size={15} />
         <span>
           <strong>{item.name}</strong>
           <small>{item.type}</small>
@@ -106,55 +90,134 @@ const policyColumns: Column<Policy>[] = [
     render: (item) => <strong className="decision-text">{item.action}</strong>,
   },
   { key: "status", header: "Status", render: (item) => <StatusBadge status={item.status} /> },
-  { key: "matches", header: "24h matches", render: (item) => formatCount(item.matches24h) },
 ];
 
-function PolicyView({ data }: { data: ProtectData }) {
-  if (!data.policies.length)
+export function ProtectPage() {
+  const section = currentSection("protect", "policies");
+  const scenario = getScenario();
+  const query = useQuery({
+    queryKey: ["protect", scenario],
+    queryFn: ({ signal }) => requestOperation("listPolicies", signal),
+    retry: false,
+  });
+  const approvals = useQuery({
+    queryKey: ["protect-approvals", scenario],
+    queryFn: ({ signal }) => requestOperation("listApprovals", { signal, query: { limit: 100 } }),
+    retry: false,
+  });
+  if (query.isLoading) return <PageSkeleton label="Loading protection controls" />;
+  if (query.isError || !query.data) {
+    return (
+      <PageFrame>
+        <PageHeader
+          description="Gateway policies, guardrails, runtime rules, plugins, and human approvals."
+          eyebrow="Protect / Controls"
+          title="Protection controls unavailable"
+        />
+        <ErrorState description={formatError(query.error)} onRetry={() => void query.refetch()} />
+      </PageFrame>
+    );
+  }
+  const { data, meta } = query.data;
+  const dynamicTabs = tabs.map((item) =>
+    item.id === "approvals" ? { ...item, badge: approvals.data?.data.total ?? 0 } : item,
+  );
+  return (
+    <PageFrame>
+      <PageHeader
+        description="Source, scope, phase, and action stay explicit; gateway and runtime policy models are never merged into a synthetic DSL."
+        eyebrow="Protect / Policies & intervention"
+        title="Enforce every critical boundary"
+      >
+        <WorkspaceTabs area="protect" items={dynamicTabs} />
+      </PageHeader>
+      <PartialBanner meta={meta} />
+      {section === "policies" ? <PolicyView data={data} /> : null}
+      {section === "guardrails" ? <GuardrailView data={data} /> : null}
+      {section === "runtime-rules" ? <RuntimeRulesView data={data} /> : null}
+      {section === "plugins" ? <PluginsView data={data} /> : null}
+      {section === "approvals" ? (
+        <ApprovalsView
+          envelope={approvals.data}
+          error={approvals.error}
+          loading={approvals.isLoading}
+        />
+      ) : null}
+    </PageFrame>
+  );
+}
+
+function gatewayRow(policy: ProtectPolicy): PolicyRow {
+  return { ...policy };
+}
+
+function runtimeRow(rule: RuntimeRule): PolicyRow {
+  return { ...rule, type: "Runtime Rule" };
+}
+
+function PolicyView({ data }: { data: ProtectSnapshot }) {
+  const gateway = data.gatewayPolicies.map(gatewayRow);
+  const runtime = data.runtimeRules.map(runtimeRow);
+  if (!gateway.length && !runtime.length) {
     return (
       <EmptyState
-        description="No gateway policies or AgentGuard rules are currently reported. These sources are intentionally not merged into one DSL."
+        description="No gateway policies or AgentGuard rules are currently reported. The sources remain independently visible when one is unavailable."
         title="No policies reported"
       />
     );
-  const gateway = data.policies.filter((policy) => policy.source === "agentgateway");
-  const guard = data.policies.filter((policy) => policy.source === "agentguard");
+  }
   return (
     <div className="stack">
       <Card>
         <CardHeader
           action={<SourceBadge source="agentgateway" />}
-          description="Read-only gateway authorization and content guardrail summaries."
+          description="Read-only summaries of exact keys in agentgateway route and backend configuration."
           title="Gateway controls"
         />
-        <DataTable columns={policyColumns} data={gateway} label="agentgateway policies" />
+        {gateway.length ? (
+          <DataTable columns={policyColumns} data={gateway} label="agentgateway policies" />
+        ) : (
+          <EmptyState
+            compact
+            description="No explicit gateway policies."
+            title="No gateway controls"
+          />
+        )}
       </Card>
       <Card>
         <CardHeader
           action={<SourceBadge source="agentguard" />}
-          description="Agent runtime rules retain their original phase and action semantics."
+          description="Runtime rules retain AgentGuard action and phase semantics. Rule source is not returned."
           title="Runtime controls"
         />
-        <DataTable columns={policyColumns} data={guard} label="AgentGuard runtime rules" />
+        {runtime.length ? (
+          <DataTable columns={policyColumns} data={runtime} label="AgentGuard runtime rules" />
+        ) : (
+          <EmptyState
+            compact
+            description="No explicit runtime rules."
+            title="No runtime controls"
+          />
+        )}
       </Card>
     </div>
   );
 }
 
-function GuardrailView({ data }: { data: ProtectData }) {
-  const guardrails = data.policies.filter((policy) => policy.type === "Content Guardrail");
+function GuardrailView({ data }: { data: ProtectSnapshot }) {
+  const guardrails = data.gatewayPolicies.filter((policy) => policy.type === "Content Guardrail");
   return (
     <div className="content-grid">
       <Card elevated>
         <CardHeader
-          description="Prompt and response protections reported by agentgateway config."
+          description="Only explicit request/response placement and configuration keys are shown."
           title="Content guardrails"
         />
         {guardrails.length ? (
           guardrails.map((item) => (
             <div className="policy-summary" key={item.id}>
               <span className="policy-summary__icon">
-                <ShieldAlert size={18} />
+                <ShieldAlert aria-hidden="true" size={18} />
               </span>
               <div>
                 <div>
@@ -174,190 +237,548 @@ function GuardrailView({ data }: { data: ProtectData }) {
         ) : (
           <EmptyState
             compact
-            description="No explicit content guardrail is present in gateway config."
+            description="No explicit content guardrail in gateway config."
             title="No guardrails"
           />
         )}
       </Card>
       <Card>
         <CardHeader
-          description="Complex provider configuration remains with its owning control plane."
+          description="Complex configuration remains in its owning control plane."
           title="Advanced configuration"
         />
         <div className="linkout-card">
-          <FileCode2 size={25} />
+          <FileCode2 aria-hidden="true" size={25} />
           <h2>Use the native policy editor</h2>
           <p>
-            Raw config, CEL, provider credentials, and vendor-specific guardrail options are
-            intentionally not duplicated.
+            Raw config, CEL, credentials, and vendor-specific bodies are intentionally not
+            duplicated.
           </p>
-          <a
-            className="button button--secondary button--md"
-            href="http://localhost:15000/ui"
-            rel="noreferrer"
-            target="_blank"
-          >
-            Open agentgateway <ExternalLink size={14} />
-          </a>
+          {data.links.rawConfig ? (
+            <a
+              className="button button--secondary button--md"
+              href={data.links.rawConfig}
+              rel="noreferrer"
+              target="_blank"
+            >
+              Open agentgateway <ExternalLink aria-hidden="true" size={14} />
+            </a>
+          ) : (
+            <StatusBadge status="link unavailable" />
+          )}
         </div>
       </Card>
     </div>
   );
 }
 
-function RuntimeRulesView({ data }: { data: ProtectData }) {
-  const rules = data.policies.filter((policy) => policy.type === "Runtime Rule");
-  return (
-    <Card>
-      <CardHeader
-        action={
-          <Button disabled variant="primary">
-            New rule <Sparkles size={14} />
+function RuntimeRulesView({ data }: { data: ProtectSnapshot }) {
+  const queryClient = useQueryClient();
+  const agents = useMemo(() => {
+    const values = new Map<string, string>();
+    for (const plugin of data.plugins) values.set(plugin.agentId, plugin.agentUpstreamId);
+    for (const rule of data.runtimeRules) {
+      if (rule.agentId && rule.agentUpstreamId) values.set(rule.agentId, rule.agentUpstreamId);
+    }
+    return [...values.entries()];
+  }, [data.plugins, data.runtimeRules]);
+  const [composerOpen, setComposerOpen] = useState(false);
+  const [source, setSource] = useState("RULE: review_external_delivery\nPOLICY: HUMAN_CHECK");
+  const [agentId, setAgentId] = useState(agents[0]?.[0] ?? "");
+  const [note, setNote] = useState("");
+  const [confirmed, setConfirmed] = useState(false);
+  const [checkResult, setCheckResult] = useState<RuntimeRuleCheck>();
+  const [deleteRule, setDeleteRule] = useState<RuntimeRule>();
+  const [deleteNote, setDeleteNote] = useState("");
+  const [deleteConfirmed, setDeleteConfirmed] = useState(false);
+  const [receipt, setReceipt] = useState<ProtectMutationReceipt>();
+
+  const check = useMutation({
+    mutationFn: () => mutateOperation("checkRuntimeRule", { source }),
+    onSuccess: (response) => setCheckResult(response.data),
+  });
+  const publish = useMutation({
+    mutationFn: () =>
+      mutateOperation(
+        "publishRuntimeRule",
+        { source, checkToken: checkResult?.checkToken ?? "", note, confirmed },
+        { path: { agentId } },
+      ),
+    onSuccess: (response) => {
+      setReceipt(response.data);
+      setComposerOpen(false);
+      setCheckResult(undefined);
+      setNote("");
+      setConfirmed(false);
+      void queryClient.invalidateQueries({ queryKey: ["protect"] });
+    },
+  });
+  const remove = useMutation({
+    mutationFn: (rule: RuntimeRule) =>
+      mutateOperation(
+        "deleteRuntimeRule",
+        { note: deleteNote, confirmed: deleteConfirmed },
+        { path: { agentId: rule.agentId ?? "", ruleId: rule.id } },
+      ),
+    onSuccess: (response) => {
+      setReceipt(response.data);
+      setDeleteRule(undefined);
+      setDeleteNote("");
+      setDeleteConfirmed(false);
+      void queryClient.invalidateQueries({ queryKey: ["protect"] });
+    },
+  });
+  const rows = data.runtimeRules.map(runtimeRow);
+  const columns: Column<PolicyRow>[] = [
+    ...policyColumns,
+    {
+      key: "manage",
+      header: "Manage",
+      render: (item) => {
+        const rule = data.runtimeRules.find((candidate) => candidate.id === item.id)!;
+        return rule.userManaged && rule.agentId ? (
+          <Button
+            aria-label={`Delete ${rule.name}`}
+            onClick={() => setDeleteRule(rule)}
+            size="sm"
+            variant="ghost"
+          >
+            <Trash2 aria-hidden="true" size={13} /> Delete
           </Button>
-        }
-        description="Mock read-only preview. Check, publish, and delete mutations arrive in Phase 5."
-        title="Runtime rules"
-      />
-      {rules.length ? (
-        <DataTable columns={policyColumns} data={rules} label="AgentGuard runtime rules" />
-      ) : (
-        <EmptyState
-          description="AgentGuard has not reported runtime rules."
-          title="No runtime rules"
+        ) : (
+          <span className="resource-note">Read-only</span>
+        );
+      },
+    },
+  ];
+  const publishReady = Boolean(
+    checkResult?.publishable && checkResult.checkToken && agentId && note.trim() && confirmed,
+  );
+  return (
+    <>
+      <Card>
+        <CardHeader
+          action={
+            <Button
+              disabled={!agents.length}
+              onClick={() => setComposerOpen(true)}
+              variant="primary"
+            >
+              New rule <Sparkles aria-hidden="true" size={14} />
+            </Button>
+          }
+          description="A successful AgentGuard syntax check creates a short-lived, source-bound, one-use publish token."
+          title="Runtime rules"
         />
-      )}
-    </Card>
+        {receipt ? <MutationReceipt receipt={receipt} /> : null}
+        {rows.length ? (
+          <DataTable columns={columns} data={rows} label="AgentGuard runtime rules" />
+        ) : (
+          <EmptyState
+            description="AgentGuard has not reported runtime rules."
+            title="No runtime rules"
+          />
+        )}
+      </Card>
+      <Dialog
+        description="Check exactly one rule, add an operator note, then explicitly confirm publication. Rule source is never written to audit logs."
+        onClose={() => !publish.isPending && setComposerOpen(false)}
+        open={composerOpen}
+        title="Publish runtime rule"
+      >
+        <div className="dialog-form protect-form">
+          <label className="field">
+            <span>Explicit AgentGuard agent</span>
+            <select
+              aria-label="Explicit AgentGuard agent"
+              onChange={(event) => setAgentId(event.target.value)}
+              value={agentId}
+            >
+              {agents.map(([id, upstream]) => (
+                <option key={id} value={id}>
+                  {upstream}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="field">
+            <span>Rule source</span>
+            <textarea
+              aria-label="Rule source"
+              onChange={(event) => {
+                setSource(event.target.value);
+                setCheckResult(undefined);
+              }}
+              rows={7}
+              value={source}
+            />
+          </label>
+          <div className="protect-check-row">
+            <Button disabled={check.isPending || !source.trim()} onClick={() => check.mutate()}>
+              {check.isPending ? (
+                <LoaderCircle className="spin" size={14} />
+              ) : (
+                <ShieldCheck size={14} />
+              )}{" "}
+              Check syntax
+            </Button>
+            {checkResult ? (
+              <span
+                className={
+                  checkResult.publishable
+                    ? "protect-check protect-check--ok"
+                    : "protect-check protect-check--error"
+                }
+                role="status"
+              >
+                {checkResult.publishable
+                  ? "Checked and publishable"
+                  : (checkResult.errors[0]?.message ?? "Not publishable")}
+              </span>
+            ) : (
+              <span className="resource-note">Check required before publish</span>
+            )}
+          </div>
+          {check.isError ? <MutationError error={check.error} /> : null}
+          <label className="field">
+            <span>Operator note</span>
+            <textarea
+              aria-label="Operator note"
+              onChange={(event) => setNote(event.target.value)}
+              rows={3}
+              value={note}
+            />
+          </label>
+          <label className="confirm-field">
+            <input
+              checked={confirmed}
+              onChange={(event) => setConfirmed(event.target.checked)}
+              type="checkbox"
+            />
+            I confirm this checked rule should be published to the selected agent.
+          </label>
+          {publish.isError ? <MutationError error={publish.error} /> : null}
+          <footer>
+            <Button
+              disabled={publish.isPending}
+              onClick={() => setComposerOpen(false)}
+              variant="ghost"
+            >
+              Cancel
+            </Button>
+            <Button
+              disabled={!publishReady || publish.isPending}
+              onClick={() => publish.mutate()}
+              variant="primary"
+            >
+              {publish.isPending ? <LoaderCircle className="spin" size={14} /> : null} Publish
+              checked rule
+            </Button>
+          </footer>
+        </div>
+      </Dialog>
+      <Dialog
+        description="Deletion is limited to a currently reported user-managed AgentGuard rule."
+        onClose={() => !remove.isPending && setDeleteRule(undefined)}
+        open={Boolean(deleteRule)}
+        title={deleteRule ? `Delete ${deleteRule.name}` : "Delete runtime rule"}
+      >
+        <div className="dialog-form">
+          <label className="field">
+            <span>Operator note</span>
+            <textarea
+              aria-label="Deletion note"
+              onChange={(event) => setDeleteNote(event.target.value)}
+              rows={3}
+              value={deleteNote}
+            />
+          </label>
+          <label className="confirm-field">
+            <input
+              checked={deleteConfirmed}
+              onChange={(event) => setDeleteConfirmed(event.target.checked)}
+              type="checkbox"
+            />
+            I confirm this runtime rule should be deleted.
+          </label>
+          {remove.isError ? <MutationError error={remove.error} /> : null}
+          <footer>
+            <Button
+              disabled={remove.isPending}
+              onClick={() => setDeleteRule(undefined)}
+              variant="ghost"
+            >
+              Cancel
+            </Button>
+            <Button
+              disabled={!deleteNote.trim() || !deleteConfirmed || remove.isPending}
+              onClick={() => deleteRule && remove.mutate(deleteRule)}
+              variant="danger"
+            >
+              {remove.isPending ? <LoaderCircle className="spin" size={14} /> : null} Delete rule
+            </Button>
+          </footer>
+        </div>
+      </Dialog>
+    </>
   );
 }
 
-function PluginsView({ data }: { data: ProtectData }) {
+function PluginsView({ data }: { data: ProtectSnapshot }) {
+  if (!data.plugins.length) {
+    return (
+      <EmptyState
+        description="No explicit per-agent plugin configuration is available."
+        title="No plugin phases"
+      />
+    );
+  }
   return (
     <div className="plugin-grid">
-      {data.coverage.map((item) => (
-        <Card as="article" className="plugin-card" key={item.phase}>
-          <span className="plugin-card__icon">
-            <GitPullRequestArrow size={19} />
-          </span>
-          <div>
-            <StatusBadge status={item.active ? "active" : "disabled"} />
-            <h2>{item.phase}</h2>
-            <p>
-              {item.active} of {item.available} available plugins enabled for this phase.
-            </p>
-            <div className="coverage-bar">
-              <span style={{ width: `${(item.active / item.available) * 100}%` }} />
+      {data.plugins.map((item) => {
+        const active = item.enabledLocalPlugins.length + item.enabledRemotePlugins.length;
+        const available = item.availableLocalPlugins.length + item.availableRemotePlugins.length;
+        return (
+          <Card as="article" className="plugin-card" key={item.id}>
+            <span className="plugin-card__icon">
+              <GitPullRequestArrow aria-hidden="true" size={19} />
+            </span>
+            <div>
+              <StatusBadge status={active ? "active" : "disabled"} />
+              <h2>{item.phase.replaceAll("_", " ")}</h2>
+              <p>
+                {active} of {available} available plugins enabled for {item.agentUpstreamId}.
+              </p>
+              <div className="coverage-bar">
+                <span style={{ width: `${available ? (active / available) * 100 : 0}%` }} />
+              </div>
+              <footer>
+                <SourceBadge source="agentguard" />
+                <span>{item.configSource}</span>
+              </footer>
             </div>
-            <footer>
-              <SourceBadge source="agentguard" />
-              <span>Per-agent config</span>
-            </footer>
-          </div>
-        </Card>
-      ))}
+          </Card>
+        );
+      })}
     </div>
   );
 }
 
-function ApprovalsView({ approvals }: { approvals: Approval[] }) {
-  const [selected, setSelected] = useState<Approval | null>(null);
-  const [result, setResult] = useState<string | null>(null);
-  if (!approvals.length)
+function ApprovalsView({
+  envelope,
+  error,
+  loading,
+}: {
+  envelope?: ApprovalPageEnvelope;
+  error: Error | null;
+  loading: boolean;
+}) {
+  const queryClient = useQueryClient();
+  const [selected, setSelected] = useState<Approval>();
+  const [note, setNote] = useState("");
+  const [confirmed, setConfirmed] = useState(false);
+  const [decision, setDecision] = useState<"approve" | "deny">("approve");
+  const [receipt, setReceipt] = useState<ProtectMutationReceipt>();
+  const mutation = useMutation({
+    mutationFn: ({ approval, action }: { approval: Approval; action: "approve" | "deny" }) =>
+      mutateOperation(
+        action === "approve" ? "approveTicket" : "denyTicket",
+        { note, confirmed },
+        { path: { ticketId: approval.id } },
+      ),
+    onSuccess: (response) => {
+      setReceipt(response.data);
+      setSelected(undefined);
+      setNote("");
+      setConfirmed(false);
+      void queryClient.invalidateQueries({ queryKey: ["protect-approvals"] });
+    },
+    onError: (mutationError) => {
+      if (mutationError instanceof ApiError && mutationError.status === 404) {
+        void queryClient.invalidateQueries({ queryKey: ["protect-approvals"] });
+      }
+    },
+  });
+  if (loading) return <PageSkeleton label="Loading approval queue" />;
+  if (error || !envelope)
+    return (
+      <ErrorState
+        description={formatError(error)}
+        onRetry={() => void queryClient.invalidateQueries({ queryKey: ["protect-approvals"] })}
+      />
+    );
+  const approvals = envelope.data.items;
+  if (!approvals.length) {
     return (
       <EmptyState
         description="No AgentGuard tickets need an operator decision."
         title="Approval queue is clear"
       />
     );
+  }
+  const begin = (approval: Approval) => {
+    mutation.reset();
+    setReceipt(undefined);
+    setNote("");
+    setConfirmed(false);
+    setDecision("approve");
+    setSelected(approval);
+  };
+  const decide = (action: "approve" | "deny") => {
+    if (!selected) return;
+    setDecision(action);
+    mutation.mutate({ approval: selected, action });
+  };
   return (
     <>
+      {receipt ? <MutationReceipt receipt={receipt} /> : null}
       <div className="approval-layout">
         <Card className="approval-list">
           <CardHeader
-            description="Every decision requires context and a note in the real workflow."
+            description="Only sanitized context is shown; tool arguments and targets remain omitted."
             title="Pending review"
           />
           {approvals.map((approval) => (
-            <button
-              className="approval-item"
-              key={approval.id}
-              onClick={() => {
-                setResult(null);
-                setSelected(approval);
-              }}
-            >
+            <button className="approval-item" key={approval.id} onClick={() => begin(approval)}>
               <span className="approval-item__risk">
-                <SeverityBadge severity={approval.risk} />
+                <SeverityBadge severity={approvalSeverity(approval.riskScore)} />
               </span>
               <div>
-                <strong>{approval.tool}</strong>
-                <p>{approval.reason}</p>
+                <strong>{approval.tool || approval.eventType}</strong>
+                <p>{approval.reason || "AgentGuard requested an operator decision."}</p>
                 <footer>
-                  <code>{approval.agentId}</code>
+                  <code>{approval.agentUpstreamId || "unknown agent"}</code>
                   <span>{approval.phase}</span>
-                  <time>{approval.requestedAt}</time>
+                  <time>{new Date(approval.createdAt).toLocaleTimeString()}</time>
                 </footer>
               </div>
-              <ArrowRight size={16} />
+              <ArrowRight aria-hidden="true" size={16} />
             </button>
           ))}
         </Card>
         <Card className="approval-context">
           <span className="approval-context__icon">
-            <CheckCircle2 size={25} />
+            <CheckCircle2 aria-hidden="true" size={25} />
           </span>
           <h2>Operator decisions stay explicit</h2>
           <p>
-            This Phase 1 queue demonstrates focus, confirmation, loading, and result surfaces
-            without calling a write endpoint.
+            Every decision requires a note and confirmation. A mutation is sent once; timeout
+            recovery is always a deliberate manual retry.
           </p>
           <ul>
-            <li>Source and execution phase remain visible.</li>
-            <li>Duplicate clicks are disabled during mutation.</li>
-            <li>Sensitive payloads are not exposed.</li>
+            <li>Source, runtime phase, rule matches, and risk remain visible.</li>
+            <li>Duplicate clicks are disabled while a decision is pending.</li>
+            <li>Receipts include the BFF request ID for audit lookup.</li>
           </ul>
         </Card>
       </div>
       <Dialog
-        description="This is a labelled Phase 1 mock. No AgentGuard mutation will be sent."
-        onClose={() => setSelected(null)}
+        description="Review sanitized AgentGuard context, write a note, and explicitly confirm one decision."
+        onClose={() => !mutation.isPending && setSelected(undefined)}
         open={Boolean(selected)}
-        title={selected ? `Review ${selected.tool}` : "Review approval"}
+        title={selected ? `Review ${selected.tool || selected.eventType}` : "Review approval"}
       >
         {selected ? (
           <div className="dialog-form">
             <div className="approval-dialog-summary">
-              <SeverityBadge severity={selected.risk} />
+              <SeverityBadge severity={approvalSeverity(selected.riskScore)} />
               <code>{selected.id}</code>
-              <p>{selected.reason}</p>
+              <p>{selected.reason || "No upstream reason was provided."}</p>
               <SourceBadge source={selected.source} />
+              <p>
+                Phase: {selected.phase} · Matched rules:{" "}
+                {selected.matchedRules.join(", ") || "none reported"}
+              </p>
             </div>
             <label className="field">
               <span>Operator note</span>
               <textarea
-                defaultValue="Reviewed against the active production change window."
+                aria-label="Operator note"
+                onChange={(event) => setNote(event.target.value)}
                 rows={3}
+                value={note}
               />
             </label>
-            {result ? (
-              <div className="mock-result" role="status">
-                <CheckCircle2 size={16} />
-                {result}
-              </div>
-            ) : null}
+            <label className="confirm-field">
+              <input
+                checked={confirmed}
+                onChange={(event) => setConfirmed(event.target.checked)}
+                type="checkbox"
+              />
+              I confirm this operator decision for the selected pending ticket.
+            </label>
+            {mutation.isError ? <MutationError error={mutation.error} /> : null}
             <footer>
-              <Button onClick={() => setSelected(null)} variant="ghost">
+              <Button
+                disabled={mutation.isPending}
+                onClick={() => setSelected(undefined)}
+                variant="ghost"
+              >
                 Cancel
               </Button>
-              <Button onClick={() => setResult("Mock deny recorded locally")} variant="danger">
-                Deny
+              <Button
+                disabled={!note.trim() || !confirmed || mutation.isPending}
+                onClick={() => decide("deny")}
+                variant="danger"
+              >
+                {mutation.isPending && decision === "deny" ? (
+                  <LoaderCircle className="spin" size={14} />
+                ) : null}
+                {mutation.isError && decision === "deny" ? "Retry deny" : "Deny"}
               </Button>
-              <Button onClick={() => setResult("Mock approval recorded locally")} variant="primary">
-                Approve
+              <Button
+                disabled={!note.trim() || !confirmed || mutation.isPending}
+                onClick={() => decide("approve")}
+                variant="primary"
+              >
+                {mutation.isPending && decision === "approve" ? (
+                  <LoaderCircle className="spin" size={14} />
+                ) : null}
+                {mutation.isError && decision === "approve" ? "Retry approve" : "Approve"}
               </Button>
             </footer>
           </div>
         ) : null}
       </Dialog>
     </>
+  );
+}
+
+function approvalSeverity(score: number): Severity {
+  if (score >= 0.85) return "critical";
+  if (score >= 0.7) return "high";
+  if (score >= 0.45) return "medium";
+  return "low";
+}
+
+function MutationReceipt({ receipt }: { receipt: ProtectMutationReceipt }) {
+  return (
+    <div className="mutation-receipt" role="status">
+      <CheckCircle2 aria-hidden="true" size={16} />
+      <div>
+        <strong>{receipt.message}</strong>
+        <span>
+          Request ID <code>{receipt.requestId}</code>
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function MutationError({ error }: { error: unknown }) {
+  const requestId = error instanceof ApiError ? error.failure?.requestId : undefined;
+  return (
+    <div className="protect-error" role="alert">
+      <ShieldAlert aria-hidden="true" size={15} />
+      <span>
+        {formatError(error)}
+        {requestId ? (
+          <>
+            {" "}
+            · Request ID <code>{requestId}</code>
+          </>
+        ) : null}
+      </span>
+    </div>
   );
 }

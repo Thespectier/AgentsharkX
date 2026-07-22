@@ -353,9 +353,130 @@ export type SkillDetectionRequest = { resourceIds: Array<string>; useLlm?: boole
 
 export type MCPDetectionRequest = { resourceIds: Array<string> };
 
-export type RuleSource = { source: string };
+export type ProtectPolicy = {
+  id: string;
+  upstreamId: string;
+  source: GatewaySource;
+  fetchedAt: string;
+  rawRef: RawRef;
+  name: string;
+  type: "Gateway Policy" | "Content Guardrail";
+  scope: string;
+  phase: string;
+  action: string;
+  status: "read-only";
+};
 
-export type ApprovalAction = { note: string };
+export type RuntimeRule = {
+  id: string;
+  upstreamId: string;
+  source: GuardSource;
+  fetchedAt: string;
+  rawRef: RawRef;
+  name: string;
+  agentId?: string;
+  agentUpstreamId?: string;
+  scope: string;
+  phase: string;
+  action: "ALLOW" | "DENY" | "HUMAN_CHECK" | "LLM_CHECK" | "DEGRADE";
+  status: string;
+  severity?: string;
+  category?: string;
+  toolPattern?: string;
+  reason?: string;
+  userManaged: boolean;
+};
+
+export type ProtectPluginPhase = {
+  id: string;
+  upstreamId: string;
+  source: GuardSource;
+  fetchedAt: string;
+  rawRef: RawRef;
+  agentId: string;
+  agentUpstreamId: string;
+  phase: string;
+  configSource: "agent_override" | "server_default" | "none" | "unavailable";
+  enabledLocalPlugins: Array<string>;
+  enabledRemotePlugins: Array<string>;
+  availableLocalPlugins: Array<string>;
+  availableRemotePlugins: Array<string>;
+};
+
+export type ProtectSnapshot = {
+  gatewayPolicies: Array<ProtectPolicy>;
+  runtimeRules: Array<RuntimeRule>;
+  plugins: Array<ProtectPluginPhase>;
+  links: ConsoleLinks;
+};
+
+export type ProtectSnapshotEnvelope = { data: ProtectSnapshot; meta: Meta };
+
+export type RuntimeRuleCheckRequest = { source: string };
+
+export type RuleCheckMessage = { message: string };
+
+export type RuntimeRuleCheck = {
+  source: GuardSource;
+  ok: boolean;
+  publishable: boolean;
+  ruleCount: number;
+  errors: Array<RuleCheckMessage>;
+  warnings: Array<RuleCheckMessage>;
+  hints: Array<RuleCheckMessage>;
+  checkToken?: string;
+  expiresAt: string | null;
+  requestId: string;
+};
+
+export type RuntimeRuleCheckEnvelope = { data: RuntimeRuleCheck; meta: Meta };
+
+export type RuntimeRulePublishRequest = {
+  source: string;
+  checkToken: string;
+  note: string;
+  confirmed: boolean;
+};
+
+export type ConfirmedActionRequest = { note: string; confirmed: boolean };
+
+export type Approval = {
+  id: string;
+  upstreamId: string;
+  source: GuardSource;
+  fetchedAt: string;
+  rawRef: RawRef;
+  agentId?: string;
+  agentUpstreamId?: string;
+  sessionId?: string;
+  userId?: string;
+  eventId?: string;
+  eventType: string;
+  tool?: string;
+  phase: string;
+  action: string;
+  reason?: string;
+  riskScore: number;
+  matchedRules: Array<string>;
+  status: "pending";
+  createdAt: string;
+};
+
+export type ApprovalPage = { items: Array<Approval>; nextCursor: string | null; total: number };
+
+export type ApprovalPageEnvelope = { data: ApprovalPage; meta: Meta };
+
+export type ProtectMutationReceipt = {
+  operation: "publish-runtime-rule" | "delete-runtime-rule" | "approve-approval" | "deny-approval";
+  status: "succeeded";
+  source: GuardSource;
+  target: string;
+  requestId: string;
+  completedAt: string;
+  message: string;
+};
+
+export type ProtectMutationEnvelope = { data: ProtectMutationReceipt; meta: Meta };
 
 export type UnifiedEvent = {
   id: string;
@@ -383,7 +504,14 @@ export type ErrorEnvelope = {
 };
 
 export const implementedOperations = {
+  approveTicket: { method: "POST", path: "/api/v1/protect/approvals/{ticketId}/approve" },
+  checkRuntimeRule: { method: "POST", path: "/api/v1/protect/runtime-rules/check" },
   createAdminSession: { method: "POST", path: "/api/v1/auth/session" },
+  deleteRuntimeRule: {
+    method: "DELETE",
+    path: "/api/v1/protect/agents/{agentId}/runtime-rules/{ruleId}",
+  },
+  denyTicket: { method: "POST", path: "/api/v1/protect/approvals/{ticketId}/deny" },
   detectMcps: { method: "POST", path: "/api/v1/trust/agents/{agentId}/mcps/detect" },
   detectSkills: { method: "POST", path: "/api/v1/trust/agents/{agentId}/skills/detect" },
   getAgent: { method: "GET", path: "/api/v1/trust/agents/{agentId}" },
@@ -398,19 +526,26 @@ export const implementedOperations = {
   getTrafficRoute: { method: "GET", path: "/api/v1/connect/traffic/routes/{resourceId}" },
   getTrustScan: { method: "GET", path: "/api/v1/trust/scans/{scanId}" },
   listAgents: { method: "GET", path: "/api/v1/trust/agents" },
+  listApprovals: { method: "GET", path: "/api/v1/protect/approvals" },
   listGatewayMcpServers: { method: "GET", path: "/api/v1/connect/mcp/servers" },
   listModels: { method: "GET", path: "/api/v1/connect/llm/models" },
+  listPolicies: { method: "GET", path: "/api/v1/protect/policies" },
   listProviders: { method: "GET", path: "/api/v1/connect/llm/providers" },
   listTrafficRoutes: { method: "GET", path: "/api/v1/connect/traffic/routes" },
   listTrustResources: { method: "GET", path: "/api/v1/trust/resources" },
   listTrustScans: { method: "GET", path: "/api/v1/trust/scans" },
+  publishRuntimeRule: { method: "POST", path: "/api/v1/protect/agents/{agentId}/runtime-rules" },
   streamEvents: { method: "GET", path: "/api/v1/stream" },
   updateToolLabels: { method: "PATCH", path: "/api/v1/trust/agents/{agentId}/tools/{tool}/labels" },
   verifyGatewaySetup: { method: "GET", path: "/api/v1/connect/setup" },
 } as const;
 
 export interface OperationResponses {
+  approveTicket: ProtectMutationEnvelope;
+  checkRuntimeRule: RuntimeRuleCheckEnvelope;
   createAdminSession: undefined;
+  deleteRuntimeRule: ProtectMutationEnvelope;
+  denyTicket: ProtectMutationEnvelope;
   detectMcps: TrustScanEnvelope;
   detectSkills: TrustScanEnvelope;
   getAgent: TrustAgentWorkspaceEnvelope;
@@ -425,21 +560,29 @@ export interface OperationResponses {
   getTrafficRoute: RouteEnvelope;
   getTrustScan: TrustScanEnvelope;
   listAgents: TrustAgentPageEnvelope;
+  listApprovals: ApprovalPageEnvelope;
   listGatewayMcpServers: MCPPageEnvelope;
   listModels: ModelPageEnvelope;
+  listPolicies: ProtectSnapshotEnvelope;
   listProviders: ProviderPageEnvelope;
   listTrafficRoutes: RoutePageEnvelope;
   listTrustResources: TrustResourcePageEnvelope;
   listTrustScans: TrustScanPageEnvelope;
+  publishRuntimeRule: ProtectMutationEnvelope;
   streamEvents: string;
   updateToolLabels: TrustResourceEnvelope;
   verifyGatewaySetup: ConnectSetupEnvelope;
 }
 
 export interface OperationBodies {
+  approveTicket: ConfirmedActionRequest;
+  checkRuntimeRule: RuntimeRuleCheckRequest;
   createAdminSession: LoginRequest;
+  deleteRuntimeRule: ConfirmedActionRequest;
+  denyTicket: ConfirmedActionRequest;
   detectMcps: MCPDetectionRequest;
   detectSkills: SkillDetectionRequest;
+  publishRuntimeRule: RuntimeRulePublishRequest;
   updateToolLabels: LabelUpdate;
 }
 

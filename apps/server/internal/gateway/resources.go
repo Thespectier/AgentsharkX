@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -91,11 +92,12 @@ type rawListener struct {
 }
 
 type rawRoute struct {
-	Name      string       `json:"name"`
-	RuleName  string       `json:"ruleName"`
-	Hostnames []string     `json:"hostnames"`
-	Matches   []rawMatch   `json:"matches"`
-	Backends  []rawBackend `json:"backends"`
+	Name      string                     `json:"name"`
+	RuleName  string                     `json:"ruleName"`
+	Hostnames []string                   `json:"hostnames"`
+	Matches   []rawMatch                 `json:"matches"`
+	Backends  []rawBackend               `json:"backends"`
+	Policies  map[string]json.RawMessage `json:"policies"`
 }
 
 type rawMatch struct {
@@ -120,6 +122,7 @@ type rawBackend struct {
 	MCP *struct {
 		Targets []rawMCP `json:"targets"`
 	} `json:"mcp"`
+	Policies map[string]json.RawMessage `json:"policies"`
 }
 
 type rawAnalytics struct {
@@ -214,6 +217,11 @@ func (client *Client) Snapshot(ctx context.Context) (model.GatewaySnapshot, erro
 			snapshot.Listeners++
 			for routeIndex, route := range listener.Routes {
 				field := fmt.Sprintf("/binds/%d/listeners/%d/routes/%d", bindIndex, listenerIndex, routeIndex)
+				snapshot.Policies = append(snapshot.Policies, policySummaries(route.Policies, field+"/policies", field, fetchedAt)...)
+				for backendIndex, backend := range route.Backends {
+					backendField := fmt.Sprintf("%s/backends/%d", field, backendIndex)
+					snapshot.Policies = append(snapshot.Policies, policySummaries(backend.Policies, backendField+"/policies", backendField, fetchedAt)...)
+				}
 				item, inlineMCP, err := routeResource(route, listener, bind.Port, field, false, fetchedAt)
 				if err != nil {
 					return model.GatewaySnapshot{}, err
@@ -224,6 +232,11 @@ func (client *Client) Snapshot(ctx context.Context) (model.GatewaySnapshot, erro
 			}
 			for routeIndex, route := range listener.TCPRoutes {
 				field := fmt.Sprintf("/binds/%d/listeners/%d/tcpRoutes/%d", bindIndex, listenerIndex, routeIndex)
+				snapshot.Policies = append(snapshot.Policies, policySummaries(route.Policies, field+"/policies", field, fetchedAt)...)
+				for backendIndex, backend := range route.Backends {
+					backendField := fmt.Sprintf("%s/backends/%d", field, backendIndex)
+					snapshot.Policies = append(snapshot.Policies, policySummaries(backend.Policies, backendField+"/policies", backendField, fetchedAt)...)
+				}
 				item, inlineMCP, err := routeResource(route, listener, bind.Port, field, true, fetchedAt)
 				if err != nil {
 					return model.GatewaySnapshot{}, err
@@ -440,6 +453,66 @@ func rawString(raw json.RawMessage) string {
 	var value string
 	_ = json.Unmarshal(raw, &value)
 	return value
+}
+
+func policySummaries(policies map[string]json.RawMessage, field, scope string, fetchedAt time.Time) []model.ProtectPolicy {
+	keys := make([]string, 0, len(policies))
+	for key := range policies {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	items := make([]model.ProtectPolicy, 0, len(keys))
+	for _, key := range keys {
+		if key == "ai" || key == "llm" {
+			var nested map[string]json.RawMessage
+			if json.Unmarshal(policies[key], &nested) == nil && len(nested) > 0 {
+				nestedKeys := make([]string, 0, len(nested))
+				for nestedKey := range nested {
+					nestedKeys = append(nestedKeys, nestedKey)
+				}
+				sort.Strings(nestedKeys)
+				for _, nestedKey := range nestedKeys {
+					items = append(items, policySummary(key+"."+nestedKey, nested[nestedKey], field+"/"+key+"/"+nestedKey, scope, fetchedAt))
+				}
+				continue
+			}
+		}
+		items = append(items, policySummary(key, policies[key], field+"/"+key, scope, fetchedAt))
+	}
+	return items
+}
+
+func policySummary(name string, raw json.RawMessage, field, scope string, fetchedAt time.Time) model.ProtectPolicy {
+	policyType := "Gateway Policy"
+	phase := "unknown"
+	normalized := strings.ToLower(name)
+	if strings.Contains(normalized, "guardrail") || strings.Contains(normalized, "promptguard") {
+		policyType = "Content Guardrail"
+		var phases struct {
+			Request  json.RawMessage `json:"request"`
+			Response json.RawMessage `json:"response"`
+		}
+		if json.Unmarshal(raw, &phases) == nil {
+			values := make([]string, 0, 2)
+			if len(phases.Request) > 0 && string(phases.Request) != "null" {
+				values = append(values, "Request")
+			}
+			if len(phases.Response) > 0 && string(phases.Response) != "null" {
+				values = append(values, "Response")
+			}
+			if len(values) > 0 {
+				phase = strings.Join(values, " + ")
+			}
+		}
+	}
+	return model.ProtectPolicy{
+		ProtectResourceBase: model.ProtectResourceBase{
+			ID: base64.RawURLEncoding.EncodeToString([]byte(field)), UpstreamID: field,
+			Source: model.SourceAgentGateway, FetchedAt: fetchedAt,
+			RawRef: model.RawRef{Source: model.SourceAgentGateway, ID: field},
+		},
+		Name: name, Type: policyType, Scope: scope, Phase: phase, Action: "Configured", Status: "read-only",
+	}
 }
 
 func safeTarget(target string) string {

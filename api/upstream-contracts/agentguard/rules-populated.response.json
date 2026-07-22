@@ -1,0 +1,19 @@
+[
+  {
+    "id": "review_external_email",
+    "name": "review_external_email",
+    "rule_id": "review_external_email",
+    "status": "published",
+    "tool_pattern": "mail.send",
+    "action": "HUMAN_CHECK",
+    "severity": "high",
+    "category": "boundary",
+    "reason": "External delivery requires review",
+    "prompt": "<redacted>",
+    "description": "Operator-reviewed outbound email",
+    "pack_id": "agent::agent-demo",
+    "user_managed": true,
+    "degrade_profile": null,
+    "source": "<redacted>"
+  }
+]

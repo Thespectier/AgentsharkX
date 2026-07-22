@@ -22,14 +22,19 @@ required_paths=(
   '/api/v1/trust/agents/{agentId}/skills/detect'
   '/api/v1/trust/agents/{agentId}/mcps/detect'
   /api/v1/protect/policies
+  /api/v1/protect/runtime-rules/check
+  '/api/v1/protect/agents/{agentId}/runtime-rules'
+  '/api/v1/protect/agents/{agentId}/runtime-rules/{ruleId}'
   /api/v1/protect/approvals
+  '/api/v1/protect/approvals/{ticketId}/approve'
+  '/api/v1/protect/approvals/{ticketId}/deny'
   /api/v1/audit/analytics
   /api/v1/audit/events
   /api/v1/audit/sessions
 )
 
 rg -q '^openapi: 3\.1\.0$' "$spec"
-rg -q '^  version: 0\.4\.0-phase4$' "$spec"
+rg -q '^  version: 0\.5\.0-phase5$' "$spec"
 rg -q '^paths:$' "$spec"
 for path in "${required_paths[@]}"; do
   if ! rg -Fq "  $path:" "$spec"; then

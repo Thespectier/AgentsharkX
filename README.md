@@ -7,13 +7,16 @@ information architecture for connection management, trusted runtime context,
 protection workflows, and audit views without entering the agent data plane or
 reimplementing either upstream.
 
-The repository is currently at **Phase 4**. Connect reads explicit agentgateway
+The repository is currently at **Phase 5**. Connect reads explicit agentgateway
 providers, models, MCP targets, and routes. Trust now reads AgentGuard sessions,
 tools, skills, and MCP resources, builds Agents only from explicit AgentGuard
 identity fields, and supports tool-label updates plus polled Skill/MCP detection
-jobs. Both workspaces provide source-preserving filtering, pagination, and
-details through the authenticated BFF. Protect and Audit business integrations
-remain scheduled for Phases 5–6 and are not fabricated.
+jobs. Protect now displays read-only agentgateway policy/guardrail summaries,
+AgentGuard runtime rules and per-agent plugin phases, and supports syntax-gated
+rule publication/deletion plus guarded approval decisions. Every dangerous
+write requires a note, explicit confirmation, CSRF, a request ID, and a result
+receipt. Audit business integration remains scheduled for Phase 6 and is not
+fabricated.
 
 ## Product boundary
 
@@ -62,7 +65,7 @@ requires Playwright Chromium; see [the web README](apps/web/README.md) for host
 and container commands. The checked-in 1440 px and 1280 px baselines are
 indexed under [docs/screenshots](docs/screenshots/README.md).
 
-## Run the Phase 4 BFF locally
+## Run the Phase 5 BFF locally
 
 Start the pinned upstreams, then provide non-placeholder secrets and host-side
 URLs. Plain HTTP cookies are permitted only with an explicit local environment
@@ -94,8 +97,9 @@ VITE_ENABLE_MOCKS=false npm --prefix apps/web run dev
 The browser exchanges the admin token for an `HttpOnly`, `SameSite=Strict`
 session cookie. The token is not persisted in browser storage. Production
 deployments must keep `AGENTSHARK_COOKIE_SECURE=true` and terminate HTTPS before
-the BFF. Trust write requests additionally require the session CSRF token. Scan
-jobs are bounded in memory and may be lost when the BFF restarts.
+the BFF. Trust and Protect write requests additionally require the session CSRF
+token. Rule check tokens and scan jobs are bounded in memory and may be lost
+when the BFF restarts. AgentGuard mutations are never automatically retried.
 
 ## Start the pinned upstreams
 

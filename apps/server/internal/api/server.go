@@ -21,6 +21,7 @@ import (
 	"github.com/Thespectier/AgentsharkX/apps/server/internal/gateway"
 	"github.com/Thespectier/AgentsharkX/apps/server/internal/guard"
 	"github.com/Thespectier/AgentsharkX/apps/server/internal/model"
+	"github.com/Thespectier/AgentsharkX/apps/server/internal/protect"
 	"github.com/Thespectier/AgentsharkX/apps/server/internal/stream"
 	"github.com/Thespectier/AgentsharkX/apps/server/internal/trust"
 	"github.com/Thespectier/AgentsharkX/apps/server/internal/upstream"
@@ -38,6 +39,7 @@ type ServerConfig struct {
 	Aggregate   *aggregate.Service
 	Connect     *connect.Service
 	Trust       *trust.Service
+	Protect     *protect.Service
 	Stream      *stream.Hub
 	Logger      *slog.Logger
 	AuthEnabled bool
@@ -85,6 +87,13 @@ func (server *server) routes() {
 	server.mux.Handle("PATCH /api/v1/trust/agents/{agentId}/tools/{tool}/labels", server.requireAuth(server.requireCSRF(http.HandlerFunc(server.updateToolLabels))))
 	server.mux.Handle("POST /api/v1/trust/agents/{agentId}/skills/detect", server.requireAuth(server.requireCSRF(http.HandlerFunc(server.detectSkills))))
 	server.mux.Handle("POST /api/v1/trust/agents/{agentId}/mcps/detect", server.requireAuth(server.requireCSRF(http.HandlerFunc(server.detectMCPs))))
+	server.mux.Handle("GET /api/v1/protect/policies", server.requireAuth(http.HandlerFunc(server.protectPolicies)))
+	server.mux.Handle("POST /api/v1/protect/runtime-rules/check", server.requireAuth(server.requireCSRF(http.HandlerFunc(server.checkRuntimeRule))))
+	server.mux.Handle("POST /api/v1/protect/agents/{agentId}/runtime-rules", server.requireAuth(server.requireCSRF(http.HandlerFunc(server.publishRuntimeRule))))
+	server.mux.Handle("DELETE /api/v1/protect/agents/{agentId}/runtime-rules/{ruleId}", server.requireAuth(server.requireCSRF(http.HandlerFunc(server.deleteRuntimeRule))))
+	server.mux.Handle("GET /api/v1/protect/approvals", server.requireAuth(http.HandlerFunc(server.protectApprovals)))
+	server.mux.Handle("POST /api/v1/protect/approvals/{ticketId}/approve", server.requireAuth(server.requireCSRF(http.HandlerFunc(server.approveTicket))))
+	server.mux.Handle("POST /api/v1/protect/approvals/{ticketId}/deny", server.requireAuth(server.requireCSRF(http.HandlerFunc(server.denyTicket))))
 	server.mux.Handle("/api/v1/", server.requireAuth(http.HandlerFunc(server.notImplemented)))
 }
 
@@ -308,6 +317,95 @@ func (server *server) startDetection(writer http.ResponseWriter, request *http.R
 	server.writeTrustResult(writer, request, http.StatusAccepted, envelope, err)
 }
 
+func (server *server) protectPolicies(writer http.ResponseWriter, request *http.Request) {
+	if !server.protectAvailable(writer, request) {
+		return
+	}
+	envelope, err := server.config.Protect.Snapshot(request.Context())
+	server.writeProtectResult(writer, request, http.StatusOK, envelope, err)
+}
+
+func (server *server) checkRuntimeRule(writer http.ResponseWriter, request *http.Request) {
+	if !server.protectAvailable(writer, request) {
+		return
+	}
+	var input model.RuntimeRuleCheckRequest
+	if !server.decodeMutation(writer, request, &input) {
+		return
+	}
+	result, err := server.config.Protect.CheckRule(request.Context(), input.Source)
+	if err != nil {
+		server.writeProtectResult(writer, request, http.StatusOK, nil, err)
+		return
+	}
+	result.RequestID = requestID(request.Context())
+	now := time.Now().UTC()
+	server.config.Logger.Info("protect operation completed",
+		"request_id", result.RequestID, "operation", "check-runtime-rule", "target", "runtime-rule", "status", "succeeded")
+	server.writeJSON(writer, http.StatusOK, model.ResourceEnvelope[model.RuntimeRuleCheck]{
+		Data: result, Meta: model.Meta{Source: model.SourceAgentGuard, FetchedAt: now},
+	})
+}
+
+func (server *server) publishRuntimeRule(writer http.ResponseWriter, request *http.Request) {
+	if !server.protectAvailable(writer, request) {
+		return
+	}
+	var input model.RuntimeRulePublishRequest
+	if !server.decodeMutation(writer, request, &input) {
+		return
+	}
+	envelope, err := server.config.Protect.PublishRule(request.Context(), request.PathValue("agentId"), input)
+	server.writeProtectMutation(writer, request, http.StatusCreated, envelope, err)
+}
+
+func (server *server) deleteRuntimeRule(writer http.ResponseWriter, request *http.Request) {
+	if !server.protectAvailable(writer, request) {
+		return
+	}
+	var input model.ConfirmedActionRequest
+	if !server.decodeMutation(writer, request, &input) {
+		return
+	}
+	envelope, err := server.config.Protect.DeleteRule(
+		request.Context(), request.PathValue("agentId"), request.PathValue("ruleId"), input,
+	)
+	server.writeProtectMutation(writer, request, http.StatusOK, envelope, err)
+}
+
+func (server *server) protectApprovals(writer http.ResponseWriter, request *http.Request) {
+	query, ok := server.resourceQuery(writer, request)
+	if !ok || !server.protectAvailable(writer, request) {
+		return
+	}
+	if query.search != "" {
+		server.writeError(writer, request, http.StatusBadRequest, "INVALID_REQUEST", "approval queue does not support search", source(model.SourceAgentGuard), false)
+		return
+	}
+	envelope, err := server.config.Protect.Approvals(request.Context(), query.cursor, query.limit)
+	server.writeProtectResult(writer, request, http.StatusOK, envelope, err)
+}
+
+func (server *server) approveTicket(writer http.ResponseWriter, request *http.Request) {
+	server.resolveTicket(writer, request, "approve")
+}
+
+func (server *server) denyTicket(writer http.ResponseWriter, request *http.Request) {
+	server.resolveTicket(writer, request, "deny")
+}
+
+func (server *server) resolveTicket(writer http.ResponseWriter, request *http.Request, decision string) {
+	if !server.protectAvailable(writer, request) {
+		return
+	}
+	var input model.ConfirmedActionRequest
+	if !server.decodeMutation(writer, request, &input) {
+		return
+	}
+	envelope, err := server.config.Protect.ResolveApproval(request.Context(), request.PathValue("ticketId"), decision, input)
+	server.writeProtectMutation(writer, request, http.StatusOK, envelope, err)
+}
+
 type listQuery struct {
 	search string
 	cursor string
@@ -344,6 +442,14 @@ func (server *server) trustAvailable(writer http.ResponseWriter, request *http.R
 		return true
 	}
 	server.writeError(writer, request, http.StatusServiceUnavailable, "TRUST_UNAVAILABLE", "AgentGuard trust integration is unavailable", source(model.SourceAgentGuard), true)
+	return false
+}
+
+func (server *server) protectAvailable(writer http.ResponseWriter, request *http.Request) bool {
+	if server.config.Protect != nil {
+		return true
+	}
+	server.writeError(writer, request, http.StatusServiceUnavailable, "PROTECT_UNAVAILABLE", "Protect integration is unavailable", nil, true)
 	return false
 }
 
@@ -413,6 +519,78 @@ func (server *server) writeTrustResult(writer http.ResponseWriter, request *http
 		return
 	}
 	server.writeError(writer, request, http.StatusInternalServerError, "INTERNAL_ERROR", "the request could not be completed", source(model.SourceAgentGuard), true)
+}
+
+func (server *server) writeProtectMutation(writer http.ResponseWriter, request *http.Request, status int, envelope model.ProtectMutationEnvelope, err error) {
+	if err != nil {
+		server.writeProtectResult(writer, request, status, envelope, err)
+		return
+	}
+	envelope.Data.RequestID = requestID(request.Context())
+	server.config.Logger.Info("protect operation completed",
+		"request_id", envelope.Data.RequestID,
+		"operation", envelope.Data.Operation,
+		"target", envelope.Data.Target,
+		"status", envelope.Data.Status,
+		"note_present", true,
+	)
+	server.writeJSON(writer, status, envelope)
+}
+
+func (server *server) writeProtectResult(writer http.ResponseWriter, request *http.Request, status int, envelope any, err error) {
+	if err == nil {
+		server.writeJSON(writer, status, envelope)
+		return
+	}
+	if errors.Is(err, protect.ErrInvalidCursor) {
+		server.writeError(writer, request, http.StatusBadRequest, "INVALID_CURSOR", "pagination cursor is invalid", source(model.SourceAgentGuard), false)
+		return
+	}
+	if errors.Is(err, protect.ErrInvalidRequest) {
+		server.writeError(writer, request, http.StatusBadRequest, "INVALID_REQUEST", "the Protect request is invalid", nil, false)
+		return
+	}
+	if errors.Is(err, protect.ErrRuleCheckRequired) {
+		server.writeError(writer, request, http.StatusConflict, "RULE_CHECK_REQUIRED", "run a successful syntax check immediately before publishing", source(model.SourceAgentGuard), false)
+		return
+	}
+	if errors.Is(err, protect.ErrMutationInFlight) {
+		server.writeError(writer, request, http.StatusConflict, "MUTATION_IN_PROGRESS", "the same Protect action is already in progress", source(model.SourceAgentGuard), true)
+		return
+	}
+	if errors.Is(err, protect.ErrNotFound) {
+		server.writeError(writer, request, http.StatusNotFound, "NOT_FOUND", "the rule, agent, or approval ticket is not available", source(model.SourceAgentGuard), false)
+		return
+	}
+	var gatewayContract *gateway.ContractError
+	var guardContract *guard.ContractError
+	if errors.As(err, &gatewayContract) {
+		server.writeError(writer, request, http.StatusBadGateway, "UPSTREAM_CONTRACT_MISMATCH", gatewayContract.Error(), source(model.SourceAgentGateway), false)
+		return
+	}
+	if errors.As(err, &guardContract) {
+		server.writeError(writer, request, http.StatusBadGateway, "UPSTREAM_CONTRACT_MISMATCH", guardContract.Error(), source(model.SourceAgentGuard), false)
+		return
+	}
+	var upstreamError *upstream.Error
+	if errors.As(err, &upstreamError) {
+		if upstreamError.Status == http.StatusNotFound {
+			server.writeError(writer, request, http.StatusNotFound, "NOT_FOUND", "the AgentGuard target is no longer pending or available", source(upstreamError.Source), false)
+			return
+		}
+		if upstreamError.Status == http.StatusConflict {
+			server.writeError(writer, request, http.StatusConflict, "UPSTREAM_CONFLICT", "AgentGuard reports that the target already exists or changed", source(upstreamError.Source), false)
+			return
+		}
+		if upstreamError.Status == http.StatusBadRequest || upstreamError.Status == http.StatusUnprocessableEntity {
+			server.writeError(writer, request, http.StatusUnprocessableEntity, "UPSTREAM_VALIDATION_FAILED", "the upstream source rejected the operation", source(upstreamError.Source), false)
+			return
+		}
+		retryable := upstreamError.Status == 0 || upstreamError.Status == http.StatusRequestTimeout || upstreamError.Status == http.StatusTooManyRequests || upstreamError.Status >= 500
+		server.writeError(writer, request, http.StatusServiceUnavailable, "UPSTREAM_UNAVAILABLE", "the required upstream source is unavailable", source(upstreamError.Source), retryable)
+		return
+	}
+	server.writeError(writer, request, http.StatusInternalServerError, "INTERNAL_ERROR", "the request could not be completed", nil, true)
 }
 
 func (server *server) decodeMutation(writer http.ResponseWriter, request *http.Request, destination any) bool {

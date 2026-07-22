@@ -2,12 +2,15 @@ package api
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -17,6 +20,7 @@ import (
 	"github.com/Thespectier/AgentsharkX/apps/server/internal/gateway"
 	"github.com/Thespectier/AgentsharkX/apps/server/internal/guard"
 	"github.com/Thespectier/AgentsharkX/apps/server/internal/model"
+	"github.com/Thespectier/AgentsharkX/apps/server/internal/protect"
 	"github.com/Thespectier/AgentsharkX/apps/server/internal/stream"
 	"github.com/Thespectier/AgentsharkX/apps/server/internal/trust"
 )
@@ -83,6 +87,207 @@ func TestFakeUpstreamsRemainIndependentThroughBFF(t *testing.T) {
 	for _, forbidden := range []string{guardSecret, "sensitive-guard-response"} {
 		if strings.Contains(string(encoded), forbidden) {
 			t.Fatalf("BFF response leaked %q", forbidden)
+		}
+	}
+}
+
+func TestProtectRulesAndApprovalsFlowThroughBFF(t *testing.T) {
+	t.Parallel()
+
+	var audit bytes.Buffer
+	const secretSource = "RULE review_email\nACTION HUMAN_CHECK\nSECRET never-log-rule-source"
+	const secretNote = "reviewed never-log-operator-note"
+	gatewayServer := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		writer.Header().Set("Content-Type", "application/json")
+		if request.URL.Path != "/api/config" {
+			http.NotFound(writer, request)
+			return
+		}
+		_, _ = io.WriteString(writer, `{"binds":[{"port":8080,"listeners":[{"name":"http","protocol":"HTTP","routes":[{"name":"api","policies":{"cors":{"allowOrigins":["never-log-policy-body"]}},"backends":[{"host":"localhost:9000"}]}]}]}]}`)
+	}))
+	defer gatewayServer.Close()
+
+	guardServer := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		writer.Header().Set("Content-Type", "application/json")
+		switch {
+		case request.URL.Path == "/v1/backend/sessions":
+			_, _ = io.WriteString(writer, `{"sessions":[{"session_id":"session-a","agent_id":"agent-a","user_id":"user-a","last_seen":1784688000}]}`)
+		case request.URL.Path == "/v1/backend/tools" || request.URL.Path == "/v1/backend/skills" || request.URL.Path == "/v1/backend/mcps":
+			_, _ = io.WriteString(writer, `[]`)
+		case request.URL.Path == "/v1/backend/rules" && request.Method == http.MethodGet:
+			_, _ = io.WriteString(writer, `[{"id":"existing","name":"existing","rule_id":"existing","status":"published","tool_pattern":"mail.send","action":"HUMAN_CHECK","severity":"high","category":"boundary","reason":"review","pack_id":"agent::agent-a","user_managed":true}]`)
+		case request.URL.Path == "/v1/backend/rules/check":
+			_, _ = io.WriteString(writer, `{"ok":true,"rule_count":1,"errors":[],"warnings":[],"hints":[]}`)
+		case request.URL.Path == "/v1/backend/agents/agent-a/rules" && request.Method == http.MethodPost:
+			_, _ = io.WriteString(writer, `{"ok":true,"agent_id":"agent-a","pack_id":"agent::agent-a","rule_id":"review_email","created":true}`)
+		case request.URL.Path == "/v1/backend/agents/agent-a/rules/existing" && request.Method == http.MethodDelete:
+			_, _ = io.WriteString(writer, `{"ok":true,"agent_id":"agent-a","pack_id":"agent::agent-a","rule_id":"existing"}`)
+		case request.URL.Path == "/v1/backend/agents/agent-a/plugins/config":
+			_, _ = io.WriteString(writer, `{"agent_id":"agent-a","plugin_config":{"phases":{"tool_before":{"client":["tool_invoke"],"server":[]}}},"config_source":"server_default"}`)
+		case request.URL.Path == "/v1/backend/agents/agent-a/plugins/available":
+			_, _ = io.WriteString(writer, `{"agent_id":"agent-a","local_plugins":[{"name":"tool_invoke","phases":["tool_before"]}],"remote_plugins":[]}`)
+		case request.URL.Path == "/v1/backend/approvals" && request.Method == http.MethodGet:
+			_, _ = io.WriteString(writer, `[{"ticket_id":"ticket-ok","created_ms":1784688000000,"status":"pending","event":{"event_id":"event-ok","event_type":"tool_invoke","principal":{"agent_id":"agent-a"},"tool_call":{"tool_name":"mail.send","args":{"body":"never-log-approval-body"}}},"decision":{"action":"human_check","risk_score":0.8,"matched_rules":["existing"],"reason":"review"}},{"ticket_id":"ticket-gone","created_ms":1784688000001,"status":"pending","event":{"event_id":"event-gone","event_type":"tool_invoke","principal":{"agent_id":"agent-a"},"tool_call":{"tool_name":"shell.exec"}},"decision":{"action":"human_check","risk_score":0.9,"matched_rules":["existing"],"reason":"review"}}]`)
+		case request.URL.Path == "/v1/backend/approvals/ticket-ok/approve":
+			_, _ = io.WriteString(writer, `{"ok":true}`)
+		case request.URL.Path == "/v1/backend/approvals/ticket-gone/deny":
+			http.NotFound(writer, request)
+		default:
+			http.NotFound(writer, request)
+		}
+	}))
+	defer guardServer.Close()
+
+	gatewayClient, err := gateway.New(gatewayServer.URL, gatewayServer.Client(), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	guardClient, err := guard.New(guardServer.URL, "guard-secret", guardServer.Client(), 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(New(ServerConfig{
+		Protect: protect.New(gatewayClient, guardClient, model.ConsoleLinks{RawConfig: "http://gateway.invalid/ui/config"}),
+		Logger:  slog.New(slog.NewTextHandler(&audit, nil)), AuthEnabled: false,
+	}))
+	defer server.Close()
+
+	var snapshot model.ProtectSnapshotEnvelope
+	protectJSON(t, server.Client(), http.MethodGet, server.URL+"/api/v1/protect/policies", "", http.StatusOK, &snapshot)
+	if len(snapshot.Data.GatewayPolicies) != 1 || len(snapshot.Data.RuntimeRules) != 1 || len(snapshot.Data.Plugins) != 4 {
+		t.Fatalf("unexpected protect snapshot: %#v", snapshot)
+	}
+	if snapshot.Meta.Partial {
+		t.Fatalf("successful fake upstream snapshot became partial: %#v", snapshot.Meta)
+	}
+	agentID := snapshot.Data.Plugins[0].AgentID
+	ruleID := snapshot.Data.RuntimeRules[0].ID
+
+	var check model.ResourceEnvelope[model.RuntimeRuleCheck]
+	protectJSON(t, server.Client(), http.MethodPost, server.URL+"/api/v1/protect/runtime-rules/check", `{"source":"`+strings.ReplaceAll(secretSource, "\n", `\n`)+`"}`, http.StatusOK, &check)
+	if !check.Data.Publishable || check.Data.CheckToken == "" || check.Data.RequestID == "" {
+		t.Fatalf("unexpected check receipt: %#v", check.Data)
+	}
+	publishBody, _ := json.Marshal(model.RuntimeRulePublishRequest{Source: secretSource, CheckToken: check.Data.CheckToken, Note: secretNote, Confirmed: true})
+	var publish model.ProtectMutationEnvelope
+	protectJSON(t, server.Client(), http.MethodPost, server.URL+"/api/v1/protect/agents/"+agentID+"/runtime-rules", string(publishBody), http.StatusCreated, &publish)
+	if publish.Data.RequestID == "" || publish.Data.Operation != "publish-runtime-rule" {
+		t.Fatalf("unexpected publish receipt: %#v", publish)
+	}
+	var deleted model.ProtectMutationEnvelope
+	protectJSON(t, server.Client(), http.MethodDelete, server.URL+"/api/v1/protect/agents/"+agentID+"/runtime-rules/"+ruleID, `{"note":"retired","confirmed":true}`, http.StatusOK, &deleted)
+
+	var approvals model.ResourcePageEnvelope[model.Approval]
+	protectJSON(t, server.Client(), http.MethodGet, server.URL+"/api/v1/protect/approvals", "", http.StatusOK, &approvals)
+	if approvals.Data.Total != 2 {
+		t.Fatalf("unexpected approvals: %#v", approvals)
+	}
+	byTool := map[string]string{}
+	for _, approval := range approvals.Data.Items {
+		byTool[approval.Tool] = approval.ID
+	}
+	var approved model.ProtectMutationEnvelope
+	protectJSON(t, server.Client(), http.MethodPost, server.URL+"/api/v1/protect/approvals/"+byTool["mail.send"]+"/approve", `{"note":"`+secretNote+`","confirmed":true}`, http.StatusOK, &approved)
+	var missing model.ErrorEnvelope
+	protectJSON(t, server.Client(), http.MethodPost, server.URL+"/api/v1/protect/approvals/"+byTool["shell.exec"]+"/deny", `{"note":"reviewed","confirmed":true}`, http.StatusNotFound, &missing)
+	if missing.Error.Code != "NOT_FOUND" || missing.Error.RequestID == "" {
+		t.Fatalf("unexpected missing ticket response: %#v", missing)
+	}
+
+	logs := audit.String()
+	for _, forbidden := range []string{secretSource, "never-log-rule-source", secretNote, "never-log-operator-note", "never-log-approval-body", "never-log-policy-body"} {
+		if strings.Contains(logs, forbidden) {
+			t.Fatalf("audit log leaked %q: %s", forbidden, logs)
+		}
+	}
+	if !strings.Contains(logs, "protect operation completed") || !strings.Contains(logs, "request_id=") || !strings.Contains(logs, "note_present=true") {
+		t.Fatalf("missing safe protect audit fields: %s", logs)
+	}
+}
+
+func TestApprovalTimeoutIsNotRetriedAndManualRetrySucceeds(t *testing.T) {
+	t.Parallel()
+	var mutationCalls int
+	var mu sync.Mutex
+	guardServer := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		writer.Header().Set("Content-Type", "application/json")
+		if request.URL.Path == "/v1/backend/approvals" {
+			_, _ = io.WriteString(writer, `[{"ticket_id":"ticket-retry","created_ms":1784688000000,"status":"pending","event":{"event_id":"event-retry","event_type":"tool_invoke","principal":{"agent_id":"agent-a"},"tool_call":{"tool_name":"mail.send"}},"decision":{"action":"human_check","risk_score":0.5,"matched_rules":[],"reason":"review"}}]`)
+			return
+		}
+		if request.URL.Path == "/v1/backend/approvals/ticket-retry/approve" {
+			mu.Lock()
+			mutationCalls++
+			call := mutationCalls
+			mu.Unlock()
+			if call == 1 {
+				time.Sleep(60 * time.Millisecond)
+			}
+			_, _ = io.WriteString(writer, `{"ok":true}`)
+			return
+		}
+		http.NotFound(writer, request)
+	}))
+	defer guardServer.Close()
+	readClient := guardServer.Client()
+	operationClient := &http.Client{Timeout: 10 * time.Millisecond}
+	guardClient, err := guard.NewWithOperationClient(guardServer.URL, "guard-secret", "v2.1", readClient, operationClient, 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := protect.New(fakeProtectGateway{}, guardClient, model.ConsoleLinks{})
+	server := httptest.NewServer(New(ServerConfig{Protect: service, Logger: slog.New(slog.DiscardHandler), AuthEnabled: false}))
+	defer server.Close()
+	var approvals model.ResourcePageEnvelope[model.Approval]
+	protectJSON(t, server.Client(), http.MethodGet, server.URL+"/api/v1/protect/approvals", "", http.StatusOK, &approvals)
+	ticketID := approvals.Data.Items[0].ID
+	var timeout model.ErrorEnvelope
+	protectJSON(t, server.Client(), http.MethodPost, server.URL+"/api/v1/protect/approvals/"+ticketID+"/approve", `{"note":"reviewed","confirmed":true}`, http.StatusServiceUnavailable, &timeout)
+	if !timeout.Error.Retryable {
+		t.Fatalf("timeout should invite an explicit retry: %#v", timeout)
+	}
+	mu.Lock()
+	firstCalls := mutationCalls
+	mu.Unlock()
+	if firstCalls != 1 {
+		t.Fatalf("timed out mutation was retried automatically: %d", firstCalls)
+	}
+	var retry model.ProtectMutationEnvelope
+	protectJSON(t, server.Client(), http.MethodPost, server.URL+"/api/v1/protect/approvals/"+ticketID+"/approve", `{"note":"reviewed","confirmed":true}`, http.StatusOK, &retry)
+	mu.Lock()
+	defer mu.Unlock()
+	if mutationCalls != 2 || retry.Data.RequestID == "" {
+		t.Fatalf("manual retry did not succeed: calls=%d receipt=%#v", mutationCalls, retry)
+	}
+}
+
+type fakeProtectGateway struct{}
+
+func (fakeProtectGateway) Snapshot(context.Context) (model.GatewaySnapshot, error) {
+	return model.GatewaySnapshot{FetchedAt: time.Now().UTC()}, nil
+}
+
+func protectJSON(t *testing.T, client *http.Client, method, endpoint, body string, wantStatus int, destination any) {
+	t.Helper()
+	request, err := http.NewRequest(method, endpoint, strings.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if body != "" {
+		request.Header.Set("Content-Type", "application/json")
+	}
+	response, err := client.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != wantStatus {
+		payload, _ := io.ReadAll(response.Body)
+		t.Fatalf("%s %s status=%d want=%d body=%s", method, endpoint, response.StatusCode, wantStatus, payload)
+	}
+	if destination != nil {
+		if err := json.NewDecoder(response.Body).Decode(destination); err != nil {
+			t.Fatal(err)
 		}
 	}
 }

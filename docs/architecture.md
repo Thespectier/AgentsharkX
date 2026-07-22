@@ -1,6 +1,6 @@
 # Architecture
 
-Status: Phase 4 Trust integration, verified 2026-07-22.
+Status: Phase 5 Protect integration, verified 2026-07-22.
 
 ## Context
 
@@ -45,11 +45,14 @@ The Go BFF is organized into the following packages:
 - `guard`: AgentGuard management adapter.
 - `trust`: explicit AgentGuard identity/resource aggregation, filtering,
   pagination, label writes, and bounded scan-job orchestration.
+- `protect`: independent gateway policy and AgentGuard rule/plugin aggregation,
+  short-lived rule-check tokens, guarded mutations, approval pagination, and
+  duplicate-operation locks.
 - `aggregate`: source-preserving view models and partial-result handling.
 - `stream`: non-blocking Phase 2 health-event fan-out; bounded business event
   buffers and resume semantics remain Phase 6 work.
 - `api`: OpenAPI-backed HTTP handlers and standard errors.
-- `model`: source-preserving health, capability, Connect/Trust resource,
+- `model`: source-preserving health, capability, Connect/Trust/Protect resource,
   overview, event, and error contracts.
 - `upstream`: bounded retries and response-size limits shared by the two
   adapters without sharing their source state.
@@ -90,13 +93,15 @@ A gateway failure cannot suppress AgentGuard data, and an AgentGuard failure
 cannot suppress gateway data. Aggregated responses carry per-source metadata
 and stale markers rather than collapsing partial failures into a global 500.
 
-## Phase 4 runtime data and storage
+## Phase 5 runtime data and storage
 
 The BFF has no database. A background monitor polls only the two health
 contracts and publishes a normalized SSE event when status or version changes.
 New SSE connections first receive the current source-scoped health snapshot.
 Connect reads a bounded `/api/config` snapshot per request and never returns raw
-config, params, policies, credentials, or prompt payloads. Trust reads the four
+config, params, policy bodies, credentials, or prompt payloads. Protect may
+summarize explicit route/backend policy keys and raw config paths, while policy
+editing stays in agentgateway. Trust reads the four
 AgentGuard session/resource routes independently, so one failed capability does
 not erase successful siblings. It whitelists display fields and never returns
 session keys, client URLs, arbitrary principal/metadata objects, descriptors,
@@ -115,6 +120,16 @@ configured `AGENTSHARK_SCAN_TIMEOUT`; completed state is not durable across a
 BFF restart. Tool-label updates and scan starts require CSRF and are never
 automatically retried.
 
+Protect reads AgentGuard rules and pending approvals, then fans out plugin
+config/available reads only for explicit Trust agent IDs with fixed agent and
+concurrency bounds. Gateway policy failures remain independent from AgentGuard
+rule/plugin failures. Rule source is submitted only to AgentGuard check/publish
+and is never returned by list APIs or logged. A publish token stores only the
+source digest, expires after five minutes, is consumed once, and is held in a
+100-entry in-memory bound. Dangerous writes require a non-empty operator note
+and explicit confirmation; approval/rule locks prevent concurrent duplicate
+actions in one BFF process. Upstream mutations are not automatically retried.
+
 The background monitor still polls only health. `/overview` remains
 `mode=health-only`, and no business-event ring buffer, traffic correlation, or
 durable storage is added. Long-term logs remain in their upstream systems.
@@ -129,7 +144,8 @@ durable storage is added. Long-term logs remain in their upstream systems.
   environment is explicitly local/development and the listener is loopback.
 - Upstream keys are server-only and never appear in a frontend bundle, API
   response, structured log, or error message.
-- Full prompts, authorization headers, and raw sensitive payloads are denied by
+- Full prompts, rule source, operator notes, approval arguments, authorization
+  headers, and raw sensitive payloads are denied by
   default. Raw event views use a redacted copy.
 - The Phase 0 Compose baseline publishes upstream management ports on loopback.
   It is a development topology, not an internet-facing deployment.

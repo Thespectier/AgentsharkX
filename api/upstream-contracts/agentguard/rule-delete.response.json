@@ -1,0 +1,6 @@
+{
+  "ok": true,
+  "agent_id": "agent-demo",
+  "pack_id": "agent::agent-demo",
+  "rule_id": "review_external_email"
+}

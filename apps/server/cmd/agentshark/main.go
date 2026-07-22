@@ -18,6 +18,7 @@ import (
 	"github.com/Thespectier/AgentsharkX/apps/server/internal/gateway"
 	"github.com/Thespectier/AgentsharkX/apps/server/internal/guard"
 	"github.com/Thespectier/AgentsharkX/apps/server/internal/model"
+	"github.com/Thespectier/AgentsharkX/apps/server/internal/protect"
 	"github.com/Thespectier/AgentsharkX/apps/server/internal/stream"
 	"github.com/Thespectier/AgentsharkX/apps/server/internal/trust"
 )
@@ -47,16 +48,25 @@ func main() {
 		logger.Error("guard adapter rejected", "error", err.Error())
 		os.Exit(1)
 	}
+	protectGuardClient, err := guard.NewWithOperationClient(
+		cfg.Guard.BaseURL, cfg.Guard.AdminToken.Value(), cfg.GuardRelease,
+		guardHTTP, &http.Client{Timeout: cfg.UpstreamTimeout}, cfg.UpstreamRetryMax,
+	)
+	if err != nil {
+		logger.Error("protect adapter rejected", "error", err.Error())
+		os.Exit(1)
+	}
 
 	rootContext, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	aggregator := aggregate.New(cfg.Environment, gatewayClient, guardClient)
 	connectService := connect.New(gatewayClient, cfg.Gateway.ConsoleURL)
 	trustService := trust.New(rootContext, guardClient, cfg.ScanTimeout)
+	protectService := protect.New(gatewayClient, protectGuardClient, connectService.Links())
 	hub := stream.NewHub()
 	sessions := auth.New(cfg.AdminToken.Value(), auth.Options{CookieSecure: cfg.CookieSecure, TTL: 8 * time.Hour})
 	handler := api.New(api.ServerConfig{
-		Sessions: sessions, Aggregate: aggregator, Connect: connectService, Trust: trustService,
+		Sessions: sessions, Aggregate: aggregator, Connect: connectService, Trust: trustService, Protect: protectService,
 		Stream: hub, Logger: logger, AuthEnabled: !cfg.AuthDisabled,
 	})
 

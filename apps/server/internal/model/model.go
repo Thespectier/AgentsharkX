@@ -154,6 +154,7 @@ type GatewaySnapshot struct {
 	Models    []GatewayModel
 	MCP       []GatewayMCPServer
 	Routes    []GatewayRoute
+	Policies  []ProtectPolicy
 	Listeners int
 	Backends  int
 	FetchedAt time.Time
@@ -343,6 +344,136 @@ type TrustScanJob struct {
 	Results         []TrustDetection `json:"results"`
 	Warnings        []string         `json:"warnings"`
 	Error           *TrustScanError  `json:"error,omitempty"`
+}
+
+type ProtectResourceBase struct {
+	ID         string    `json:"id"`
+	UpstreamID string    `json:"upstreamId"`
+	Source     Source    `json:"source"`
+	FetchedAt  time.Time `json:"fetchedAt"`
+	RawRef     RawRef    `json:"rawRef"`
+}
+
+type ProtectPolicy struct {
+	ProtectResourceBase
+	Name   string `json:"name"`
+	Type   string `json:"type"`
+	Scope  string `json:"scope"`
+	Phase  string `json:"phase"`
+	Action string `json:"action"`
+	Status string `json:"status"`
+}
+
+type RuntimeRule struct {
+	ProtectResourceBase
+	Name            string `json:"name"`
+	AgentID         string `json:"agentId,omitempty"`
+	AgentUpstreamID string `json:"agentUpstreamId,omitempty"`
+	Scope           string `json:"scope"`
+	Phase           string `json:"phase"`
+	Action          string `json:"action"`
+	Status          string `json:"status"`
+	Severity        string `json:"severity,omitempty"`
+	Category        string `json:"category,omitempty"`
+	ToolPattern     string `json:"toolPattern,omitempty"`
+	Reason          string `json:"reason,omitempty"`
+	UserManaged     bool   `json:"userManaged"`
+}
+
+type ProtectPluginPhase struct {
+	ProtectResourceBase
+	AgentID                string   `json:"agentId"`
+	AgentUpstreamID        string   `json:"agentUpstreamId"`
+	Phase                  string   `json:"phase"`
+	ConfigSource           string   `json:"configSource"`
+	EnabledLocalPlugins    []string `json:"enabledLocalPlugins"`
+	EnabledRemotePlugins   []string `json:"enabledRemotePlugins"`
+	AvailableLocalPlugins  []string `json:"availableLocalPlugins"`
+	AvailableRemotePlugins []string `json:"availableRemotePlugins"`
+}
+
+type ProtectPluginSnapshot struct {
+	Items     []ProtectPluginPhase
+	FetchedAt time.Time
+	Failures  []SourceFailure
+}
+
+type ProtectSnapshot struct {
+	GatewayPolicies []ProtectPolicy      `json:"gatewayPolicies"`
+	RuntimeRules    []RuntimeRule        `json:"runtimeRules"`
+	Plugins         []ProtectPluginPhase `json:"plugins"`
+	Links           ConsoleLinks         `json:"links"`
+}
+
+type ProtectSnapshotEnvelope struct {
+	Data ProtectSnapshot `json:"data"`
+	Meta Meta            `json:"meta"`
+}
+
+type RuleCheckMessage struct {
+	Message string `json:"message"`
+}
+
+type RuntimeRuleCheckRequest struct {
+	Source string `json:"source"`
+}
+
+type RuntimeRuleCheck struct {
+	Source      Source             `json:"source"`
+	OK          bool               `json:"ok"`
+	Publishable bool               `json:"publishable"`
+	RuleCount   int                `json:"ruleCount"`
+	Errors      []RuleCheckMessage `json:"errors"`
+	Warnings    []RuleCheckMessage `json:"warnings"`
+	Hints       []RuleCheckMessage `json:"hints"`
+	CheckToken  string             `json:"checkToken,omitempty"`
+	ExpiresAt   *time.Time         `json:"expiresAt"`
+	RequestID   string             `json:"requestId"`
+}
+
+type RuntimeRulePublishRequest struct {
+	Source     string `json:"source"`
+	CheckToken string `json:"checkToken"`
+	Note       string `json:"note"`
+	Confirmed  bool   `json:"confirmed"`
+}
+
+type ConfirmedActionRequest struct {
+	Note      string `json:"note"`
+	Confirmed bool   `json:"confirmed"`
+}
+
+type Approval struct {
+	ProtectResourceBase
+	AgentID         string    `json:"agentId,omitempty"`
+	AgentUpstreamID string    `json:"agentUpstreamId,omitempty"`
+	SessionID       string    `json:"sessionId,omitempty"`
+	UserID          string    `json:"userId,omitempty"`
+	EventID         string    `json:"eventId,omitempty"`
+	EventType       string    `json:"eventType"`
+	Tool            string    `json:"tool,omitempty"`
+	Phase           string    `json:"phase"`
+	Action          string    `json:"action"`
+	Reason          string    `json:"reason,omitempty"`
+	RiskScore       float64   `json:"riskScore"`
+	MatchedRules    []string  `json:"matchedRules"`
+	Status          string    `json:"status"`
+	CreatedAt       time.Time `json:"createdAt"`
+}
+
+type ProtectMutationReceipt struct {
+	Operation   string    `json:"operation"`
+	Status      string    `json:"status"`
+	Source      Source    `json:"source"`
+	Target      string    `json:"target"`
+	RequestID   string    `json:"requestId"`
+	CompletedAt time.Time `json:"completedAt"`
+	Message     string    `json:"message"`
+}
+
+type ProtectMutationEnvelope struct {
+	Data ProtectMutationReceipt `json:"data"`
+	Meta Meta                   `json:"meta"`
 }
 
 type UnifiedEvent struct {

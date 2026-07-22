@@ -106,36 +106,6 @@ export interface OverviewData {
   };
 }
 
-export interface Policy {
-  id: string;
-  name: string;
-  source: Source;
-  type: "Gateway Policy" | "Content Guardrail" | "Runtime Rule";
-  scope: string;
-  phase: string;
-  action: string;
-  status: "active" | "draft" | "disabled";
-  matches24h: number;
-  updatedAt: string;
-}
-
-export interface Approval {
-  id: string;
-  agentId: string;
-  tool: string;
-  risk: Severity;
-  reason: string;
-  requestedAt: string;
-  phase: string;
-  source: "agentguard";
-}
-
-export interface ProtectData {
-  policies: Policy[];
-  approvals: Approval[];
-  coverage: Array<{ phase: string; active: number; available: number }>;
-}
-
 export interface AuditData {
   metrics: Metric[];
   trend: TrendPoint[];

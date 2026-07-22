@@ -1,14 +1,16 @@
 openapi: 3.1.0
 info:
   title: AgentsharkX BFF API
-  version: 0.4.0-phase4
+  version: 0.5.0-phase5
   description: |
     Source-preserving management API above agentgateway and AgentGuard.
     Phase 4 implements authentication, independent upstream health and
     capability probes, the health-only overview, normalized health SSE, and
     read-only agentgateway resources with setup verification. Trust adds
     source-preserving AgentGuard identities, resources, label updates, and
-    bounded asynchronous scan orchestration.
+    bounded asynchronous scan orchestration. Protect adds source-grouped
+    gateway policy summaries, AgentGuard runtime-rule check/publish/delete,
+    per-agent plugin phases, and guarded approval decisions.
     Later operations remain reserved according to `x-implementation-phase`.
 servers:
   - url: /
@@ -634,9 +636,20 @@ paths:
       operationId: listPolicies
       summary: List source-grouped gateway policies and runtime rules
       x-implementation-phase: 5
+      x-implementation-status: implemented
       responses:
         '200':
-          $ref: '#/components/responses/DataResponse'
+          description: Source-grouped policy, rule, and plugin snapshot
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProtectSnapshotEnvelope'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+        '503':
+          $ref: '#/components/responses/UpstreamUnavailable'
 
   /api/v1/protect/runtime-rules/check:
     post:
@@ -644,6 +657,7 @@ paths:
       operationId: checkRuntimeRule
       summary: Validate rule syntax with AgentGuard before publication
       x-implementation-phase: 5
+      x-implementation-status: implemented
       parameters:
         - $ref: '#/components/parameters/CsrfToken'
       requestBody:
@@ -651,12 +665,26 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/RuleSource'
+              $ref: '#/components/schemas/RuntimeRuleCheckRequest'
       responses:
         '200':
-          $ref: '#/components/responses/DataResponse'
+          description: Syntax-check result and a short-lived publish token when publishable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RuntimeRuleCheckEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '422':
           $ref: '#/components/responses/ValidationFailed'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+        '503':
+          $ref: '#/components/responses/UpstreamUnavailable'
 
   /api/v1/protect/agents/{agentId}/runtime-rules:
     post:
@@ -664,6 +692,7 @@ paths:
       operationId: publishRuntimeRule
       summary: Publish a checked runtime rule to AgentGuard
       x-implementation-phase: 5
+      x-implementation-status: implemented
       parameters:
         - $ref: '#/components/parameters/AgentId'
         - $ref: '#/components/parameters/CsrfToken'
@@ -672,12 +701,30 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/RuleSource'
+              $ref: '#/components/schemas/RuntimeRulePublishRequest'
       responses:
         '201':
-          $ref: '#/components/responses/DataResponse'
+          description: Auditable publication receipt
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProtectMutationEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
         '422':
           $ref: '#/components/responses/ValidationFailed'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+        '503':
+          $ref: '#/components/responses/UpstreamUnavailable'
 
   /api/v1/protect/agents/{agentId}/runtime-rules/{ruleId}:
     delete:
@@ -685,15 +732,38 @@ paths:
       operationId: deleteRuntimeRule
       summary: Delete an AgentGuard runtime rule after explicit confirmation
       x-implementation-phase: 5
+      x-implementation-status: implemented
       parameters:
         - $ref: '#/components/parameters/AgentId'
         - $ref: '#/components/parameters/RuleId'
         - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConfirmedActionRequest'
       responses:
-        '204':
-          description: Rule deleted
+        '200':
+          description: Auditable deletion receipt
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProtectMutationEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+        '503':
+          $ref: '#/components/responses/UpstreamUnavailable'
 
   /api/v1/protect/approvals:
     get:
@@ -701,9 +771,25 @@ paths:
       operationId: listApprovals
       summary: List pending AgentGuard approval tickets
       x-implementation-phase: 5
+      x-implementation-status: implemented
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
       responses:
         '200':
-          $ref: '#/components/responses/DataResponse'
+          description: Pending approval queue without sensitive tool arguments
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApprovalPageEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+        '503':
+          $ref: '#/components/responses/UpstreamUnavailable'
 
   /api/v1/protect/approvals/{ticketId}/approve:
     post:
@@ -711,6 +797,7 @@ paths:
       operationId: approveTicket
       summary: Approve one pending ticket with an operator note
       x-implementation-phase: 5
+      x-implementation-status: implemented
       parameters:
         - $ref: '#/components/parameters/TicketId'
         - $ref: '#/components/parameters/CsrfToken'
@@ -719,14 +806,28 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/ApprovalAction'
+              $ref: '#/components/schemas/ConfirmedActionRequest'
       responses:
         '200':
-          $ref: '#/components/responses/DataResponse'
+          description: Auditable approval receipt
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProtectMutationEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/Conflict'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+        '503':
+          $ref: '#/components/responses/UpstreamUnavailable'
 
   /api/v1/protect/approvals/{ticketId}/deny:
     post:
@@ -734,6 +835,7 @@ paths:
       operationId: denyTicket
       summary: Deny one pending ticket with an operator note
       x-implementation-phase: 5
+      x-implementation-status: implemented
       parameters:
         - $ref: '#/components/parameters/TicketId'
         - $ref: '#/components/parameters/CsrfToken'
@@ -742,14 +844,28 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/ApprovalAction'
+              $ref: '#/components/schemas/ConfirmedActionRequest'
       responses:
         '200':
-          $ref: '#/components/responses/DataResponse'
+          description: Auditable denial receipt
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProtectMutationEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/Conflict'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+        '503':
+          $ref: '#/components/responses/UpstreamUnavailable'
 
   /api/v1/audit/analytics:
     get:
@@ -1716,7 +1832,93 @@ components:
             type: string
             minLength: 1
             maxLength: 256
-    RuleSource:
+    ProtectPolicy:
+      type: object
+      additionalProperties: false
+      required: [id, upstreamId, source, fetchedAt, rawRef, name, type, scope, phase, action, status]
+      properties:
+        id: { type: string }
+        upstreamId: { type: string }
+        source: { $ref: '#/components/schemas/GatewaySource' }
+        fetchedAt: { type: string, format: date-time }
+        rawRef: { $ref: '#/components/schemas/RawRef' }
+        name: { type: string }
+        type: { type: string, enum: [Gateway Policy, Content Guardrail] }
+        scope: { type: string }
+        phase: { type: string }
+        action: { type: string }
+        status: { type: string, enum: [read-only] }
+    RuntimeRule:
+      type: object
+      additionalProperties: false
+      required: [id, upstreamId, source, fetchedAt, rawRef, name, scope, phase, action, status, userManaged]
+      properties:
+        id: { type: string }
+        upstreamId: { type: string }
+        source: { $ref: '#/components/schemas/GuardSource' }
+        fetchedAt: { type: string, format: date-time }
+        rawRef: { $ref: '#/components/schemas/RawRef' }
+        name: { type: string }
+        agentId: { type: string }
+        agentUpstreamId: { type: string }
+        scope: { type: string }
+        phase: { type: string }
+        action: { type: string, enum: [ALLOW, DENY, HUMAN_CHECK, LLM_CHECK, DEGRADE] }
+        status: { type: string }
+        severity: { type: string }
+        category: { type: string }
+        toolPattern: { type: string }
+        reason: { type: string }
+        userManaged: { type: boolean }
+    ProtectPluginPhase:
+      type: object
+      additionalProperties: false
+      required: [id, upstreamId, source, fetchedAt, rawRef, agentId, agentUpstreamId, phase, configSource, enabledLocalPlugins, enabledRemotePlugins, availableLocalPlugins, availableRemotePlugins]
+      properties:
+        id: { type: string }
+        upstreamId: { type: string }
+        source: { $ref: '#/components/schemas/GuardSource' }
+        fetchedAt: { type: string, format: date-time }
+        rawRef: { $ref: '#/components/schemas/RawRef' }
+        agentId: { type: string }
+        agentUpstreamId: { type: string }
+        phase: { type: string }
+        configSource: { type: string, enum: [agent_override, server_default, none, unavailable] }
+        enabledLocalPlugins:
+          type: array
+          items: { type: string }
+        enabledRemotePlugins:
+          type: array
+          items: { type: string }
+        availableLocalPlugins:
+          type: array
+          items: { type: string }
+        availableRemotePlugins:
+          type: array
+          items: { type: string }
+    ProtectSnapshot:
+      type: object
+      additionalProperties: false
+      required: [gatewayPolicies, runtimeRules, plugins, links]
+      properties:
+        gatewayPolicies:
+          type: array
+          items: { $ref: '#/components/schemas/ProtectPolicy' }
+        runtimeRules:
+          type: array
+          items: { $ref: '#/components/schemas/RuntimeRule' }
+        plugins:
+          type: array
+          items: { $ref: '#/components/schemas/ProtectPluginPhase' }
+        links: { $ref: '#/components/schemas/ConsoleLinks' }
+    ProtectSnapshotEnvelope:
+      type: object
+      additionalProperties: false
+      required: [data, meta]
+      properties:
+        data: { $ref: '#/components/schemas/ProtectSnapshot' }
+        meta: { $ref: '#/components/schemas/Meta' }
+    RuntimeRuleCheckRequest:
       type: object
       additionalProperties: false
       required: [source]
@@ -1724,15 +1926,132 @@ components:
         source:
           type: string
           minLength: 1
-    ApprovalAction:
+          maxLength: 12288
+          writeOnly: true
+    RuleCheckMessage:
       type: object
       additionalProperties: false
-      required: [note]
+      required: [message]
+      properties:
+        message: { type: string }
+    RuntimeRuleCheck:
+      type: object
+      additionalProperties: false
+      required: [source, ok, publishable, ruleCount, errors, warnings, hints, expiresAt, requestId]
+      properties:
+        source: { $ref: '#/components/schemas/GuardSource' }
+        ok: { type: boolean }
+        publishable: { type: boolean }
+        ruleCount: { type: integer, minimum: 0 }
+        errors:
+          type: array
+          items: { $ref: '#/components/schemas/RuleCheckMessage' }
+        warnings:
+          type: array
+          items: { $ref: '#/components/schemas/RuleCheckMessage' }
+        hints:
+          type: array
+          items: { $ref: '#/components/schemas/RuleCheckMessage' }
+        checkToken: { type: string }
+        expiresAt: { type: [string, 'null'], format: date-time }
+        requestId: { type: string }
+    RuntimeRuleCheckEnvelope:
+      type: object
+      additionalProperties: false
+      required: [data, meta]
+      properties:
+        data: { $ref: '#/components/schemas/RuntimeRuleCheck' }
+        meta: { $ref: '#/components/schemas/Meta' }
+    RuntimeRulePublishRequest:
+      type: object
+      additionalProperties: false
+      required: [source, checkToken, note, confirmed]
+      properties:
+        source:
+          type: string
+          minLength: 1
+          maxLength: 12288
+          writeOnly: true
+        checkToken: { type: string, minLength: 1, maxLength: 128, writeOnly: true }
+        note:
+          type: string
+          minLength: 1
+          maxLength: 500
+          writeOnly: true
+        confirmed: { type: boolean }
+    ConfirmedActionRequest:
+      type: object
+      additionalProperties: false
+      required: [note, confirmed]
       properties:
         note:
           type: string
           minLength: 1
-          maxLength: 2000
+          maxLength: 500
+          writeOnly: true
+        confirmed: { type: boolean }
+    Approval:
+      type: object
+      additionalProperties: false
+      required: [id, upstreamId, source, fetchedAt, rawRef, eventType, phase, action, riskScore, matchedRules, status, createdAt]
+      properties:
+        id: { type: string }
+        upstreamId: { type: string }
+        source: { $ref: '#/components/schemas/GuardSource' }
+        fetchedAt: { type: string, format: date-time }
+        rawRef: { $ref: '#/components/schemas/RawRef' }
+        agentId: { type: string }
+        agentUpstreamId: { type: string }
+        sessionId: { type: string }
+        userId: { type: string }
+        eventId: { type: string }
+        eventType: { type: string }
+        tool: { type: string }
+        phase: { type: string }
+        action: { type: string }
+        reason: { type: string }
+        riskScore: { type: number, minimum: 0 }
+        matchedRules:
+          type: array
+          items: { type: string }
+        status: { type: string, enum: [pending] }
+        createdAt: { type: string, format: date-time }
+    ApprovalPage:
+      type: object
+      additionalProperties: false
+      required: [items, nextCursor, total]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/Approval' }
+        nextCursor: { type: [string, 'null'] }
+        total: { type: integer, minimum: 0 }
+    ApprovalPageEnvelope:
+      type: object
+      additionalProperties: false
+      required: [data, meta]
+      properties:
+        data: { $ref: '#/components/schemas/ApprovalPage' }
+        meta: { $ref: '#/components/schemas/Meta' }
+    ProtectMutationReceipt:
+      type: object
+      additionalProperties: false
+      required: [operation, status, source, target, requestId, completedAt, message]
+      properties:
+        operation: { type: string, enum: [publish-runtime-rule, delete-runtime-rule, approve-approval, deny-approval] }
+        status: { type: string, enum: [succeeded] }
+        source: { $ref: '#/components/schemas/GuardSource' }
+        target: { type: string }
+        requestId: { type: string }
+        completedAt: { type: string, format: date-time }
+        message: { type: string }
+    ProtectMutationEnvelope:
+      type: object
+      additionalProperties: false
+      required: [data, meta]
+      properties:
+        data: { $ref: '#/components/schemas/ProtectMutationReceipt' }
+        meta: { $ref: '#/components/schemas/Meta' }
     UnifiedEvent:
       type: object
       required: [id, timestamp, source, kind, severity, summary, rawRef]

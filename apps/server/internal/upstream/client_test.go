@@ -75,3 +75,26 @@ func TestMutationIsNeverRetried(t *testing.T) {
 		t.Fatalf("mutation retry behavior: requests=%d err=%v", requests.Load(), err)
 	}
 }
+
+func TestDeleteMutationIsNeverRetried(t *testing.T) {
+	t.Parallel()
+
+	var requests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		requests.Add(1)
+		if request.Method != http.MethodDelete {
+			t.Errorf("method = %s", request.Method)
+		}
+		writer.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer server.Close()
+	client, err := New(model.SourceAgentGuard, server.URL, "", "", server.Client(), 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var response any
+	_, err = client.DeleteMutationJSON(t.Context(), "/rules/rule-1", nil, &response)
+	if err == nil || requests.Load() != 1 {
+		t.Fatalf("delete mutation retry behavior: requests=%d err=%v", requests.Load(), err)
+	}
+}

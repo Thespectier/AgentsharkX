@@ -1,0 +1,27 @@
+[
+  {
+    "ticket_id": "approval-demo",
+    "created_ms": 1784688000000,
+    "status": "pending",
+    "event": {
+      "event_id": "event-demo",
+      "ts_ms": 1784688000500,
+      "event_type": "tool_invoke",
+      "principal": {
+        "agent_id": "agent-demo",
+        "session_id": "session-demo",
+        "user_id": "user-demo"
+      },
+      "tool_call": {
+        "tool_name": "mail.send",
+        "args": "<redacted>"
+      }
+    },
+    "decision": {
+      "action": "human_check",
+      "risk_score": 0.78,
+      "matched_rules": ["review_external_email"],
+      "reason": "External delivery requires review"
+    }
+  }
+]

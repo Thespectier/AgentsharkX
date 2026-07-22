@@ -23,6 +23,13 @@ The image was built from release tag `v2.1` at the pinned revision
 | `tool-labels.response.json` | `PATCH .../tools/{tool_name}/labels` | Sanitized request and confirmed response shape |
 | `skill-detect.response.json` | `POST .../skills/detect` | Sanitized request and detector result shape |
 | `mcp-detect.response.json` | `POST .../mcps/detect` | Sanitized request and detector result shape |
+| `rules-populated.response.json` | `GET /v1/backend/rules` | Sanitized published runtime rule shape |
+| `rule-check.response.json` | `POST /v1/backend/rules/check` | Sanitized syntax-check response shape |
+| `rule-publish.response.json` | `POST .../agents/{agent_id}/rules` | Sanitized publish receipt shape |
+| `rule-delete.response.json` | `DELETE .../agents/{agent_id}/rules/{rule_id}` | Sanitized delete receipt shape |
+| `approvals-populated.response.json` | `GET /v1/backend/approvals` | Sanitized pending ticket shape |
+| `approval-resolve.response.json` | `POST .../approvals/{ticket_id}/{approve|deny}` | Sanitized resolution receipt shape |
+| `plugins.response.json` | `GET .../plugins/config` and `GET .../plugins/available` | Sanitized per-agent plugin shapes |
 
 `uptime_s` in the health/stats samples is capture-specific. Runtime OpenAPI
 reports service version `0.3.0`, which differs from package/release version
@@ -33,3 +40,8 @@ Phase 4 populated and mutation shapes were cross-checked against the exact
 session keys, client URLs, arbitrary principal/metadata objects, descriptors,
 file contents, detector metadata, MCP URLs, and LLM configuration from its
 normalized responses.
+
+Phase 5 mutation contracts were also cross-checked against that pinned source.
+Rule check is side-effect free; publish, delete, approve, and deny are never
+automatically retried. Normalized responses omit rule source and prompt fields,
+approval tool arguments and targets, and plugin parameters.

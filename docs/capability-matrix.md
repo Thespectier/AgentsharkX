@@ -2,11 +2,9 @@
 
 Verified against agentgateway `v1.3.1` and AgentGuard `v2.1` on 2026-07-22.
 
-Phase 4 adds the Trust adapter above the existing Connect integration. It reads
-verified AgentGuard resource contracts independently, exposes source-preserving
-Agent and resource views, and implements guarded label/detection mutations.
-Mock fixtures remain UI evidence only and do not upgrade an upstream capability
-status.
+Phase 5 adds source-grouped Protect reads and guarded AgentGuard write
+workflows above the existing Connect and Trust integrations. Mock fixtures
+remain UI evidence only and do not upgrade an upstream capability status.
 
 ## Status vocabulary
 
@@ -64,21 +62,21 @@ analytics summary body is sent.
 The AgentGuard registry probes the verified global routes independently and
 publishes `guard.health`, `guard.sessions`, `guard.tools`, `guard.skills`,
 `guard.mcps`, `guard.rules`, `guard.traffic`, `guard.audit`, `guard.approvals`,
-and `guard.auditors`. Phase 4 promotes only sessions/tools/skills/MCPs into the
-Trust view. Rules, approvals, traffic, audit, and auditors remain probe-only
-until their owning integration phases.
+and `guard.auditors`. Sessions/tools/skills/MCPs feed Trust; rules, plugins, and
+approvals now feed Protect. Traffic, audit, and auditors remain probe-only until
+Phase 6.
 
 ## Protect
 
 | AgentsharkX capability | Source | Status | Evidence | Adapter rule |
 |---|---|---|---|---|
-| Gateway policies | agentgateway | partial | config/config-dump | Read-only source-grouped summary; advanced editing links out. |
-| Content guardrails | agentgateway | partial | config/config-dump | Preserve prompt/response scope; advanced editing links out. |
-| Runtime rules list/check | AgentGuard | supported | runtime list; schema check | Rule source and check diagnostics remain AgentGuard-shaped. |
-| Runtime rule generate/publish/delete | AgentGuard | supported | pinned schema and handlers | Phase 5 requires check, confirm, request ID, and mutation lock. |
-| Plugins | AgentGuard | partial | agent available/config routes in schema; no global read route | Show only explicit per-agent phase configuration. |
-| Approval queue | AgentGuard | supported | runtime `GET /v1/backend/approvals` | Empty array is a valid queue. |
-| Approve/deny | AgentGuard | supported | pinned schema and handlers | Note is required by AgentsharkX even though upstream accepts an empty string. |
+| Gateway policies | agentgateway | partial | Phase 5 adapter tests over route/backend `policies` keys | Return names and raw config paths only; never return policy bodies; advanced editing links out. |
+| Content guardrails | agentgateway | partial | Phase 5 adapter tests for explicit `ai`/`llm` guardrail keys | Preserve request/response placement only when explicit; otherwise phase remains unknown. |
+| Runtime rules list/check | AgentGuard | supported | pinned-source contract plus Phase 5 adapter/BFF integration tests | Omit rule source/prompt; a successful single-rule check issues a short-lived source-bound token. |
+| Runtime rule publish/delete | AgentGuard | supported | Phase 5 fake-upstream success tests and non-retry transport tests | Require note, confirmation, CSRF, current check token for publish, mutation lock, request ID, and receipt. |
+| Plugins | AgentGuard | partial | pinned per-agent available/config contracts; no global read route | Discover only explicit Trust agents with bounded fan-out; show plugin names and phase, never parameters. |
+| Approval queue | AgentGuard | supported | Phase 5 sanitized contract and fake-upstream BFF test | Pending tickets omit tool arguments, target, obligations, and sensitive event bodies. Empty is valid. |
+| Approve/deny | AgentGuard | supported | Phase 5 E2E and BFF tests for success, 404, timeout, and manual retry | Require note/confirmation; disable duplicates; never auto-retry; return request-ID receipt. |
 | Unified policy DSL | both | unavailable | sources use different policy models | Group by source; never translate into a fake common DSL. |
 
 ## Audit

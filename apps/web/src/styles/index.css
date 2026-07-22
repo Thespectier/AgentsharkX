@@ -1529,14 +1529,20 @@ kbd {
   color: var(--text-secondary);
   font-size: 9px;
 }
-.field textarea {
+.field textarea,
+.field select {
   width: 100%;
   padding: 10px;
   border: 1px solid var(--border-strong);
   border-radius: 9px;
   background: #0a1019;
   color: var(--text-primary);
+}
+.field textarea {
   resize: vertical;
+}
+.field select {
+  min-height: 38px;
 }
 .copy-field {
   display: flex;
@@ -2227,6 +2233,63 @@ kbd {
   background: rgba(49, 196, 141, 0.06);
   color: #74d3b1;
   font-size: 9px;
+}
+.protect-form {
+  min-width: min(620px, 80vw);
+}
+.protect-check-row {
+  display: flex;
+  margin: 0 18px 14px;
+  align-items: center;
+  gap: 12px;
+}
+.protect-check {
+  font-size: 9px;
+}
+.protect-check--ok {
+  color: var(--status-success);
+}
+.protect-check--error {
+  color: var(--status-danger);
+}
+.confirm-field {
+  display: flex;
+  margin: 14px 18px;
+  align-items: flex-start;
+  gap: 8px;
+  color: var(--text-secondary);
+  font-size: 9px;
+  line-height: 1.5;
+}
+.confirm-field input {
+  margin-top: 1px;
+  accent-color: var(--accent-blue);
+}
+.mutation-receipt,
+.protect-error {
+  display: flex;
+  margin: 12px 16px;
+  padding: 11px 13px;
+  align-items: center;
+  gap: 9px;
+  border: 1px solid rgba(49, 196, 141, 0.2);
+  border-radius: 9px;
+  background: rgba(49, 196, 141, 0.06);
+  color: #74d3b1;
+  font-size: 9px;
+}
+.mutation-receipt div {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.mutation-receipt span {
+  color: var(--text-secondary);
+}
+.protect-error {
+  border-color: rgba(247, 112, 112, 0.22);
+  background: rgba(247, 112, 112, 0.06);
+  color: var(--status-danger);
 }
 .drawer-layer {
   place-items: stretch end;

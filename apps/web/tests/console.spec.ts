@@ -81,6 +81,89 @@ test("Trust uses explicit identities, confirms labels, and recovers a polled sca
   await expect(page.getByRole("status").filter({ hasText: "Detection succeeded" })).toBeVisible();
 });
 
+test("Protect requires a current syntax check and returns rule mutation receipts", async ({
+  page,
+}) => {
+  await page.goto("/protect/runtime-rules");
+  await page.getByRole("button", { name: "New rule" }).click();
+  const dialog = page.getByRole("dialog", { name: "Publish runtime rule" });
+  const publish = dialog.getByRole("button", { name: "Publish checked rule" });
+  await expect(publish).toBeDisabled();
+
+  await dialog.getByRole("button", { name: "Check syntax" }).click();
+  await expect(dialog.getByRole("status")).toContainText("Checked and publishable");
+  await dialog.getByLabel("Rule source").fill("RULE: changed_rule\nPOLICY: DENY");
+  await expect(dialog.getByText("Check required before publish")).toBeVisible();
+  await expect(publish).toBeDisabled();
+
+  await dialog.getByRole("button", { name: "Check syntax" }).click();
+  await expect(dialog.getByRole("status")).toContainText("Checked and publishable");
+  await dialog.getByLabel("Operator note").fill("Reviewed for the active change window.");
+  await dialog
+    .getByLabel("I confirm this checked rule should be published to the selected agent.")
+    .check();
+  await publish.click();
+  await expect(publish).toBeDisabled();
+  await expect(
+    page.getByRole("status").filter({ hasText: "Runtime rule published" }),
+  ).toContainText("Request ID");
+
+  await page.getByRole("button", { name: "Delete New checked runtime rule" }).click();
+  const deletion = page.getByRole("dialog", { name: "Delete New checked runtime rule" });
+  await deletion.getByLabel("Deletion note").fill("Superseded after verification.");
+  await deletion.getByLabel("I confirm this runtime rule should be deleted.").check();
+  await deletion.getByRole("button", { name: "Delete rule" }).click();
+  await expect(page.getByRole("status").filter({ hasText: "Runtime rule deleted" })).toContainText(
+    "Request ID",
+  );
+});
+
+test("Protect approval success and upstream 404 are explicit and recoverable", async ({ page }) => {
+  await page.goto("/protect/approvals");
+  await page.getByRole("button", { name: /send_email_to/ }).click();
+  let dialog = page.getByRole("dialog", { name: "Review send_email_to" });
+  await dialog.getByLabel("Operator note").fill("Validated destination and change owner.");
+  await dialog
+    .getByLabel("I confirm this operator decision for the selected pending ticket.")
+    .check();
+  const approve = dialog.getByRole("button", { name: "Approve", exact: true });
+  await approve.click();
+  await expect(approve).toBeDisabled();
+  await expect(
+    page.getByRole("status").filter({ hasText: "Approval ticket approved" }),
+  ).toContainText("Request ID");
+
+  await page.getByRole("button", { name: /deploy.restart/ }).click();
+  dialog = page.getByRole("dialog", { name: "Review deploy.restart" });
+  await dialog.getByLabel("Operator note").fill("Ticket state needs verification.");
+  await dialog
+    .getByLabel("I confirm this operator decision for the selected pending ticket.")
+    .check();
+  await dialog.getByRole("button", { name: "Deny", exact: true }).click();
+  await expect(dialog.getByRole("alert")).toContainText("no longer pending");
+  await expect(dialog.getByRole("alert")).toContainText("Request ID");
+});
+
+test("Protect approval timeout is never auto-retried and supports a manual retry", async ({
+  page,
+}) => {
+  await page.goto("/protect/approvals?scenario=partial");
+  await page.getByRole("button", { name: /crm.update_contact/ }).click();
+  const dialog = page.getByRole("dialog", { name: "Review crm.update_contact" });
+  await dialog.getByLabel("Operator note").fill("Reviewed for an explicit retry.");
+  await dialog
+    .getByLabel("I confirm this operator decision for the selected pending ticket.")
+    .check();
+  await dialog.getByRole("button", { name: "Approve", exact: true }).click();
+  await expect(dialog.getByRole("alert")).toContainText("timed out");
+  const retry = dialog.getByRole("button", { name: "Retry approve" });
+  await expect(retry).toBeEnabled();
+  await retry.click();
+  await expect(
+    page.getByRole("status").filter({ hasText: "Approval ticket approved" }),
+  ).toContainText("Request ID");
+});
+
 test("empty, loading, partial, and total failure states are explicit", async ({ page }) => {
   await page.goto("/?scenario=empty");
   await expect(

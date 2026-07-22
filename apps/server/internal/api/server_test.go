@@ -101,7 +101,7 @@ func TestSessionAuthenticationPartialHealthAndSecretSafeLogging(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if writeWithCSRF.StatusCode != http.StatusNotImplemented {
+	if writeWithCSRF.StatusCode != http.StatusServiceUnavailable {
 		t.Fatalf("future write with CSRF status = %d", writeWithCSRF.StatusCode)
 	}
 	_ = writeWithCSRF.Body.Close()

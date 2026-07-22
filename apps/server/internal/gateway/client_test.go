@@ -23,7 +23,7 @@ const populatedConfig = `{
     "virtualModels": [{"name":"resilient","routing":{"failover":{"targets":[{"model":"fast","priority":0}]}}}]
   },
   "mcp": {"targets":[{"name":"everything","mcp":{"host":"http://localhost:3001/mcp"}}]},
-  "binds":[{"port":8080,"listeners":[{"name":"public-http","hostname":"example.com","protocol":"HTTP","routes":[{"name":"api","matches":[{"path":{"pathPrefix":"/api"}}],"backends":[{"host":"localhost:9000"}]}]}]}]
+  "binds":[{"port":8080,"listeners":[{"name":"public-http","hostname":"example.com","protocol":"HTTP","routes":[{"name":"api","matches":[{"path":{"pathPrefix":"/api"}}],"policies":{"cors":{"allowOrigins":["never-return-origin"]},"ai":{"promptGuard":{"request":{"regex":{"patterns":["never-return-prompt"]}},"response":{"webhook":{"url":"never-return-webhook"}}}}},"backends":[{"host":"localhost:9000","policies":{"backendAuth":{"token":"never-return-token"}}}]}]}]}]
 }`
 
 func TestHealthUsesVerifiedRuntimeContract(t *testing.T) {
@@ -118,8 +118,11 @@ func TestSnapshotUsesOnlyVerifiedSafeConfigFields(t *testing.T) {
 	if len(snapshot.MCP) != 1 || snapshot.MCP[0].Transport != "mcp" || len(snapshot.Routes) != 1 || snapshot.Routes[0].BackendCount != 1 {
 		t.Fatalf("unexpected resources: mcp=%#v routes=%#v", snapshot.MCP, snapshot.Routes)
 	}
+	if len(snapshot.Policies) != 3 || snapshot.Policies[0].Name != "ai.promptGuard" || snapshot.Policies[0].Type != "Content Guardrail" || snapshot.Policies[0].Phase != "Request + Response" {
+		t.Fatalf("unexpected safe policy summaries: %#v", snapshot.Policies)
+	}
 	encoded, _ := json.Marshal(snapshot)
-	for _, forbidden := range []string{"never-leak-me", "also-secret", "apiKey"} {
+	for _, forbidden := range []string{"never-leak-me", "also-secret", "apiKey", "never-return-origin", "never-return-prompt", "never-return-webhook", "never-return-token"} {
 		if strings.Contains(string(encoded), forbidden) {
 			t.Fatalf("snapshot leaked %q: %s", forbidden, encoded)
 		}

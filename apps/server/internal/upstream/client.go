@@ -79,6 +79,15 @@ func (client *Client) PatchJSON(ctx context.Context, path string, body, destinat
 	return client.writeJSON(ctx, http.MethodPatch, path, body, destination, false)
 }
 
+// DeleteMutationJSON performs a non-retried DELETE against a verified upstream
+// contract. A nil body sends an empty request body.
+func (client *Client) DeleteMutationJSON(ctx context.Context, path string, body, destination any) (time.Duration, error) {
+	if body == nil {
+		return client.doJSON(ctx, http.MethodDelete, path, nil, destination, false)
+	}
+	return client.writeJSON(ctx, http.MethodDelete, path, body, destination, false)
+}
+
 func (client *Client) writeJSON(ctx context.Context, method, path string, body, destination any, retrySafe bool) (time.Duration, error) {
 	encoded, err := json.Marshal(body)
 	if err != nil {

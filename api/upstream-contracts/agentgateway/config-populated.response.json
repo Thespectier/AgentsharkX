@@ -40,7 +40,21 @@
               "name": "api",
               "hostnames": ["example.com"],
               "matches": [{ "path": { "pathPrefix": "/api" } }],
-              "backends": [{ "host": "localhost:9000" }]
+              "policies": {
+                "cors": { "allowOrigins": ["https://console.example.invalid"] },
+                "ai": {
+                  "promptGuard": {
+                    "request": { "regex": { "patterns": ["<sanitized>"] } },
+                    "response": { "webhook": { "url": "https://guardrail.example.invalid" } }
+                  }
+                }
+              },
+              "backends": [
+                {
+                  "host": "localhost:9000",
+                  "policies": { "backendAuth": { "token": "<redacted>" } }
+                }
+              ]
             }
           ]
         }

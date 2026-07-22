@@ -5,15 +5,19 @@ import type {
   AuditData,
   Envelope,
   OverviewData,
-  ProtectData,
   ResponseMeta,
   Scenario,
   Source,
   UnifiedEvent,
 } from "../types";
 import type {
+  ConfirmedActionRequest,
   LabelUpdate,
   MCPDetectionRequest,
+  ProtectSnapshot,
+  RuntimeRule,
+  RuntimeRuleCheckRequest,
+  RuntimeRulePublishRequest,
   SkillDetectionRequest,
   TrustResource,
   TrustScanJob,
@@ -23,7 +27,8 @@ import {
   baseEvents,
   connectData,
   overviewData,
-  protectData,
+  protectApprovals,
+  protectSnapshot,
   trustAgents,
   trustResources,
   trustScans,
@@ -162,10 +167,11 @@ const emptyConnectSummary = {
   counts: connectData.summary.counts.map((item) => ({ ...item, value: 0 })),
 };
 
-const emptyProtect: ProtectData = {
-  policies: [],
-  approvals: [],
-  coverage: protectData.coverage.map((item) => ({ ...item, active: 0 })),
+const emptyProtect: ProtectSnapshot = {
+  gatewayPolicies: [],
+  runtimeRules: [],
+  plugins: [],
+  links: protectSnapshot.links,
 };
 
 const emptyAudit: AuditData = {
@@ -198,6 +204,46 @@ async function pageResponse<T>(request: Request, data: T[], source: Source) {
 }
 
 let mockTrustResources = trustResources.map((resource) => structuredClone(resource));
+let mockProtectSnapshot = structuredClone(protectSnapshot);
+let mockProtectApprovals = structuredClone(protectApprovals);
+const ruleChecks = new Map<string, string>();
+const approvalAttempts = new Map<string, number>();
+
+function protectFailure(
+  status: number,
+  code: string,
+  message: string,
+  retryable = false,
+): Response {
+  return HttpResponse.json(
+    {
+      error: {
+        code,
+        message,
+        source: "agentguard",
+        requestId: `req_mock_protect_${status}`,
+        retryable,
+      },
+    } satisfies ApiFailure,
+    { status },
+  );
+}
+
+function protectReceipt(operation: string, target: string, message: string) {
+  const completedAt = new Date().toISOString();
+  return HttpResponse.json({
+    data: {
+      operation,
+      status: "succeeded",
+      source: "agentguard",
+      target,
+      requestId: `req_mock_${operation.replaceAll("-", "_")}`,
+      completedAt,
+      message,
+    },
+    meta: { ...meta("agentguard"), fetchedAt: completedAt },
+  });
+}
 const mockScanJobs = new Map(trustScans.map((job) => [job.id, structuredClone(job)]));
 const mockScanPolls = new Map<string, number>();
 const mockScanAttempts = new Map<string, number>();
@@ -424,11 +470,140 @@ export const handlers = [
     return HttpResponse.json(trustJobEnvelope(current));
   }),
   http.get("/api/v1/protect/policies", ({ request }) =>
-    respond(request, protectData, emptyProtect),
+    respond(request, mockProtectSnapshot, emptyProtect),
+  ),
+  http.post("/api/v1/protect/runtime-rules/check", async ({ request }) => {
+    const scenario = scenarioFrom(request);
+    if (scenario === "loading") await delay(30_000);
+    if (scenario === "error") return failure("agentguard");
+    const input = (await request.json()) as RuntimeRuleCheckRequest;
+    const publishable = input.source.includes("RULE") && !input.source.includes("INVALID");
+    const token = publishable ? `check-${Date.now()}-${ruleChecks.size}` : undefined;
+    if (token) ruleChecks.set(token, input.source);
+    return HttpResponse.json({
+      data: {
+        source: "agentguard",
+        ok: publishable,
+        publishable,
+        ruleCount: publishable ? 1 : 0,
+        errors: publishable ? [] : [{ message: "Expected exactly one valid RULE block." }],
+        warnings: [],
+        hints: publishable ? [{ message: "Rule is ready for explicit publication." }] : [],
+        checkToken: token,
+        expiresAt: publishable ? new Date(Date.now() + 300_000).toISOString() : null,
+        requestId: "req_mock_rule_check",
+      },
+      meta: meta("agentguard"),
+    });
+  }),
+  http.post("/api/v1/protect/agents/:agentId/runtime-rules", async ({ request, params }) => {
+    const input = (await request.json()) as RuntimeRulePublishRequest;
+    await delay(120);
+    const checkedSource = ruleChecks.get(input.checkToken);
+    if (!input.confirmed || !input.note.trim()) {
+      return protectFailure(
+        400,
+        "INVALID_REQUEST",
+        "Confirmation and an operator note are required.",
+      );
+    }
+    if (checkedSource !== input.source) {
+      return protectFailure(
+        409,
+        "RULE_CHECK_REQUIRED",
+        "Run a successful syntax check immediately before publishing.",
+      );
+    }
+    ruleChecks.delete(input.checkToken);
+    const agentId = String(params.agentId);
+    const agent = mockProtectSnapshot.plugins.find((item) => item.agentId === agentId);
+    if (!agent)
+      return protectFailure(404, "NOT_FOUND", "The explicit AgentGuard agent was not found.");
+    const id = `rule-mock-${Date.now()}`;
+    const created: RuntimeRule = {
+      id,
+      upstreamId: id,
+      source: "agentguard",
+      fetchedAt: new Date().toISOString(),
+      rawRef: { source: "agentguard", id: `/v1/backend/rules/${id}` },
+      name: "New checked runtime rule",
+      agentId,
+      agentUpstreamId: agent.agentUpstreamId,
+      scope: "Agent runtime",
+      phase: "unknown",
+      action: "ALLOW",
+      status: "published",
+      userManaged: true,
+    };
+    mockProtectSnapshot.runtimeRules = [created, ...mockProtectSnapshot.runtimeRules];
+    return protectReceipt("publish-runtime-rule", id, "Runtime rule published");
+  }),
+  http.delete(
+    "/api/v1/protect/agents/:agentId/runtime-rules/:ruleId",
+    async ({ request, params }) => {
+      const input = (await request.json()) as ConfirmedActionRequest;
+      await delay(120);
+      if (!input.confirmed || !input.note.trim()) {
+        return protectFailure(
+          400,
+          "INVALID_REQUEST",
+          "Confirmation and an operator note are required.",
+        );
+      }
+      const ruleId = String(params.ruleId);
+      const index = mockProtectSnapshot.runtimeRules.findIndex(
+        (item) => item.id === ruleId && item.agentId === String(params.agentId) && item.userManaged,
+      );
+      if (index < 0)
+        return protectFailure(404, "NOT_FOUND", "The runtime rule is no longer available.");
+      mockProtectSnapshot.runtimeRules.splice(index, 1);
+      return protectReceipt("delete-runtime-rule", ruleId, "Runtime rule deleted");
+    },
   ),
   http.get("/api/v1/protect/approvals", ({ request }) =>
-    listResponse(request, protectData.approvals, "agentguard"),
+    pageResponse(request, mockProtectApprovals, "agentguard"),
   ),
+  http.post("/api/v1/protect/approvals/:ticketId/:decision", async ({ request, params }) => {
+    const input = (await request.json()) as ConfirmedActionRequest;
+    await delay(120);
+    if (!input.confirmed || !input.note.trim()) {
+      return protectFailure(
+        400,
+        "INVALID_REQUEST",
+        "Confirmation and an operator note are required.",
+      );
+    }
+    const ticketId = String(params.ticketId);
+    const decision = String(params.decision);
+    if (decision !== "approve" && decision !== "deny") {
+      return protectFailure(404, "NOT_FOUND", "The approval action is not available.");
+    }
+    if (ticketId === "ticket-expired") {
+      mockProtectApprovals = mockProtectApprovals.filter((item) => item.id !== ticketId);
+      return protectFailure(404, "NOT_FOUND", "The ticket is no longer pending.");
+    }
+    if (scenarioFrom(request) === "partial") {
+      const key = `${ticketId}:${decision}`;
+      const attempt = (approvalAttempts.get(key) ?? 0) + 1;
+      approvalAttempts.set(key, attempt);
+      if (attempt === 1) {
+        return protectFailure(
+          503,
+          "UPSTREAM_UNAVAILABLE",
+          "AgentGuard timed out. Confirm the ticket state before retrying.",
+          true,
+        );
+      }
+    }
+    const index = mockProtectApprovals.findIndex((item) => item.id === ticketId);
+    if (index < 0) return protectFailure(404, "NOT_FOUND", "The ticket is no longer pending.");
+    mockProtectApprovals.splice(index, 1);
+    return protectReceipt(
+      `${decision}-approval`,
+      ticketId,
+      decision === "approve" ? "Approval ticket approved" : "Approval ticket denied",
+    );
+  }),
   http.get("/api/v1/audit/analytics", ({ request }) => respond(request, auditData, emptyAudit)),
   http.get("/api/v1/audit/events", ({ request }) =>
     listResponse(request, auditData.events, "agentgateway"),

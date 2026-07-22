@@ -34,6 +34,13 @@ docker run --rm --ipc=host --network=host --user "$(id -u):$(id -g)" \
   mcr.microsoft.com/playwright:v1.61.1-noble npm run lighthouse
 ```
 
+Protect Mock workflows exercise the same generated Phase 5 contract as real
+mode. Rule publication requires a current syntax check, note, and confirmation;
+deletion and approval decisions require a note and confirmation. The partial
+scenario makes the first approval mutation time out so the explicit manual
+retry path can be reviewed. The expired demo ticket exercises upstream 404
+recovery. Successful writes display the BFF request ID receipt.
+
 The demo-state selector in the top bar exposes live mock, empty, loading,
 partial-failure, and total-failure states. `?scenario=...` keeps each state
 shareable and deterministic.
@@ -47,7 +54,7 @@ disabled with `VITE_ENABLE_MOCKS=false`. Vite proxies `/api` to
 deterministically generated from `api/openapi.yaml`; `npm run check` fails when
 the generated client is stale.
 
-An opt-in real-mode browser check is also available. Start a Phase 4 BFF and a
+An opt-in real-mode browser check is also available. Start a Phase 5 BFF and a
 Vite server with `VITE_ENABLE_MOCKS=false`, then run:
 
 ```bash

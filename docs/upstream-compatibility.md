@@ -2,10 +2,11 @@
 
 Last verified: 2026-07-22.
 
-Phase 4 still prevents direct browser contact with either upstream. The
-agentgateway adapter remains read-only. The AgentGuard adapter now reads
-sessions/tools/skills/MCPs and invokes the verified label/detection mutations
-with `X-Api-Key`, source-scoped errors, strict response bounds, and no automatic
+Phase 5 still prevents direct browser contact with either upstream. The
+agentgateway adapter remains read-only and now returns only policy key/path
+summaries. The AgentGuard adapter reads Trust and Protect resources and invokes
+verified label, detection, runtime-rule, and approval mutations with
+`X-Api-Key`, source-scoped errors, strict response bounds, and no automatic
 write retries. The pinned agentgateway admin token setting is not transmitted
 because the selected upstream exposes no verified native admin-auth header.
 
@@ -56,8 +57,9 @@ sections as unavailable. Advanced workflows remain in the native console.
 For Phase 3, the populated config shape and UI routes were also checked against
 the exact pinned source revision. The sanitized
 `config-populated.response.json` freezes providers, direct and virtual models,
-top-level MCP targets, HTTP routes, and TCP routes while excluding `params`,
-policies, API keys, and other sensitive fixture values. Contract tests fail
+top-level MCP targets, HTTP/TCP routes, and sanitized route/backend policy
+placement while excluding secret params, policy bodies, API keys, and other
+sensitive values. Contract tests fail
 with a field-scoped error when required names, provider shapes, routing
 strategies, or MCP transport shapes change.
 
@@ -92,6 +94,20 @@ wrapper job, polls that wrapper state, applies a configurable deadline, and
 forwards no fabricated progress. The adapter deliberately drops session keys,
 client URLs, arbitrary metadata/principal objects, descriptors, source/code
 paths, detector metadata/reasons, MCP URLs, and LLM configuration.
+
+For Phase 5, the rule list/check/publish/delete, pending approval/resolve, and
+per-agent plugin config/available shapes were cross-checked against the exact
+`v2.1` source and captured as sanitized fixtures. The BFF deliberately omits
+rule source and prompt fields, approval tool arguments and targets, plugin
+parameters, and arbitrary event bodies. Publish requires exactly one successful
+current syntax check; its token is short-lived, source-bound, one-use, and held
+only in bounded memory.
+
+Publish, delete, approve, and deny use a dedicated operation client with zero
+automatic retries. Fake-upstream BFF tests confirm success, upstream 404, and a
+client timeout followed by a distinct manual retry. Successful operations emit
+only request ID, operation, target, status, and `note_present=true` to the
+structured audit log; rule source and operator note are never logged.
 
 The upstream `v2.1` Dockerfile healthcheck calls `/health`, which returns 404;
 the real protected route is `/v1/backend/health`. Compose overrides the

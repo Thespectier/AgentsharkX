@@ -1,0 +1,12 @@
+{
+  "ok": true,
+  "rule_count": 1,
+  "errors": [],
+  "warnings": [],
+  "hints": [
+    {
+      "message": "Rule source contains one publishable rule"
+    }
+  ],
+  "source_file": "<temporary>"
+}
