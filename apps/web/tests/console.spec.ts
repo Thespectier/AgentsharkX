@@ -205,6 +205,37 @@ test("an audit detail drawer is recoverable from its URL", async ({ page }) => {
   await expect(page.getByRole("dialog").getByRole("heading", { level: 2 })).toHaveText(title ?? "");
 });
 
+test("real-time events reach Home and Audit within three seconds", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.getByText(/^\[Mock live\]/).first()).toBeVisible({ timeout: 3_000 });
+
+  await page.goto("/audit/analytics");
+  await expect(page.getByText(/^\[Mock live\]/).first()).toBeVisible({ timeout: 3_000 });
+});
+
+test("hidden documents pause LiveFlow while retaining incoming data", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.getByText(/^\[Mock live\]/).first()).toBeVisible({ timeout: 3_000 });
+  const firstSummary = await page.locator(".activity-item p").first().textContent();
+
+  await page.evaluate(() => {
+    Object.defineProperty(document, "hidden", { configurable: true, get: () => true });
+    document.dispatchEvent(new Event("visibilitychange"));
+  });
+  await expect(page.locator(".live-flow")).toHaveAttribute("data-motion", "paused");
+  await expect(page.locator("animateMotion")).toHaveCount(0);
+  await page.waitForTimeout(4_200);
+
+  await page.evaluate(() => {
+    Object.defineProperty(document, "hidden", { configurable: true, get: () => false });
+    document.dispatchEvent(new Event("visibilitychange"));
+  });
+  await expect(page.locator(".live-flow")).toHaveAttribute("data-motion", "full");
+  await expect(page.locator(".activity-item p").first()).not.toHaveText(firstSummary ?? "", {
+    timeout: 1_500,
+  });
+});
+
 test("the command palette supports keyboard navigation", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByRole("heading", { name: /agents are in control/i })).toBeVisible();

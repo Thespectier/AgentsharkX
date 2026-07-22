@@ -112,12 +112,15 @@ export interface AuditData {
   events: UnifiedEvent[];
   sessions: Array<{
     id: string;
+    upstreamId: string;
     agentId: string;
-    principal: string;
+    agentUpstreamId: string;
+    principal?: string;
     events: number;
     denies: number;
-    startedAt: string;
-    status: "active" | "closed";
+    lastSeen: string | null;
+    status: "unknown";
     source: "agentguard";
+    rawRef: { source: Source; id: string };
   }>;
 }

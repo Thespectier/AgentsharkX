@@ -1,10 +1,11 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { ArrowRight, CheckCircle2, ShieldCheck, Sparkles, TerminalSquare } from "lucide-react";
+import { useEffect } from "react";
 
 import { ActivityRail, LiveFlow, RequestTrendChart } from "../../motion/dashboard-motion";
 import { formatError, getScenario, isMockMode, requestOperation } from "../../lib/api";
-import { useLiveEvents } from "../../lib/use-live-events";
+import { mergeLiveEvents, useLiveEvents } from "../../lib/use-live-events";
 import {
   Button,
   Card,
@@ -28,6 +29,10 @@ export function HomePage() {
     retry: false,
   });
   const live = useLiveEvents(query.isSuccess && scenario !== "empty");
+
+  useEffect(() => {
+    if (live.events[0]) void query.refetch();
+  }, [live.events[0]?.id]);
 
   if (query.isLoading) return <PageSkeleton label="Loading runtime posture" />;
   if (query.isError || !query.data) {
@@ -153,7 +158,7 @@ export function HomePage() {
     );
   }
 
-  const activity = [...live.events, ...data.events].slice(0, 12);
+  const activity = mergeLiveEvents(live.events, data.events, 12);
   const security = activity.filter(
     (event) => event.source === "agentguard" && event.severity !== "info",
   );

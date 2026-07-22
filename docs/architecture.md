@@ -1,6 +1,6 @@
 # Architecture
 
-Status: Phase 5 Protect integration, verified 2026-07-22.
+Status: Phase 6 Audit and live-data integration, verified 2026-07-22.
 
 ## Context
 
@@ -48,12 +48,14 @@ The Go BFF is organized into the following packages:
 - `protect`: independent gateway policy and AgentGuard rule/plugin aggregation,
   short-lived rule-check tokens, guarded mutations, approval pagination, and
   duplicate-operation locks.
+- `audit`: independent polling, source-scoped failures, redacted normalization,
+  exact-ID session counts, metrics, trends, and a bounded activity snapshot.
 - `aggregate`: source-preserving view models and partial-result handling.
-- `stream`: non-blocking Phase 2 health-event fan-out; bounded business event
-  buffers and resume semantics remain Phase 6 work.
+- `stream`: 1000-record in-memory ring, source/ID dedupe, monotonic SSE
+  sequence IDs, replay after `Last-Event-ID`, and non-blocking fan-out.
 - `api`: OpenAPI-backed HTTP handlers and standard errors.
-- `model`: source-preserving health, capability, Connect/Trust/Protect resource,
-  overview, event, and error contracts.
+- `model`: source-preserving health, capability, Connect/Trust/Protect/Audit
+  resource, overview, event, and error contracts.
 - `upstream`: bounded retries and response-size limits shared by the two
   adapters without sharing their source state.
 
@@ -93,11 +95,13 @@ A gateway failure cannot suppress AgentGuard data, and an AgentGuard failure
 cannot suppress gateway data. Aggregated responses carry per-source metadata
 and stale markers rather than collapsing partial failures into a global 500.
 
-## Phase 5 runtime data and storage
+## Phase 6 runtime data and storage
 
-The BFF has no database. A background monitor polls only the two health
-contracts and publishes a normalized SSE event when status or version changes.
-New SSE connections first receive the current source-scoped health snapshot.
+The BFF has no database. Background monitors poll the two health contracts and,
+every two seconds by default, the verified Audit read contracts. New normalized
+events enter a 1000-record ring and are published with a monotonic SSE sequence.
+Reconnecting clients send `Last-Event-ID` and receive only newer retained
+records. Both the ring and browser list dedupe by normalized source/event ID.
 Connect reads a bounded `/api/config` snapshot per request and never returns raw
 config, params, policy bodies, credentials, or prompt payloads. Protect may
 summarize explicit route/backend policy keys and raw config paths, while policy
@@ -130,9 +134,22 @@ source digest, expires after five minutes, is consumed once, and is held in a
 and explicit confirmation; approval/rule locks prevent concurrent duplicate
 actions in one BFF process. Upstream mutations are not automatically retried.
 
-The background monitor still polls only health. `/overview` remains
-`mode=health-only`, and no business-event ring buffer, traffic correlation, or
-durable storage is added. Long-term logs remain in their upstream systems.
+The Audit poller requests agentgateway logs with
+`includeAttributes=false` and never requests payload detail. AgentGuard runtime
+state, tool arguments/results, plugin results, and free-form reasons are not
+decoded into the public model. Detail responses are built from an allow-listed
+redacted projection; list, overview, and SSE events omit that projection.
+
+`/overview` is `mode=operational` when the Audit service is attached. Gateway
+log/Analytics failures and AgentGuard Traffic/Audit/Sessions failures are
+reported independently, so available peer data remains visible. AgentGuard
+session event/deny counts use exact session-ID equality. Cross-source
+correlation is marked verified only when both sources explicitly return the
+same non-empty trace or session identifier; timestamps are never used.
+
+No Audit state is durable. SSE resume covers only the retained ring, and
+long-term logs remain in their upstream systems. AgentsharkX still provides no
+task model, DAG, payload vault, replay engine, or traffic collector.
 
 ## Security baseline
 

@@ -2,9 +2,10 @@
 
 Last verified: 2026-07-22.
 
-Phase 5 still prevents direct browser contact with either upstream. The
-agentgateway adapter remains read-only and now returns only policy key/path
-summaries. The AgentGuard adapter reads Trust and Protect resources and invokes
+Phase 6 still prevents direct browser contact with either upstream. The
+agentgateway adapter remains read-only and now also reads redacted request-log
+and Analytics contracts. The AgentGuard adapter reads Trust, Protect, and Audit
+resources and invokes
 verified label, detection, runtime-rule, and approval mutations with
 `X-Api-Key`, source-scoped errors, strict response bounds, and no automatic
 write retries. The pinned agentgateway admin token setting is not transmitted
@@ -114,6 +115,22 @@ the real protected route is `/v1/backend/health`. Compose overrides the
 server healthcheck and supplies `X-Api-Key`; the console service receives its
 own port-38008 root-page check. This is why an unmodified upstream image can
 appear `unhealthy` even when its API or console is serving successfully.
+
+For Phase 6, request-log search, Analytics, AgentGuard Traffic/Audit/Sessions,
+and their exact populated shapes were cross-checked against the pinned source.
+The gateway request always sets `includeAttributes=false` and never calls
+payload detail. The AgentGuard audit projection does not decode runtime state,
+arguments/results, plugin results, or free-form reasons. Contract tests include
+sentinel secrets in those omitted fields and fail if they reach normalized
+JSON. AgentGuard Traffic supplies aggregate scalars only because its records do
+not contain a stable upstream event ID; normalized security events come from
+Audit's explicit `event_id` instead.
+
+The BFF polls every two seconds by default, keeps at most 1000 normalized events
+in memory, and uses independent source failures. SSE sequence IDs are owned by
+AgentsharkX solely for bounded delivery/resume and are not presented as
+upstream identity or cross-source correlation. Correlation remains false unless
+the same explicit non-empty identifier appears in both sources.
 
 AgentGuard does not publish a prebuilt container image for this release. The
 Compose build context points at the release's full Git revision instead of

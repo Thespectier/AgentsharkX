@@ -491,11 +491,39 @@ export type UnifiedEvent = {
   decision?: string;
   correlation?: { traceId?: string; sessionId?: string; verified: boolean };
   summary: string;
-  rawRef: { source: string; id: string };
+  rawRef: { source: Source; id: string };
+  raw?: { [key: string]: unknown };
 };
 
+export type AuditSession = {
+  id: string;
+  upstreamId: string;
+  agentId: string;
+  agentUpstreamId: string;
+  principal?: string;
+  events: number;
+  denies: number;
+  lastSeen: string | null;
+  status: "unknown";
+  source: GuardSource;
+  rawRef: RawRef;
+};
+
+export type AuditData = {
+  metrics: Array<Metric>;
+  trend: Array<TrendPoint>;
+  events: Array<UnifiedEvent>;
+  sessions: Array<AuditSession>;
+};
+
+export type AuditEnvelope = { data: AuditData; meta: Meta };
+
+export type EventEnvelope = { data: UnifiedEvent; meta: Meta };
+
+export type AuditSessionsEnvelope = { data: Array<AuditSession>; meta: Meta };
+
 export type EventsEnvelope = {
-  data: { items: Array<UnifiedEvent>; nextCursor?: string | null };
+  data: { items: Array<UnifiedEvent>; nextCursor: string | null; total: number };
   meta: Meta;
 };
 
@@ -515,6 +543,8 @@ export const implementedOperations = {
   detectMcps: { method: "POST", path: "/api/v1/trust/agents/{agentId}/mcps/detect" },
   detectSkills: { method: "POST", path: "/api/v1/trust/agents/{agentId}/skills/detect" },
   getAgent: { method: "GET", path: "/api/v1/trust/agents/{agentId}" },
+  getAuditAnalytics: { method: "GET", path: "/api/v1/audit/analytics" },
+  getAuditEvent: { method: "GET", path: "/api/v1/audit/events/{source}/{eventId}" },
   getCapabilities: { method: "GET", path: "/api/v1/system/capabilities" },
   getConnectAnalytics: { method: "GET", path: "/api/v1/connect/analytics" },
   getConnectSummary: { method: "GET", path: "/api/v1/connect/summary" },
@@ -527,6 +557,8 @@ export const implementedOperations = {
   getTrustScan: { method: "GET", path: "/api/v1/trust/scans/{scanId}" },
   listAgents: { method: "GET", path: "/api/v1/trust/agents" },
   listApprovals: { method: "GET", path: "/api/v1/protect/approvals" },
+  listAuditEvents: { method: "GET", path: "/api/v1/audit/events" },
+  listAuditSessions: { method: "GET", path: "/api/v1/audit/sessions" },
   listGatewayMcpServers: { method: "GET", path: "/api/v1/connect/mcp/servers" },
   listModels: { method: "GET", path: "/api/v1/connect/llm/models" },
   listPolicies: { method: "GET", path: "/api/v1/protect/policies" },
@@ -549,6 +581,8 @@ export interface OperationResponses {
   detectMcps: TrustScanEnvelope;
   detectSkills: TrustScanEnvelope;
   getAgent: TrustAgentWorkspaceEnvelope;
+  getAuditAnalytics: AuditEnvelope;
+  getAuditEvent: EventEnvelope;
   getCapabilities: CapabilitiesEnvelope;
   getConnectAnalytics: AnalyticsEnvelope;
   getConnectSummary: ConnectSummaryEnvelope;
@@ -561,6 +595,8 @@ export interface OperationResponses {
   getTrustScan: TrustScanEnvelope;
   listAgents: TrustAgentPageEnvelope;
   listApprovals: ApprovalPageEnvelope;
+  listAuditEvents: EventsEnvelope;
+  listAuditSessions: AuditSessionsEnvelope;
   listGatewayMcpServers: MCPPageEnvelope;
   listModels: ModelPageEnvelope;
   listPolicies: ProtectSnapshotEnvelope;

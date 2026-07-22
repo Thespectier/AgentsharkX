@@ -64,7 +64,7 @@ func (client *Client) Capabilities(ctx context.Context) []model.Capability {
 		capability("gateway.runtime", model.SourceAgentGateway, runtimeErr, checkedAt, "live /api/runtime probe succeeded"),
 		{ID: "gateway.configuration", Source: model.SourceAgentGateway, Status: configurationStatus, CheckedAt: checkedAt, Reason: configurationReason},
 		capability("gateway.cost-catalog", model.SourceAgentGateway, costErr, checkedAt, "live /api/costs/models probe succeeded"),
-		{ID: "gateway.request-logs", Source: model.SourceAgentGateway, Status: model.CapabilityPartial, CheckedAt: checkedAt, Reason: "route is verified; database-backed search probing is deferred to the Phase 6 contract"},
+		{ID: "gateway.request-logs", Source: model.SourceAgentGateway, Status: model.CapabilityPartial, CheckedAt: checkedAt, Reason: "Phase 6 uses the verified search contract; availability depends on configured request-log storage and is reported by Audit"},
 		{ID: "gateway.admin-auth", Source: model.SourceAgentGateway, Status: model.CapabilityUnavailable, CheckedAt: checkedAt, Reason: "pinned upstream does not expose native admin authentication"},
 	}
 }

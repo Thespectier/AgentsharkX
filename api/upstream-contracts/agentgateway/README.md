@@ -16,6 +16,7 @@ management surface without configuring or sending business traffic.
 | `config-dump.response.json` | `GET :15000/config_dump` | 200, selected stable top-level fields |
 | `cost-models.response.json` | `GET :15000/api/costs/models` | 200 |
 | `logs-unconfigured.response.json` | `POST :15000/api/logs/search` | 500, no request-log DB |
+| `logs-populated.response.json` | `POST :15000/api/logs/search` | Sanitized populated shape from the pinned log-store source contract |
 | `analytics-unconfigured.response.json` | `POST :15000/api/logs/analytics/summary` | 500, no request-log DB |
 | `metrics.sample.txt` | `GET :15020/metrics` | 200, truncated non-sensitive sample |
 
@@ -27,3 +28,5 @@ The populated shape and native console routes were cross-checked against
 agentgateway tag `v1.3.1`, commit
 `dbaaf7ed73671e7aec9195e35e7f726c0b14b84a`. Sensitive `params`, policy bodies,
 and API-key fixture values are intentionally excluded from the frozen sample.
+The Phase 6 log adapter always sends `includeAttributes=false`, does not call
+`/api/logs/get`, and rejects unexpected attributes or payload fields.

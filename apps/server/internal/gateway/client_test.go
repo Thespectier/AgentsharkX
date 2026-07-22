@@ -227,3 +227,53 @@ func TestAnalyticsMissingRouteIsExplicitlyUnavailable(t *testing.T) {
 		t.Fatalf("unexpected missing capability state: analytics=%#v err=%v", analytics, err)
 	}
 }
+
+func TestTrafficUsesRedactedSearchAndPreservesVerifiedIDs(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.Method != http.MethodPost || request.URL.Path != "/api/logs/search" {
+			t.Fatalf("unexpected request %s %s", request.Method, request.URL.Path)
+		}
+		body, _ := io.ReadAll(request.Body)
+		if string(body) != `{"limit":500,"includeAttributes":false}` {
+			t.Fatalf("unsafe search body: %s", body)
+		}
+		_, _ = io.WriteString(writer, `{"logs":[{"id":"log-1","startedAt":"2026-07-22T08:00:00Z","completedAt":"2026-07-22T08:00:00.120Z","durationMs":120,"traceId":"trace-1","spanId":"span-1","httpStatus":503,"error":"never-return-provider-error","genAi":{"operationName":"chat","providerName":"openai","requestModel":"gpt-5","responseModel":"gpt-5"},"usage":{"inputTokens":2,"outputTokens":3,"totalTokens":5},"cost":0.01,"hasPayload":true}],"nextCursor":null}`)
+	}))
+	defer server.Close()
+	client, err := New(server.URL, server.Client(), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	feed, err := client.Traffic(t.Context(), 1000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if feed.Status != "available" || len(feed.Events) != 1 || feed.Events[0].RawRef.ID != "log-1" || feed.Events[0].Correlation.TraceID != "trace-1" {
+		t.Fatalf("unexpected traffic feed: %#v", feed)
+	}
+	encoded, _ := json.Marshal(feed)
+	for _, forbidden := range []string{"never-return-provider-error", "requestPrompt", "responseCompletion", "attributes"} {
+		if strings.Contains(string(encoded), forbidden) {
+			t.Fatalf("traffic feed leaked %q: %s", forbidden, encoded)
+		}
+	}
+}
+
+func TestTrafficNormalizesMissingLogDatabase(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		writer.WriteHeader(http.StatusInternalServerError)
+		_, _ = io.WriteString(writer, `{"error":"request log database is not configured"}`)
+	}))
+	defer server.Close()
+	client, err := New(server.URL, server.Client(), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	feed, err := client.Traffic(t.Context(), 25)
+	if err != nil || feed.Status != "unavailable" || len(feed.Events) != 0 {
+		t.Fatalf("unexpected unavailable traffic feed: %#v err=%v", feed, err)
+	}
+}

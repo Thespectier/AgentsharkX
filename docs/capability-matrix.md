@@ -2,9 +2,10 @@
 
 Verified against agentgateway `v1.3.1` and AgentGuard `v2.1` on 2026-07-22.
 
-Phase 5 adds source-grouped Protect reads and guarded AgentGuard write
-workflows above the existing Connect and Trust integrations. Mock fixtures
-remain UI evidence only and do not upgrade an upstream capability status.
+Phase 6 adds source-preserving Audit polling, bounded normalized activity, and
+resumable SSE above the existing Connect, Trust, and Protect integrations. Mock
+fixtures remain UI evidence only and do not upgrade an upstream capability
+status.
 
 ## Status vocabulary
 
@@ -40,9 +41,10 @@ generated OpenAPI but a mutating request was intentionally not executed.
 
 The live registry uses `gateway.runtime`, `gateway.configuration`,
 `gateway.cost-catalog`, `gateway.request-logs`, and `gateway.admin-auth` IDs.
-`gateway.request-logs` remains `partial` from the verified database dependency;
-Phase 3 still does not issue a log-search request; only the separately verified
-analytics summary body is sent.
+`gateway.request-logs` remains `partial` from the verified database dependency.
+Phase 6 sends the verified log-search body with `includeAttributes=false`; a
+missing database becomes a source-scoped Audit failure rather than an empty
+traffic claim.
 
 ## Trust and AgentGuard resources
 
@@ -63,8 +65,8 @@ The AgentGuard registry probes the verified global routes independently and
 publishes `guard.health`, `guard.sessions`, `guard.tools`, `guard.skills`,
 `guard.mcps`, `guard.rules`, `guard.traffic`, `guard.audit`, `guard.approvals`,
 and `guard.auditors`. Sessions/tools/skills/MCPs feed Trust; rules, plugins, and
-approvals now feed Protect. Traffic, audit, and auditors remain probe-only until
-Phase 6.
+approvals feed Protect. Traffic and audit now feed Phase 6 Audit; auditors remain
+probe-only because this phase does not add an auditor-management surface.
 
 ## Protect
 
@@ -83,12 +85,14 @@ Phase 6.
 
 | AgentsharkX capability | Source | Status | Evidence | Adapter rule |
 |---|---|---|---|---|
-| Gateway traffic detail | agentgateway | partial | request-log API requires configured DB | Include payload only after BFF redaction and explicit request. |
-| Gateway analytics | agentgateway | partial | analytics API requires configured DB | Keep last known data with stale metadata during failures. |
-| AgentGuard traffic | AgentGuard | supported | runtime `GET /v1/backend/traffic` | Preserve decision/action and upstream event ID. |
-| AgentGuard recent audit | AgentGuard | supported | runtime `GET /v1/backend/audit/recent` | Do not promote an audit record into gateway traffic. |
+| Gateway traffic detail | agentgateway | partial | Phase 6 adapter tests; request-log API requires configured DB | Never request attributes or payload; return only allow-listed redacted detail. |
+| Gateway analytics | agentgateway | partial | Phase 6 adapter plus source-independent service tests; API requires configured DB | Surface explicit capability failure while peer-source data remains available. |
+| AgentGuard traffic | AgentGuard | supported | Phase 6 contract tests for `GET /v1/backend/traffic?n=500` | Use scalar action/latency/risk fields for metrics only; the route has no event ID, so do not synthesize an event. |
+| AgentGuard recent audit | AgentGuard | supported | Phase 6 redaction and BFF integration tests for `GET /v1/backend/audit/recent?n=500` | Preserve `event_id`, phase, action, subject, and safe tool identity; omit runtime state, args/results, plugins, and reason. |
+| AgentGuard sessions in Audit | AgentGuard | supported | Phase 6 exact-ID count tests plus verified sessions contract | Preserve session/agent IDs; count events and denies only by exact AgentGuard session ID. |
 | AgentGuard auditors | AgentGuard | supported | runtime `GET /v1/backend/auditors` | Display registered names/descriptions only. |
-| Unified activity view | AgentsharkX | partial | normalization is planned for Phase 6 | Side-by-side source-preserving view, not a task timeline. |
-| Verified cross-source correlation | both | partial | conditional on identical verified IDs | Default is uncorrelated; time windows are prohibited. |
+| Unified activity view | AgentsharkX | supported | Phase 6 BFF/API/UI tests plus 5000-event bounded-buffer tests | Side-by-side source-preserving view, not a task timeline; list/SSE omit raw detail. |
+| SSE resume and dedupe | AgentsharkX | supported | Phase 6 ring and `Last-Event-ID` replay tests | Keep 1000 records, assign monotonic stream sequences, and dedupe source/event IDs on server and browser. |
+| Verified cross-source correlation | both | partial | Phase 6 exact shared-ID and negative no-ID tests | Default is uncorrelated; time windows are prohibited. |
 | Task graph | neither | unavailable | outside product boundary | Must not be implemented. |
 | Replay/payload vault | neither | unavailable | outside product boundary | Must not be implemented. |

@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/Thespectier/AgentsharkX/apps/server/internal/aggregate"
+	"github.com/Thespectier/AgentsharkX/apps/server/internal/audit"
 	"github.com/Thespectier/AgentsharkX/apps/server/internal/auth"
 	"github.com/Thespectier/AgentsharkX/apps/server/internal/connect"
 	"github.com/Thespectier/AgentsharkX/apps/server/internal/gateway"
@@ -40,6 +41,7 @@ type ServerConfig struct {
 	Connect     *connect.Service
 	Trust       *trust.Service
 	Protect     *protect.Service
+	Audit       *audit.Service
 	Stream      *stream.Hub
 	Logger      *slog.Logger
 	AuthEnabled bool
@@ -94,6 +96,10 @@ func (server *server) routes() {
 	server.mux.Handle("GET /api/v1/protect/approvals", server.requireAuth(http.HandlerFunc(server.protectApprovals)))
 	server.mux.Handle("POST /api/v1/protect/approvals/{ticketId}/approve", server.requireAuth(server.requireCSRF(http.HandlerFunc(server.approveTicket))))
 	server.mux.Handle("POST /api/v1/protect/approvals/{ticketId}/deny", server.requireAuth(server.requireCSRF(http.HandlerFunc(server.denyTicket))))
+	server.mux.Handle("GET /api/v1/audit/analytics", server.requireAuth(http.HandlerFunc(server.auditAnalytics)))
+	server.mux.Handle("GET /api/v1/audit/events", server.requireAuth(http.HandlerFunc(server.auditEvents)))
+	server.mux.Handle("GET /api/v1/audit/events/{source}/{eventId}", server.requireAuth(http.HandlerFunc(server.auditEvent)))
+	server.mux.Handle("GET /api/v1/audit/sessions", server.requireAuth(http.HandlerFunc(server.auditSessions)))
 	server.mux.Handle("/api/v1/", server.requireAuth(http.HandlerFunc(server.notImplemented)))
 }
 
@@ -406,6 +412,60 @@ func (server *server) resolveTicket(writer http.ResponseWriter, request *http.Re
 	server.writeProtectMutation(writer, request, http.StatusOK, envelope, err)
 }
 
+func (server *server) auditAnalytics(writer http.ResponseWriter, request *http.Request) {
+	if !server.auditAvailable(writer, request) {
+		return
+	}
+	server.writeJSON(writer, http.StatusOK, server.config.Audit.Snapshot())
+}
+
+func (server *server) auditEvents(writer http.ResponseWriter, request *http.Request) {
+	if !server.auditAvailable(writer, request) {
+		return
+	}
+	query, ok := server.resourceQuery(writer, request)
+	if !ok {
+		return
+	}
+	sourceFilter := model.Source(strings.TrimSpace(request.URL.Query().Get("source")))
+	if sourceFilter != "" && sourceFilter != model.SourceAgentGateway && sourceFilter != model.SourceAgentGuard {
+		server.writeError(writer, request, http.StatusBadRequest, "INVALID_REQUEST", "audit source filter is invalid", nil, false)
+		return
+	}
+	envelope, err := server.config.Audit.Events(sourceFilter, query.cursor, query.limit)
+	if errors.Is(err, audit.ErrInvalidCursor) {
+		server.writeError(writer, request, http.StatusBadRequest, "INVALID_CURSOR", "pagination cursor is invalid", nil, false)
+		return
+	}
+	server.writeJSON(writer, http.StatusOK, envelope)
+}
+
+func (server *server) auditEvent(writer http.ResponseWriter, request *http.Request) {
+	if !server.auditAvailable(writer, request) {
+		return
+	}
+	sourceValue := model.Source(request.PathValue("source"))
+	if sourceValue != model.SourceAgentGateway && sourceValue != model.SourceAgentGuard {
+		server.writeError(writer, request, http.StatusNotFound, "NOT_FOUND", "audit event was not found", nil, false)
+		return
+	}
+	event, ok := server.config.Audit.Find(sourceValue, request.PathValue("eventId"))
+	if !ok {
+		server.writeError(writer, request, http.StatusNotFound, "NOT_FOUND", "audit event was not found", source(sourceValue), false)
+		return
+	}
+	snapshot := server.config.Audit.Snapshot()
+	server.writeJSON(writer, http.StatusOK, model.ResourceEnvelope[model.UnifiedEvent]{Data: event, Meta: snapshot.Meta})
+}
+
+func (server *server) auditSessions(writer http.ResponseWriter, request *http.Request) {
+	if !server.auditAvailable(writer, request) {
+		return
+	}
+	snapshot := server.config.Audit.Snapshot()
+	server.writeJSON(writer, http.StatusOK, model.ResourceEnvelope[[]model.AuditSession]{Data: snapshot.Data.Sessions, Meta: snapshot.Meta})
+}
+
 type listQuery struct {
 	search string
 	cursor string
@@ -450,6 +510,14 @@ func (server *server) protectAvailable(writer http.ResponseWriter, request *http
 		return true
 	}
 	server.writeError(writer, request, http.StatusServiceUnavailable, "PROTECT_UNAVAILABLE", "Protect integration is unavailable", nil, true)
+	return false
+}
+
+func (server *server) auditAvailable(writer http.ResponseWriter, request *http.Request) bool {
+	if server.config.Audit != nil {
+		return true
+	}
+	server.writeError(writer, request, http.StatusServiceUnavailable, "AUDIT_UNAVAILABLE", "Audit integration is unavailable", nil, true)
 	return false
 }
 
@@ -621,23 +689,36 @@ func (server *server) eventStream(writer http.ResponseWriter, request *http.Requ
 	writer.Header().Set("Connection", "keep-alive")
 	writer.Header().Set("X-Accel-Buffering", "no")
 
-	for _, health := range server.config.Aggregate.Snapshot() {
-		if err := writeSSE(writer, healthEvent(health)); err != nil {
+	lastSequence := uint64(0)
+	if raw := strings.TrimSpace(request.Header.Get("Last-Event-ID")); raw != "" {
+		if parsed, err := strconv.ParseUint(raw, 10, 64); err == nil {
+			lastSequence = parsed
+		}
+	}
+	events, replay, unsubscribe := server.config.Stream.Subscribe(lastSequence)
+	defer unsubscribe()
+	if len(replay) == 0 && lastSequence == 0 && server.config.Aggregate != nil {
+		for _, health := range server.config.Aggregate.Snapshot() {
+			if err := writeSSE(writer, 0, healthEvent(health)); err != nil {
+				return
+			}
+		}
+	}
+	for _, record := range replay {
+		if err := writeSSE(writer, record.Sequence, record.Event); err != nil {
 			return
 		}
 	}
 	flusher.Flush()
 
-	events, unsubscribe := server.config.Stream.Subscribe()
-	defer unsubscribe()
 	heartbeat := time.NewTicker(15 * time.Second)
 	defer heartbeat.Stop()
 	for {
 		select {
 		case <-request.Context().Done():
 			return
-		case event, open := <-events:
-			if !open || writeSSE(writer, event) != nil {
+		case record, open := <-events:
+			if !open || writeSSE(writer, record.Sequence, record.Event) != nil {
 				return
 			}
 			flusher.Flush()
@@ -737,12 +818,12 @@ func (*server) writeJSON(writer http.ResponseWriter, status int, payload any) {
 	_ = json.NewEncoder(writer).Encode(payload)
 }
 
-func writeSSE(writer http.ResponseWriter, event model.UnifiedEvent) error {
+func writeSSE(writer http.ResponseWriter, sequence uint64, event model.UnifiedEvent) error {
 	payload, err := json.Marshal(event)
 	if err != nil {
 		return err
 	}
-	_, err = fmt.Fprintf(writer, "id: %s\nevent: %s\ndata: %s\n\n", event.ID, event.Kind, payload)
+	_, err = fmt.Fprintf(writer, "id: %d\nevent: %s\ndata: %s\n\n", sequence, event.Kind, payload)
 	return err
 }
 

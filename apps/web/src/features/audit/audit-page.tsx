@@ -10,7 +10,7 @@ import {
   Radio,
   ShieldAlert,
 } from "lucide-react";
-import { useCallback, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 
 import { RequestTrendChart } from "../../motion/dashboard-motion";
 import { currentSection, PageFrame, WorkspaceTabs } from "../../components/workspace";
@@ -33,7 +33,8 @@ import {
   type Column,
 } from "../../components/ui";
 import { formatCount, formatTime } from "../../lib/format";
-import { formatError, getScenario, requestEnvelope } from "../../lib/api";
+import { formatError, getScenario, requestOperation } from "../../lib/api";
+import { mergeLiveEvents, useLiveEvents } from "../../lib/use-live-events";
 import type { AuditData, UnifiedEvent } from "../../types";
 
 const tabs = [
@@ -51,14 +52,36 @@ export function AuditPage() {
   const triggerRef = useRef<HTMLElement | null>(null);
   const query = useQuery({
     queryKey: ["audit", scenario],
-    queryFn: ({ signal }) => requestEnvelope<AuditData>("/api/v1/audit/analytics", signal),
+    queryFn: ({ signal }) => requestOperation("getAuditAnalytics", signal),
     retry: false,
   });
+  const live = useLiveEvents(query.isSuccess && scenario !== "empty");
+  useEffect(() => {
+    if (live.events[0]) void query.refetch();
+  }, [live.events[0]?.id]);
+  const data = useMemo<AuditData | undefined>(() => {
+    if (!query.data) return undefined;
+    return {
+      ...query.data.data,
+      events: mergeLiveEvents(live.events, query.data.data.events),
+    };
+  }, [live.events, query.data]);
   const selectedId = new URLSearchParams(location.searchStr).get("event");
   const selected = useMemo(
-    () => query.data?.data.events.find((event) => event.id === selectedId),
-    [query.data, selectedId],
+    () => data?.events.find((event) => event.id === selectedId),
+    [data, selectedId],
   );
+  const detailQuery = useQuery({
+    queryKey: ["audit-event", selected?.source, selected?.id, scenario],
+    queryFn: ({ signal }) =>
+      requestOperation("getAuditEvent", {
+        signal,
+        path: { source: selected!.source, eventId: selected!.id },
+      }),
+    enabled: Boolean(selected),
+    retry: false,
+  });
+  const selectedDetail = detailQuery.data?.data ?? selected;
   const setEvent = useCallback(
     (eventId?: string, trigger?: HTMLTableRowElement) => {
       if (trigger) triggerRef.current = trigger;
@@ -76,7 +99,7 @@ export function AuditPage() {
   );
   const closeEvent = useCallback(() => setEvent(), [setEvent]);
   if (query.isLoading) return <PageSkeleton label="Loading audit data" />;
-  if (query.isError || !query.data)
+  if (query.isError || !query.data || !data)
     return (
       <PageFrame>
         <PageHeader
@@ -87,7 +110,7 @@ export function AuditPage() {
         <ErrorState description={formatError(query.error)} onRetry={() => void query.refetch()} />
       </PageFrame>
     );
-  const { data, meta } = query.data;
+  const { meta } = query.data;
   return (
     <PageFrame>
       <PageHeader
@@ -122,13 +145,13 @@ export function AuditPage() {
       ) : null}
       {section === "sessions" ? <SessionsView data={data} /> : null}
       <DetailDrawer
-        eyebrow={selected?.source ?? "Event detail"}
+        eyebrow={selectedDetail?.source ?? "Event detail"}
         onClose={closeEvent}
         open={Boolean(selected)}
         returnFocusRef={triggerRef}
-        title={selected?.summary ?? "Event not found"}
+        title={selectedDetail?.summary ?? "Event not found"}
       >
-        {selected ? <EventDetail event={selected} /> : null}
+        {selectedDetail ? <EventDetail event={selectedDetail} /> : null}
       </DetailDrawer>
     </PageFrame>
   );
@@ -283,9 +306,10 @@ function SessionsView({ data }: { data: AuditData }) {
       render: (item: AuditData["sessions"][number]) => item.denies,
     },
     {
-      key: "started",
-      header: "Started",
-      render: (item: AuditData["sessions"][number]) => item.startedAt,
+      key: "last-seen",
+      header: "Last seen",
+      render: (item: AuditData["sessions"][number]) =>
+        item.lastSeen ? formatTime(item.lastSeen) : "Not reported",
     },
     {
       key: "status",
@@ -301,7 +325,7 @@ function SessionsView({ data }: { data: AuditData }) {
   return data.sessions.length ? (
     <Card>
       <CardHeader
-        description="AgentGuard sessions only; no task DAG or gateway inference."
+        description="AgentGuard sessions only; counts use exact session-ID matches and do not imply a task DAG."
         title="Runtime sessions"
       />
       <DataTable columns={columns} data={data.sessions} label="AgentGuard runtime sessions" />
@@ -348,12 +372,12 @@ function EventDetail({ event }: { event: UnifiedEvent }) {
           <strong>Redacted raw JSON</strong>
         </header>
         <pre>
-          <code>{JSON.stringify(event.raw, null, 2)}</code>
+          <code>{JSON.stringify(event.raw ?? { redacted: true }, null, 2)}</code>
         </pre>
       </div>
       <div className="redaction-note">
         <ShieldAlert size={15} /> Prompt, payload, authorization, and tool arguments are redacted in
-        this mock detail.
+        this detail.
       </div>
     </div>
   );

@@ -1,17 +1,17 @@
 openapi: 3.1.0
 info:
   title: AgentsharkX BFF API
-  version: 0.5.0-phase5
+  version: 0.6.0-phase6
   description: |
     Source-preserving management API above agentgateway and AgentGuard.
-    Phase 4 implements authentication, independent upstream health and
-    capability probes, the health-only overview, normalized health SSE, and
-    read-only agentgateway resources with setup verification. Trust adds
+    Authentication, independent upstream health and capability probes, and
+    read-only agentgateway resources provide the management foundation. Trust adds
     source-preserving AgentGuard identities, resources, label updates, and
     bounded asynchronous scan orchestration. Protect adds source-grouped
     gateway policy summaries, AgentGuard runtime-rule check/publish/delete,
-    per-agent plugin phases, and guarded approval decisions.
-    Later operations remain reserved according to `x-implementation-phase`.
+    per-agent plugin phases, and guarded approval decisions. Audit adds bounded
+    gateway traffic and AgentGuard audit/session projections, source-scoped
+    analytics, redacted detail, and resumable normalized SSE.
 servers:
   - url: /
 security:
@@ -109,7 +109,7 @@ paths:
     get:
       tags: [System]
       operationId: streamEvents
-      summary: Subscribe to normalized source health changes and heartbeat comments
+      summary: Subscribe to resumable normalized health, gateway traffic, and AgentGuard audit events
       x-implementation-phase: 2
       x-implementation-status: implemented
       parameters:
@@ -873,9 +873,16 @@ paths:
       operationId: getAuditAnalytics
       summary: Return source-preserving traffic and security trends
       x-implementation-phase: 6
+      x-implementation-status: implemented
       responses:
         '200':
-          $ref: '#/components/responses/DataResponse'
+          description: Current bounded audit snapshot
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditEnvelope'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
 
   /api/v1/audit/events:
     get:
@@ -883,9 +890,11 @@ paths:
       operationId: listAuditEvents
       summary: List normalized events without implied task correlation
       x-implementation-phase: 6
+      x-implementation-status: implemented
       parameters:
         - $ref: '#/components/parameters/SourceFilter'
         - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
       responses:
         '200':
           description: Normalized activity page
@@ -893,6 +902,10 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/EventsEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
 
   /api/v1/audit/events/{source}/{eventId}:
     get:
@@ -900,12 +913,19 @@ paths:
       operationId: getAuditEvent
       summary: Return redacted normalized and raw detail for one source event
       x-implementation-phase: 6
+      x-implementation-status: implemented
       parameters:
         - $ref: '#/components/parameters/SourcePath'
         - $ref: '#/components/parameters/EventId'
       responses:
         '200':
-          $ref: '#/components/responses/DataResponse'
+          description: Redacted source event detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EventEnvelope'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/NotFound'
 
@@ -915,9 +935,16 @@ paths:
       operationId: listAuditSessions
       summary: List explicit AgentGuard sessions and their runtime events
       x-implementation-phase: 6
+      x-implementation-status: implemented
       responses:
         '200':
-          $ref: '#/components/responses/DataResponse'
+          description: AgentGuard session projection with exact session-ID event counts
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditSessionsEnvelope'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
 
 components:
   securitySchemes:
@@ -2114,16 +2141,79 @@ components:
           required: [source, id]
           properties:
             source:
-              type: string
+              $ref: '#/components/schemas/Source'
             id:
               type: string
+        raw:
+          type: object
+          description: Allow-listed redacted projection; never contains prompts, payloads, tool arguments/results, plugin results, or authorization data.
+          additionalProperties: true
+    AuditSession:
+      type: object
+      additionalProperties: false
+      required: [id, upstreamId, agentId, agentUpstreamId, events, denies, lastSeen, status, source, rawRef]
+      properties:
+        id: { type: string }
+        upstreamId: { type: string }
+        agentId: { type: string }
+        agentUpstreamId: { type: string }
+        principal: { type: string }
+        events: { type: integer, minimum: 0 }
+        denies: { type: integer, minimum: 0 }
+        lastSeen: { type: [string, 'null'], format: date-time }
+        status: { type: string, enum: [unknown] }
+        source: { $ref: '#/components/schemas/GuardSource' }
+        rawRef: { $ref: '#/components/schemas/RawRef' }
+    AuditData:
+      type: object
+      additionalProperties: false
+      required: [metrics, trend, events, sessions]
+      properties:
+        metrics:
+          type: array
+          items: { $ref: '#/components/schemas/Metric' }
+        trend:
+          type: array
+          items: { $ref: '#/components/schemas/TrendPoint' }
+        events:
+          type: array
+          maxItems: 1000
+          items: { $ref: '#/components/schemas/UnifiedEvent' }
+        sessions:
+          type: array
+          items: { $ref: '#/components/schemas/AuditSession' }
+    AuditEnvelope:
+      type: object
+      additionalProperties: false
+      required: [data, meta]
+      properties:
+        data: { $ref: '#/components/schemas/AuditData' }
+        meta: { $ref: '#/components/schemas/Meta' }
+    EventEnvelope:
+      type: object
+      additionalProperties: false
+      required: [data, meta]
+      properties:
+        data: { $ref: '#/components/schemas/UnifiedEvent' }
+        meta: { $ref: '#/components/schemas/Meta' }
+    AuditSessionsEnvelope:
+      type: object
+      additionalProperties: false
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/AuditSession' }
+        meta: { $ref: '#/components/schemas/Meta' }
     EventsEnvelope:
       type: object
+      additionalProperties: false
       required: [data, meta]
       properties:
         data:
           type: object
-          required: [items]
+          additionalProperties: false
+          required: [items, nextCursor, total]
           properties:
             items:
               type: array
@@ -2131,6 +2221,9 @@ components:
                 $ref: '#/components/schemas/UnifiedEvent'
             nextCursor:
               type: [string, 'null']
+            total:
+              type: integer
+              minimum: 0
         meta:
           $ref: '#/components/schemas/Meta'
     ErrorEnvelope:

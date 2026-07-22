@@ -1,8 +1,9 @@
 # Upstream contract evidence
 
-These files are sanitized response samples captured from running containers,
-not invented fixtures and not a substitute for capability probing. They freeze
-the Phase 0 baseline for adapter tests.
+These files are sanitized response samples captured from running containers or,
+where explicitly labelled `populated shape`, minimized from exact pinned-source
+response builders/tests. They are not a substitute for capability probing and
+freeze verified adapter contracts.
 
 - `agentgateway/`: release `v1.3.1`, revision
   `dbaaf7ed73671e7aec9195e35e7f726c0b14b84a`.

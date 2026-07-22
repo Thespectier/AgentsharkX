@@ -30,11 +30,12 @@ required_paths=(
   '/api/v1/protect/approvals/{ticketId}/deny'
   /api/v1/audit/analytics
   /api/v1/audit/events
+  '/api/v1/audit/events/{source}/{eventId}'
   /api/v1/audit/sessions
 )
 
 rg -q '^openapi: 3\.1\.0$' "$spec"
-rg -q '^  version: 0\.5\.0-phase5$' "$spec"
+rg -q '^  version: 0\.6\.0-phase6$' "$spec"
 rg -q '^paths:$' "$spec"
 for path in "${required_paths[@]}"; do
   if ! rg -Fq "  $path:" "$spec"; then

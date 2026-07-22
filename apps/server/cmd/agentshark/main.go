@@ -12,6 +12,7 @@ import (
 
 	"github.com/Thespectier/AgentsharkX/apps/server/internal/aggregate"
 	"github.com/Thespectier/AgentsharkX/apps/server/internal/api"
+	"github.com/Thespectier/AgentsharkX/apps/server/internal/audit"
 	"github.com/Thespectier/AgentsharkX/apps/server/internal/auth"
 	"github.com/Thespectier/AgentsharkX/apps/server/internal/config"
 	"github.com/Thespectier/AgentsharkX/apps/server/internal/connect"
@@ -64,14 +65,20 @@ func main() {
 	trustService := trust.New(rootContext, guardClient, cfg.ScanTimeout)
 	protectService := protect.New(gatewayClient, protectGuardClient, connectService.Links())
 	hub := stream.NewHub()
+	auditService := audit.New(gatewayClient, guardClient, hub)
+	aggregator.SetOperational(auditService)
 	sessions := auth.New(cfg.AdminToken.Value(), auth.Options{CookieSecure: cfg.CookieSecure, TTL: 8 * time.Hour})
 	handler := api.New(api.ServerConfig{
 		Sessions: sessions, Aggregate: aggregator, Connect: connectService, Trust: trustService, Protect: protectService,
-		Stream: hub, Logger: logger, AuthEnabled: !cfg.AuthDisabled,
+		Audit: auditService, Stream: hub, Logger: logger, AuthEnabled: !cfg.AuthDisabled,
 	})
 
-	aggregator.Refresh(rootContext)
+	for _, health := range aggregator.Refresh(rootContext) {
+		hub.Publish(newHealthEvent(health))
+	}
+	auditService.Refresh(rootContext)
 	go monitorHealth(rootContext, aggregator, hub, cfg.PollInterval)
+	go monitorAudit(rootContext, auditService, cfg.PollInterval)
 
 	httpServer := &http.Server{
 		Addr:              cfg.ListenAddr,
@@ -93,6 +100,19 @@ func main() {
 	if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		logger.Error("server stopped unexpectedly", "error", err.Error())
 		os.Exit(1)
+	}
+}
+
+func monitorAudit(ctx context.Context, service *audit.Service, interval time.Duration) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			service.Refresh(ctx)
+		}
 	}
 }
 

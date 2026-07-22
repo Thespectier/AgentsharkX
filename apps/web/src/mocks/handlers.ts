@@ -651,13 +651,13 @@ export const handlers = [
           };
           controller.enqueue(
             encoder.encode(
-              `id: ${event.id}\nevent: ${event.kind}\ndata: ${JSON.stringify(event)}\n\n`,
+              `id: ${index + 1}\nevent: ${event.kind}\ndata: ${JSON.stringify(event)}\n\n`,
             ),
           );
           index += 1;
         };
         controller.enqueue(encoder.encode(": mock heartbeat\n\n"));
-        timer = setInterval(emit, 3_600);
+        timer = setInterval(emit, 2_000);
         request.signal.addEventListener("abort", () => {
           if (timer) clearInterval(timer);
           controller.close();

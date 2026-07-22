@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/Thespectier/AgentsharkX/apps/server/internal/aggregate"
+	"github.com/Thespectier/AgentsharkX/apps/server/internal/audit"
 	"github.com/Thespectier/AgentsharkX/apps/server/internal/auth"
 	"github.com/Thespectier/AgentsharkX/apps/server/internal/connect"
 	"github.com/Thespectier/AgentsharkX/apps/server/internal/gateway"
@@ -24,6 +25,34 @@ import (
 	"github.com/Thespectier/AgentsharkX/apps/server/internal/stream"
 	"github.com/Thespectier/AgentsharkX/apps/server/internal/trust"
 )
+
+type apiAuditGateway struct {
+	feed      model.AuditFeed
+	analytics model.GatewayAnalytics
+}
+
+func (fake apiAuditGateway) Traffic(context.Context, int) (model.AuditFeed, error) {
+	return fake.feed, nil
+}
+func (fake apiAuditGateway) Analytics(context.Context) (model.GatewayAnalytics, error) {
+	return fake.analytics, nil
+}
+
+type apiAuditGuard struct {
+	traffic  model.AuditFeed
+	audit    model.AuditFeed
+	sessions []model.AuditSession
+}
+
+func (fake apiAuditGuard) Traffic(context.Context, int) (model.AuditFeed, error) {
+	return fake.traffic, nil
+}
+func (fake apiAuditGuard) Audit(context.Context, int) (model.AuditFeed, error) {
+	return fake.audit, nil
+}
+func (fake apiAuditGuard) AuditSessions(context.Context) ([]model.AuditSession, error) {
+	return fake.sessions, nil
+}
 
 func TestFakeUpstreamsRemainIndependentThroughBFF(t *testing.T) {
 	t.Parallel()
@@ -330,6 +359,103 @@ func TestStreamStartsWithNormalizedHealthEvents(t *testing.T) {
 	joined := strings.Join(lines, "\n")
 	if !strings.Contains(joined, "event: health") || !strings.Contains(joined, `"source":"agentgateway"`) {
 		t.Fatalf("unexpected initial SSE event: %s", joined)
+	}
+}
+
+func TestAuditRoutesExposeBoundedListsAndRedactedDetail(t *testing.T) {
+	t.Parallel()
+	now := time.Now().UTC()
+	event := model.UnifiedEvent{
+		ID: "guard:event-1", Timestamp: now, Source: model.SourceAgentGuard, Kind: "audit", Severity: "high",
+		Subject: &model.EventSubject{AgentID: "agent-a", SessionID: "session-a"}, Decision: "DENY",
+		Summary: "tool invoke was denied", RawRef: model.RawRef{Source: model.SourceAgentGuard, ID: "event-1"},
+		Raw: map[string]any{"eventId": "event-1", "redacted": true},
+	}
+	hub := stream.NewHub()
+	auditService := audit.New(
+		apiAuditGateway{
+			feed:      model.AuditFeed{Status: "unavailable", Reason: "request-log storage is not configured", Events: []model.UnifiedEvent{}},
+			analytics: model.GatewayAnalytics{Status: "unavailable", Reason: "analytics storage is not configured", Buckets: []model.AnalyticsBucket{}},
+		},
+		apiAuditGuard{
+			traffic: model.AuditFeed{Status: "available", Traffic: []model.AuditTrafficRecord{{Timestamp: now, Action: "DENY", LatencyMS: 4}}},
+			audit:   model.AuditFeed{Status: "available", Events: []model.UnifiedEvent{event}},
+			sessions: []model.AuditSession{{
+				ID: "session-resource", UpstreamID: "session-a", AgentID: "agent-resource", AgentUpstreamID: "agent-a",
+				Source: model.SourceAgentGuard, Status: "unknown", RawRef: model.RawRef{Source: model.SourceAgentGuard, ID: "session-a"},
+			}},
+		}, hub,
+	)
+	auditService.Refresh(t.Context())
+	server := httptest.NewServer(New(ServerConfig{Audit: auditService, Stream: hub, Logger: slog.New(slog.DiscardHandler), AuthEnabled: false}))
+	defer server.Close()
+
+	var analytics model.AuditEnvelope
+	protectJSON(t, server.Client(), http.MethodGet, server.URL+"/api/v1/audit/analytics", "", http.StatusOK, &analytics)
+	if !analytics.Meta.Partial || len(analytics.Data.Events) != 1 || analytics.Data.Events[0].Raw != nil {
+		t.Fatalf("unexpected audit analytics: %#v", analytics)
+	}
+	var events model.EventsEnvelope
+	protectJSON(t, server.Client(), http.MethodGet, server.URL+"/api/v1/audit/events?source=agentguard&limit=1", "", http.StatusOK, &events)
+	if events.Data.Total != 1 || events.Data.Items[0].ID != event.ID {
+		t.Fatalf("unexpected audit page: %#v", events)
+	}
+	var detail model.ResourceEnvelope[model.UnifiedEvent]
+	protectJSON(t, server.Client(), http.MethodGet, server.URL+"/api/v1/audit/events/agentguard/guard:event-1", "", http.StatusOK, &detail)
+	if detail.Data.Raw["redacted"] != true {
+		t.Fatalf("redacted detail missing: %#v", detail)
+	}
+	var sessions model.ResourceEnvelope[[]model.AuditSession]
+	protectJSON(t, server.Client(), http.MethodGet, server.URL+"/api/v1/audit/sessions", "", http.StatusOK, &sessions)
+	if len(sessions.Data) != 1 || sessions.Data[0].Events != 1 || sessions.Data[0].Denies != 1 {
+		t.Fatalf("unexpected audit sessions: %#v", sessions)
+	}
+}
+
+func TestStreamResumesAfterLastSequenceWithoutDuplicateReplay(t *testing.T) {
+	t.Parallel()
+	hub := stream.NewHubWithCapacity(10)
+	for index, id := range []string{"gateway:first", "guard:second", "gateway:third"} {
+		sourceValue := model.SourceAgentGateway
+		kind := "traffic"
+		if index == 1 {
+			sourceValue = model.SourceAgentGuard
+			kind = "audit"
+		}
+		hub.Publish(model.UnifiedEvent{
+			ID: id, Timestamp: time.Now().UTC(), Source: sourceValue, Kind: kind, Severity: "info",
+			Summary: id, RawRef: model.RawRef{Source: sourceValue, ID: id},
+		})
+	}
+	server := httptest.NewServer(New(ServerConfig{Stream: hub, Logger: slog.New(slog.DiscardHandler), AuthEnabled: false}))
+	defer server.Close()
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	request, _ := http.NewRequestWithContext(ctx, http.MethodGet, server.URL+"/api/v1/stream", nil)
+	request.Header.Set("Last-Event-ID", "1")
+	response, err := server.Client().Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	scanner := bufio.NewScanner(response.Body)
+	blocks := make([]string, 0, 2)
+	var block []string
+	for scanner.Scan() {
+		line := scanner.Text()
+		if line == "" {
+			blocks = append(blocks, strings.Join(block, "\n"))
+			block = nil
+			if len(blocks) == 2 {
+				break
+			}
+			continue
+		}
+		block = append(block, line)
+	}
+	joined := strings.Join(blocks, "\n")
+	if strings.Contains(joined, "gateway:first") || !strings.Contains(blocks[0], "id: 2") || !strings.Contains(blocks[1], "id: 3") {
+		t.Fatalf("unexpected resumed stream: %#v", blocks)
 	}
 }
 

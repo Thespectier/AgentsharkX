@@ -1,0 +1,81 @@
+{
+  "traffic": [
+    {
+      "ts": 1784707200,
+      "tool": "mail.send",
+      "agent": "agent-a",
+      "session": "session-a",
+      "action": "deny",
+      "latency_ms": 12.5,
+      "risk": 0.9,
+      "rules": ["rule-a"],
+      "reason": "Sanitized rule reason",
+      "plugin_summary": null,
+      "plugin_result": null
+    }
+  ],
+  "audit": [
+    {
+      "event": {
+        "event_id": "event-a",
+        "ts_ms": 1784707200000,
+        "event_type": "tool_invoke",
+        "principal": {
+          "agent_id": "agent-a",
+          "session_id": "session-a",
+          "user_id": "user-a",
+          "role": "default",
+          "trust_level": 0
+        },
+        "tool_call": {
+          "tool_name": "mail.send",
+          "args": {},
+          "result": null,
+          "source": "langchain",
+          "mcp": {},
+          "target": {},
+          "sink_type": "none",
+          "label": {
+            "boundary": "external",
+            "sensitivity": "confidential",
+            "integrity": "trusted",
+            "tags": []
+          }
+        }
+      },
+      "decision": {
+        "action": "deny",
+        "risk_score": 0.9,
+        "matched_rules": ["rule-a"],
+        "obligations": [],
+        "rule_version": "1",
+        "ttl_ms": 0,
+        "reason": "Sanitized rule reason",
+        "policy_id": "rule-a",
+        "plugin_result": null,
+        "plugin_summary": null,
+        "plugin_outcomes": []
+      },
+      "runtime_state": {
+        "event_type": "tool_invoke",
+        "tool_name": "mail.send",
+        "arguments": {},
+        "result": null,
+        "source": "langchain",
+        "mcp": {},
+        "payload": {},
+        "metadata": {}
+      }
+    }
+  ],
+  "sessions": {
+    "sessions": [
+      {
+        "session_id": "session-a",
+        "agent_id": "agent-a",
+        "user_id": "user-a",
+        "last_seen": 1784707200
+      }
+    ]
+  }
+}

@@ -14,12 +14,23 @@ type Source interface {
 	Capabilities(context.Context) []model.Capability
 }
 
+type OperationalSource interface {
+	OperationalSnapshot() model.OperationalSnapshot
+}
+
 type Service struct {
 	mu          sync.RWMutex
 	environment string
 	gateway     Source
 	guard       Source
 	health      []model.SourceHealth
+	operational OperationalSource
+}
+
+func (service *Service) SetOperational(source OperationalSource) {
+	service.mu.Lock()
+	service.operational = source
+	service.mu.Unlock()
 }
 
 func New(environment string, gateway, guard Source) *Service {
@@ -83,6 +94,9 @@ func (service *Service) Capabilities(ctx context.Context) model.CapabilitiesEnve
 
 func (service *Service) Overview() model.OverviewEnvelope {
 	health := service.Snapshot()
+	service.mu.RLock()
+	operational := service.operational
+	service.mu.RUnlock()
 	allHealthy := len(health) == 2
 	steps := make([]model.SetupStep, 0, len(health))
 	for _, source := range health {
@@ -90,18 +104,31 @@ func (service *Service) Overview() model.OverviewEnvelope {
 		allHealthy = allHealthy && complete
 		steps = append(steps, model.SetupStep{ID: string(source.Source), Label: "Connect " + source.Label, Complete: complete})
 	}
-	return model.OverviewEnvelope{
+	envelope := model.OverviewEnvelope{
 		Data: model.OverviewData{
 			Environment: service.environment,
 			Mode:        "health-only",
 			Health:      health,
-			Metrics:     []any{},
-			Trend:       []any{},
+			Metrics:     []model.Metric{},
+			Trend:       []model.TrendPoint{},
 			Events:      []model.UnifiedEvent{},
 			Setup:       model.Setup{Complete: allHealthy, Steps: steps},
 		},
 		Meta: metaFor(health),
 	}
+	if operational != nil {
+		snapshot := operational.OperationalSnapshot()
+		envelope.Data.Mode = "operational"
+		envelope.Data.Metrics = snapshot.Metrics
+		envelope.Data.Trend = snapshot.Trend
+		envelope.Data.Events = snapshot.Events
+		envelope.Meta.Partial = envelope.Meta.Partial || snapshot.Meta.Partial
+		envelope.Meta.SourceFailures = append(envelope.Meta.SourceFailures, snapshot.Meta.SourceFailures...)
+		if snapshot.Meta.FetchedAt.After(envelope.Meta.FetchedAt) {
+			envelope.Meta.FetchedAt = snapshot.Meta.FetchedAt
+		}
+	}
+	return envelope
 }
 
 func metaFor(health []model.SourceHealth) model.Meta {

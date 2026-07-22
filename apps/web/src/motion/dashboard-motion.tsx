@@ -35,7 +35,10 @@ export function LiveFlow({
   const reduced = useReducedMotion();
   const pulses = useMemo(() => events.slice(0, 12), [events]);
   return (
-    <div className="live-flow" data-motion={reduced ? "reduced" : "full"}>
+    <div
+      className="live-flow"
+      data-motion={reduced ? "reduced" : status === "paused" ? "paused" : "full"}
+    >
       <div className="live-flow__header">
         <div>
           <span className="live-flow__label">
@@ -102,7 +105,7 @@ export function LiveFlow({
           x={590}
           y={172}
         />
-        {!reduced
+        {!reduced && status === "live"
           ? pulses.map((event, index) => {
               const path = flowPaths[index % flowPaths.length];
               return (
@@ -135,7 +138,7 @@ export function LiveFlow({
           <i className="legend-dot legend-dot--cyan" />
           Guard decisions
         </span>
-        <span>Mock SSE · no inferred correlation</span>
+        <span>Resumable SSE · no inferred correlation</span>
       </div>
     </div>
   );

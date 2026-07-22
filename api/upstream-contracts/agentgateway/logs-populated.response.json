@@ -1,0 +1,28 @@
+{
+  "logs": [
+    {
+      "id": "log-1",
+      "startedAt": "2026-07-22T08:00:00Z",
+      "completedAt": "2026-07-22T08:00:00.120Z",
+      "durationMs": 120,
+      "traceId": "trace-1",
+      "spanId": "span-1",
+      "httpStatus": 200,
+      "error": null,
+      "genAi": {
+        "operationName": "chat",
+        "providerName": "provider-a",
+        "requestModel": "model-a",
+        "responseModel": "model-a"
+      },
+      "usage": {
+        "inputTokens": 2,
+        "outputTokens": 3,
+        "totalTokens": 5
+      },
+      "cost": 0.01,
+      "hasPayload": true
+    }
+  ],
+  "nextCursor": null
+}

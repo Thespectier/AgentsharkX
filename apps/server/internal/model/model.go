@@ -82,14 +82,32 @@ type Setup struct {
 	Steps    []SetupStep `json:"steps"`
 }
 
-// OverviewData remains health-only through Phase 4. Later phases populate its
-// business collections only from verified upstream contracts.
+type Metric struct {
+	ID      string  `json:"id"`
+	Label   string  `json:"label"`
+	Source  Source  `json:"source"`
+	Value   float64 `json:"value"`
+	Format  string  `json:"format"`
+	Delta   float64 `json:"delta"`
+	Trend   string  `json:"trend"`
+	Tone    string  `json:"tone"`
+	Context string  `json:"context"`
+}
+
+type TrendPoint struct {
+	Time     string  `json:"time"`
+	Requests float64 `json:"requests"`
+	Latency  float64 `json:"latency"`
+	Errors   float64 `json:"errors"`
+	Denied   float64 `json:"denied"`
+}
+
 type OverviewData struct {
 	Environment string         `json:"environment"`
 	Mode        string         `json:"mode"`
 	Health      []SourceHealth `json:"health"`
-	Metrics     []any          `json:"metrics"`
-	Trend       []any          `json:"trend"`
+	Metrics     []Metric       `json:"metrics"`
+	Trend       []TrendPoint   `json:"trend"`
 	Events      []UnifiedEvent `json:"events"`
 	Setup       Setup          `json:"setup"`
 }
@@ -477,13 +495,97 @@ type ProtectMutationEnvelope struct {
 }
 
 type UnifiedEvent struct {
-	ID        string    `json:"id"`
-	Timestamp time.Time `json:"timestamp"`
-	Source    Source    `json:"source"`
-	Kind      string    `json:"kind"`
-	Severity  string    `json:"severity"`
-	Summary   string    `json:"summary"`
-	RawRef    RawRef    `json:"rawRef"`
+	ID          string            `json:"id"`
+	Timestamp   time.Time         `json:"timestamp"`
+	Source      Source            `json:"source"`
+	Kind        string            `json:"kind"`
+	Severity    string            `json:"severity"`
+	Subject     *EventSubject     `json:"subject,omitempty"`
+	Target      *EventTarget      `json:"target,omitempty"`
+	Phase       string            `json:"phase,omitempty"`
+	Action      string            `json:"action,omitempty"`
+	Decision    string            `json:"decision,omitempty"`
+	Correlation *EventCorrelation `json:"correlation,omitempty"`
+	Summary     string            `json:"summary"`
+	RawRef      RawRef            `json:"rawRef"`
+	Raw         map[string]any    `json:"raw,omitempty"`
+}
+
+type EventSubject struct {
+	AgentID     string `json:"agentId,omitempty"`
+	PrincipalID string `json:"principalId,omitempty"`
+	SessionID   string `json:"sessionId,omitempty"`
+}
+
+type EventTarget struct {
+	Provider string `json:"provider,omitempty"`
+	Model    string `json:"model,omitempty"`
+	Tool     string `json:"tool,omitempty"`
+	Resource string `json:"resource,omitempty"`
+}
+
+type EventCorrelation struct {
+	TraceID   string `json:"traceId,omitempty"`
+	SessionID string `json:"sessionId,omitempty"`
+	Verified  bool   `json:"verified"`
+}
+
+type AuditTrafficRecord struct {
+	Timestamp time.Time
+	Action    string
+	LatencyMS float64
+	Risk      float64
+}
+
+type AuditFeed struct {
+	Status  string
+	Reason  string
+	Events  []UnifiedEvent
+	Traffic []AuditTrafficRecord
+}
+
+type AuditSession struct {
+	ID              string     `json:"id"`
+	UpstreamID      string     `json:"upstreamId"`
+	AgentID         string     `json:"agentId"`
+	AgentUpstreamID string     `json:"agentUpstreamId"`
+	Principal       string     `json:"principal,omitempty"`
+	Events          int        `json:"events"`
+	Denies          int        `json:"denies"`
+	LastSeen        *time.Time `json:"lastSeen"`
+	Status          string     `json:"status"`
+	Source          Source     `json:"source"`
+	RawRef          RawRef     `json:"rawRef"`
+}
+
+type AuditData struct {
+	Metrics  []Metric       `json:"metrics"`
+	Trend    []TrendPoint   `json:"trend"`
+	Events   []UnifiedEvent `json:"events"`
+	Sessions []AuditSession `json:"sessions"`
+}
+
+type AuditEnvelope struct {
+	Data AuditData `json:"data"`
+	Meta Meta      `json:"meta"`
+}
+
+type EventsPage struct {
+	Items      []UnifiedEvent `json:"items"`
+	NextCursor *string        `json:"nextCursor"`
+	Total      int            `json:"total"`
+}
+
+type EventsEnvelope struct {
+	Data EventsPage `json:"data"`
+	Meta Meta       `json:"meta"`
+}
+
+type OperationalSnapshot struct {
+	Metrics []Metric
+	Trend   []TrendPoint
+	Events  []UnifiedEvent
+	Meta    Meta
 }
 
 type APIError struct {

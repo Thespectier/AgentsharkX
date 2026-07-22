@@ -30,6 +30,7 @@ The image was built from release tag `v2.1` at the pinned revision
 | `approvals-populated.response.json` | `GET /v1/backend/approvals` | Sanitized pending ticket shape |
 | `approval-resolve.response.json` | `POST .../approvals/{ticket_id}/{approve|deny}` | Sanitized resolution receipt shape |
 | `plugins.response.json` | `GET .../plugins/config` and `GET .../plugins/available` | Sanitized per-agent plugin shapes |
+| `audit-populated.response.json` | `GET /traffic`, `GET /audit/recent`, and `GET /sessions` | Sanitized populated shapes from the pinned console-state source contract |
 
 `uptime_s` in the health/stats samples is capture-specific. Runtime OpenAPI
 reports service version `0.3.0`, which differs from package/release version
@@ -45,3 +46,9 @@ Phase 5 mutation contracts were also cross-checked against that pinned source.
 Rule check is side-effect free; publish, delete, approve, and deny are never
 automatically retried. Normalized responses omit rule source and prompt fields,
 approval tool arguments and targets, and plugin parameters.
+
+Phase 6 Audit contracts were cross-checked against the same revision's console
+state builders and route tests. AgentsharkX uses Traffic only for scalar
+metrics, uses Audit `event_id` for normalized events, and matches Sessions only
+by exact `session_id`. Runtime state, arguments/results, reasons, and plugin
+results are omitted even though the source shape documents their location.

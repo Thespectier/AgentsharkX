@@ -59,7 +59,14 @@ func New(source model.Source, rawBaseURL, authName, authValue string, client *ht
 }
 
 func (client *Client) GetJSON(ctx context.Context, path string, destination any) (time.Duration, error) {
-	return client.doJSON(ctx, http.MethodGet, path, nil, destination, true)
+	return client.doJSONQuery(ctx, http.MethodGet, path, nil, nil, destination, true)
+}
+
+// GetJSONQuery performs a bounded read with query parameters encoded by
+// net/url. Adapters must use this instead of interpolating query strings into
+// upstream paths.
+func (client *Client) GetJSONQuery(ctx context.Context, path string, query url.Values, destination any) (time.Duration, error) {
+	return client.doJSONQuery(ctx, http.MethodGet, path, query, nil, destination, true)
 }
 
 // PostJSON performs a bounded JSON POST which callers must use only for verified,
@@ -97,8 +104,12 @@ func (client *Client) writeJSON(ctx context.Context, method, path string, body, 
 }
 
 func (client *Client) doJSON(ctx context.Context, method, path string, body []byte, destination any, retrySafe bool) (time.Duration, error) {
+	return client.doJSONQuery(ctx, method, path, nil, body, destination, retrySafe)
+}
+
+func (client *Client) doJSONQuery(ctx context.Context, method, path string, query url.Values, body []byte, destination any, retrySafe bool) (time.Duration, error) {
 	started := time.Now()
-	response, err := client.do(ctx, method, path, body, retrySafe)
+	response, err := client.do(ctx, method, path, query, body, retrySafe)
 	duration := time.Since(started)
 	if err != nil {
 		return duration, err
@@ -117,7 +128,7 @@ func (client *Client) ProbeJSON(ctx context.Context, path string) error {
 	return err
 }
 
-func (client *Client) do(ctx context.Context, method, path string, body []byte, retrySafe bool) (*http.Response, error) {
+func (client *Client) do(ctx context.Context, method, path string, query url.Values, body []byte, retrySafe bool) (*http.Response, error) {
 	if !strings.HasPrefix(path, "/") || strings.Contains(path, "?") {
 		return nil, &Error{Source: client.source, Method: method, Path: "[invalid-path]", Kind: "invalid request path"}
 	}
@@ -129,7 +140,7 @@ func (client *Client) do(ctx context.Context, method, path string, body []byte, 
 	}
 	endpoint.Path = decodedPath
 	endpoint.RawPath = rawPath
-	endpoint.RawQuery = ""
+	endpoint.RawQuery = query.Encode()
 	endpoint.Fragment = ""
 
 	for attempt := 0; attempt <= client.retryMax; attempt++ {

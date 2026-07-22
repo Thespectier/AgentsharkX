@@ -1,10 +1,10 @@
 # AgentsharkX web console
 
 The console supports two explicit modes. Mock mode is enabled by default for
-deterministic visual review. Setting `VITE_ENABLE_MOCKS=false` uses the Phase 4
+deterministic visual review. Setting `VITE_ENABLE_MOCKS=false` uses the Phase 6
 Go BFF, including the one-time admin-token exchange, live health/capability
-responses, read-only Connect resources, and Trust reads/writes. Neither mode
-gives the browser an upstream credential.
+responses, Connect/Trust/Protect workflows, and live Audit REST/SSE data.
+Neither mode gives the browser an upstream credential.
 
 ## Commands
 
@@ -34,12 +34,17 @@ docker run --rm --ipc=host --network=host --user "$(id -u):$(id -g)" \
   mcr.microsoft.com/playwright:v1.61.1-noble npm run lighthouse
 ```
 
-Protect Mock workflows exercise the same generated Phase 5 contract as real
+Protect and Audit Mock workflows exercise the same generated Phase 6 contract as real
 mode. Rule publication requires a current syntax check, note, and confirmation;
 deletion and approval decisions require a note and confirmation. The partial
 scenario makes the first approval mutation time out so the explicit manual
 retry path can be reviewed. The expired demo ticket exercises upstream 404
 recovery. Successful writes display the BFF request ID receipt.
+
+The mock SSE emits within two seconds. Home and Audit merge each arrival by
+event ID, refresh server-derived metrics, and keep at most 1000 events. Hidden
+documents retain data synchronization while LiveFlow reports `paused` and emits
+no particles; native EventSource reconnection resumes from its last SSE ID.
 
 The demo-state selector in the top bar exposes live mock, empty, loading,
 partial-failure, and total-failure states. `?scenario=...` keeps each state
@@ -47,14 +52,14 @@ shareable and deterministic.
 
 The UI treats source ownership as data: every normalized object retains its
 `source`; event records also retain a Mock source ID and a redacted raw
-reference. MSW is enabled by default only for this Phase 1 preview and can be
+reference. MSW is enabled by default only for the labelled demo mode and can be
 disabled with `VITE_ENABLE_MOCKS=false`. Vite proxies `/api` to
 `VITE_BFF_PROXY_TARGET` (default `http://127.0.0.1:8080`) in development.
 `src/generated/api-client.ts` is
 deterministically generated from `api/openapi.yaml`; `npm run check` fails when
 the generated client is stale.
 
-An opt-in real-mode browser check is also available. Start a Phase 5 BFF and a
+An opt-in real-mode browser check is also available. Start a Phase 6 BFF and a
 Vite server with `VITE_ENABLE_MOCKS=false`, then run:
 
 ```bash
