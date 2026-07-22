@@ -60,6 +60,10 @@ Open <http://localhost:8080>, log in with the generated
 AgentGuard client. Its real tool event appears under **Audit → Security events**
 within three seconds. The example does not require an LLM or provider key.
 
+For a complete Chinese walkthrough covering startup, Agent integration,
+operations, development, release verification, and troubleshooting, see the
+[中文使用指南](docs/usage-guide.zh-CN.md).
+
 The bootstrap command refuses to overwrite `.env`, generates random
 non-placeholder credentials with mode `0600`, and leaves every published port
 on loopback. An unchanged `deploy/example.env` is intentionally rejected by the
