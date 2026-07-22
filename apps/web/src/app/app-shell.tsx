@@ -17,8 +17,8 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 
-import { requestEnvelope } from "../lib/api";
-import type { OverviewData, Scenario } from "../types";
+import { isMockMode, requestOperation } from "../lib/api";
+import type { Scenario } from "../types";
 import { CommandPalette } from "../components/command-palette";
 import { Button, SourceBadge, StatusOrb, cn } from "../components/ui";
 
@@ -38,6 +38,7 @@ const scenarios: Array<{ value: Scenario; label: string }> = [
 ];
 
 export function AppShell() {
+  const mocksEnabled = isMockMode();
   const location = useRouterState({ select: (state) => state.location });
   const [collapsed, setCollapsed] = useState(
     () => localStorage.getItem("agentshark.sidebar") === "collapsed",
@@ -48,7 +49,7 @@ export function AppShell() {
     "normal") as Scenario;
   const overview = useQuery({
     queryKey: ["overview", scenario],
-    queryFn: ({ signal }) => requestEnvelope<OverviewData>("/api/v1/overview", signal),
+    queryFn: ({ signal }) => requestOperation("getOverview", signal),
     staleTime: 15_000,
     retry: false,
   });
@@ -85,9 +86,18 @@ export function AppShell() {
           <span className="environment-card__glyph">PX</span>
           <span>
             <small>Environment</small>
-            <strong>Production</strong>
+            <strong>{overview.data?.data.environment ?? "Connecting"}</strong>
           </span>
-          <StatusOrb label="Production healthy" status="healthy" />
+          <StatusOrb
+            label="Environment health"
+            status={
+              health.length === 0
+                ? "connecting"
+                : health.every((item) => item.status === "healthy")
+                  ? "healthy"
+                  : "degraded"
+            }
+          />
         </div>
         <nav aria-label="Primary navigation" className="primary-nav">
           <p className="nav-label">Workspaces</p>
@@ -177,28 +187,30 @@ export function AppShell() {
             </button>
           </div>
           <div className="topbar__right">
-            <div className="mock-indicator">
-              <span /> MOCK DATA
+            <div className={cn("mock-indicator", !mocksEnabled && "mock-indicator--live")}>
+              <span /> {mocksEnabled ? "MOCK DATA" : "LIVE BFF"}
             </div>
-            <label className="scenario-select">
-              <span className="sr-only">Demo state</span>
-              <select
-                aria-label="Demo state"
-                onChange={(event) => {
-                  const url = new URL(window.location.href);
-                  if (event.target.value === "normal") url.searchParams.delete("scenario");
-                  else url.searchParams.set("scenario", event.target.value);
-                  window.location.assign(url);
-                }}
-                value={scenario}
-              >
-                {scenarios.map((item) => (
-                  <option key={item.value} value={item.value}>
-                    {item.label}
-                  </option>
-                ))}
-              </select>
-            </label>
+            {mocksEnabled ? (
+              <label className="scenario-select">
+                <span className="sr-only">Demo state</span>
+                <select
+                  aria-label="Demo state"
+                  onChange={(event) => {
+                    const url = new URL(window.location.href);
+                    if (event.target.value === "normal") url.searchParams.delete("scenario");
+                    else url.searchParams.set("scenario", event.target.value);
+                    window.location.assign(url);
+                  }}
+                  value={scenario}
+                >
+                  {scenarios.map((item) => (
+                    <option key={item.value} value={item.value}>
+                      {item.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : null}
             <div className="source-health" aria-label="Upstream health">
               {health.length ? (
                 health.map((item) => (

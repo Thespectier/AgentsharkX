@@ -1,63 +1,54 @@
-import {
-  Activity,
-  CheckCircle2,
-  CircleSlash,
-  Database,
-  ExternalLink,
-  ServerCog,
-  ShieldCheck,
-} from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { Database, ServerCog, ShieldCheck } from "lucide-react";
 
 import { PageFrame } from "../components/workspace";
 import {
   Card,
   CardHeader,
+  ErrorState,
   PageHeader,
+  PageSkeleton,
+  PartialBanner,
   SourceBadge,
   StatusBadge,
   StatusOrb,
 } from "../components/ui";
-
-const capabilities = [
-  {
-    id: "gateway.runtime",
-    source: "agentgateway" as const,
-    status: "supported",
-    label: "Runtime & config discovery",
-  },
-  {
-    id: "gateway.logs",
-    source: "agentgateway" as const,
-    status: "partial",
-    label: "Request logs (database required)",
-  },
-  {
-    id: "gateway.adminAuth",
-    source: "agentgateway" as const,
-    status: "unavailable",
-    label: "Native admin authentication",
-  },
-  {
-    id: "guard.resources",
-    source: "agentguard" as const,
-    status: "supported",
-    label: "Tools, Skills & MCP resources",
-  },
-  {
-    id: "guard.agents",
-    source: "agentguard" as const,
-    status: "partial",
-    label: "Agent list derived from explicit resource/session IDs",
-  },
-  {
-    id: "guard.approvals",
-    source: "agentguard" as const,
-    status: "supported",
-    label: "Approval queue and decisions",
-  },
-];
+import { formatError, requestOperation } from "../lib/api";
 
 export function SystemPage() {
+  const health = useQuery({
+    queryKey: ["system-health"],
+    queryFn: ({ signal }) => requestOperation("getSystemHealth", signal),
+    retry: false,
+  });
+  const capabilities = useQuery({
+    queryKey: ["system-capabilities"],
+    queryFn: ({ signal }) => requestOperation("getCapabilities", signal),
+    retry: false,
+  });
+
+  if (health.isLoading || capabilities.isLoading) {
+    return <PageSkeleton label="Probing upstream capabilities" />;
+  }
+  if (health.isError || capabilities.isError || !health.data || !capabilities.data) {
+    return (
+      <PageFrame>
+        <PageHeader
+          description="Diagnostics support the four product workspaces; System is not a fifth capability layer."
+          eyebrow="System / Diagnostics"
+          title="Sources, versions & capabilities"
+        />
+        <ErrorState
+          description={formatError(health.error ?? capabilities.error)}
+          onRetry={() => {
+            void health.refetch();
+            void capabilities.refetch();
+          }}
+        />
+      </PageFrame>
+    );
+  }
+
   return (
     <PageFrame>
       <PageHeader
@@ -65,74 +56,45 @@ export function SystemPage() {
         eyebrow="System / Diagnostics"
         title="Sources, versions & capabilities"
       />
+      <PartialBanner meta={health.data.meta} />
       <div className="source-card-grid">
-        <Card elevated>
-          <CardHeader
-            action={<StatusBadge status="healthy" />}
-            description="Standalone management plane"
-            title="agentgateway"
-          />
-          <div className="system-source">
-            <span className="system-source__icon">
-              <ServerCog size={24} />
-            </span>
-            <div>
-              <SourceBadge source="agentgateway" />
-              <strong>v1.3.1</strong>
-              <span>dbaaf7ed · 18 ms</span>
-            </div>
-          </div>
-          <ul className="diagnostic-list">
-            <li>
-              <CheckCircle2 size={14} /> Readiness <code>/healthz/ready</code>
-            </li>
-            <li>
-              <CheckCircle2 size={14} /> Runtime/config probes
-            </li>
-            <li>
-              <CircleSlash size={14} /> Request-log database not configured in Phase 0
-            </li>
-          </ul>
-          <a
-            className="text-link"
-            href="http://localhost:15000/ui"
-            rel="noreferrer"
-            target="_blank"
-          >
-            Open native console <ExternalLink size={13} />
-          </a>
-        </Card>
-        <Card elevated>
-          <CardHeader
-            action={<StatusBadge status="healthy" />}
-            description="Runtime security control plane"
-            title="AgentGuard"
-          />
-          <div className="system-source">
-            <span className="system-source__icon system-source__icon--guard">
-              <ShieldCheck size={24} />
-            </span>
-            <div>
-              <SourceBadge source="agentguard" />
-              <strong>v2.1 · API 0.3.0</strong>
-              <span>6f95deb9 · 24 ms</span>
-            </div>
-          </div>
-          <ul className="diagnostic-list">
-            <li>
-              <CheckCircle2 size={14} /> Protected management health
-            </li>
-            <li>
-              <CheckCircle2 size={14} /> 45 OpenAPI routes detected
-            </li>
-            <li>
-              <Activity size={14} /> 31 explicit agent IDs observed
-            </li>
-          </ul>
-          <a className="text-link" href="http://localhost:38008" rel="noreferrer" target="_blank">
-            Open native console <ExternalLink size={13} />
-          </a>
-        </Card>
+        {health.data.data.map((source) => {
+          const gateway = source.source === "agentgateway";
+          return (
+            <Card elevated key={source.source}>
+              <CardHeader
+                action={<StatusBadge status={source.status} />}
+                description={
+                  gateway ? "Standalone management plane" : "Runtime security control plane"
+                }
+                title={source.label}
+              />
+              <div className="system-source">
+                <span
+                  className={`system-source__icon${gateway ? "" : " system-source__icon--guard"}`}
+                >
+                  {gateway ? <ServerCog size={24} /> : <ShieldCheck size={24} />}
+                </span>
+                <div>
+                  <SourceBadge source={source.source} />
+                  <strong>{source.version ?? "Version unavailable"}</strong>
+                  <span>
+                    {source.latencyMs === null ? "No latency sample" : `${source.latencyMs} ms`}
+                  </span>
+                </div>
+              </div>
+              <ul className="diagnostic-list">
+                <li>
+                  <StatusOrb status={source.status} /> Live management probe: {source.status}
+                </li>
+                <li>
+                  <Database size={14} /> Checked {new Date(source.checkedAt).toLocaleTimeString()}
+                </li>
+                {source.message ? <li>{source.message}</li> : null}
+              </ul>
+            </Card>
+          );
+        })}
       </div>
       <Card>
         <CardHeader
@@ -145,7 +107,7 @@ export function SystemPage() {
           title="Capability registry"
         />
         <div className="capability-list">
-          {capabilities.map((capability) => (
+          {capabilities.data.data.map((capability) => (
             <div key={capability.id}>
               <StatusOrb
                 status={
@@ -157,7 +119,7 @@ export function SystemPage() {
                 }
               />
               <div>
-                <strong>{capability.label}</strong>
+                <strong>{capability.reason ?? capability.id}</strong>
                 <code>{capability.id}</code>
               </div>
               <SourceBadge source={capability.source} />

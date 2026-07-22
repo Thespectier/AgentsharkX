@@ -7,10 +7,12 @@ information architecture for connection management, trusted runtime context,
 protection workflows, and audit views without entering the agent data plane or
 reimplementing either upstream.
 
-The repository is currently at **Phase 1**: the reproducible project skeleton,
-pinned upstream contracts, and a complete reviewable web console are in place.
-The console uses clearly labelled MSW fixtures until the Go BFF starts in
-Phase 2; it does not send requests directly to either upstream.
+The repository is currently at **Phase 2**: the reproducible project skeleton,
+pinned upstream contracts, reviewable web console, and secure Go BFF are in
+place. The BFF implements single-admin sessions, CSRF protection, independent
+upstream health and capability probes, a health-only overview, and health SSE.
+Business data integrations remain scheduled for Phases 3–6 and are not
+fabricated in the Phase 2 overview.
 
 ## Product boundary
 
@@ -47,7 +49,7 @@ This checks Go formatting/tests, the frontend format/type/unit/build suite,
 repository invariants, the OpenAPI contract, and the fully rendered Compose
 model.
 
-## Review the Phase 1 console
+## Review the Mock console
 
 ```bash
 npm --prefix apps/web run dev
@@ -58,6 +60,38 @@ empty, loading, partial-failure, and total-failure states. Browser acceptance
 requires Playwright Chromium; see [the web README](apps/web/README.md) for host
 and container commands. The checked-in 1440 px and 1280 px baselines are
 indexed under [docs/screenshots](docs/screenshots/README.md).
+
+## Run the Phase 2 BFF locally
+
+Start the pinned upstreams, then provide non-placeholder secrets and host-side
+URLs. Plain HTTP cookies are permitted only with an explicit local environment
+and loopback listener:
+
+```bash
+export AGENTSHARK_LISTEN_ADDR=127.0.0.1:8080
+export AGENTSHARK_ENVIRONMENT=local
+export AGENTSHARK_ADMIN_TOKEN='replace-with-at-least-16-characters'
+export AGENTSHARK_COOKIE_SECURE=false
+export AGENTGATEWAY_BASE_URL=http://127.0.0.1:15000
+export AGENTGUARD_BASE_URL=http://127.0.0.1:38080
+export AGENTGUARD_ADMIN_TOKEN='replace-with-the-agentguard-api-key'
+export AGENTGUARD_VERSION=v2.1
+
+cd apps/server
+go run ./cmd/agentshark
+```
+
+In another terminal, run the frontend against the BFF through Vite's same-origin
+API proxy:
+
+```bash
+VITE_ENABLE_MOCKS=false npm --prefix apps/web run dev
+```
+
+The browser exchanges the admin token for an `HttpOnly`, `SameSite=Strict`
+session cookie. The token is not persisted in browser storage. Production
+deployments must keep `AGENTSHARK_COOKIE_SECURE=true` and terminate HTTPS before
+the BFF.
 
 ## Start the pinned upstreams
 
@@ -91,8 +125,8 @@ make upstream-smoke
 ## Repository layout
 
 ```text
-apps/server/              Go BFF (implementation begins in Phase 2)
-apps/web/                 React console, MSW fixtures, and browser tests
+apps/server/              Secure Go BFF, source adapters, aggregation, and SSE
+apps/web/                 React console, generated API client, MSW, and browser tests
 api/openapi.yaml          AgentsharkX-owned API contract
 api/upstream-contracts/   Sanitized, versioned upstream response samples
 deploy/                   Pinned Compose baseline and environment template

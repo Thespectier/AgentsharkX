@@ -2,11 +2,12 @@ SHELL := /bin/bash
 
 GO_VERSION := 1.26.5
 GO_IMAGE := golang:$(GO_VERSION)-alpine
+GO_RACE_IMAGE := golang:$(GO_VERSION)
 COMPOSE := docker compose --env-file deploy/versions.env --env-file deploy/example.env -f deploy/compose.yaml
 
-.PHONY: verify format-check test web-check repository-check openapi-validate compose-validate upstream-smoke
+.PHONY: verify format-check test race-test web-check secret-boundary repository-check openapi-validate compose-validate upstream-smoke
 
-verify: format-check test web-check repository-check openapi-validate compose-validate
+verify: format-check test race-test web-check secret-boundary repository-check openapi-validate compose-validate
 
 format-check:
 	@if command -v go >/dev/null 2>&1; then \
@@ -23,8 +24,18 @@ test:
 		docker run --rm -v "$(CURDIR):/src" -w /src/apps/server $(GO_IMAGE) go test ./...; \
 	fi
 
+race-test:
+	@if command -v go >/dev/null 2>&1; then \
+		cd apps/server && go test -race ./...; \
+	else \
+		docker run --rm -v "$(CURDIR):/src" -w /src/apps/server $(GO_RACE_IMAGE) go test -race ./...; \
+	fi
+
 web-check:
 	@npm --prefix apps/web run check
+
+secret-boundary:
+	@./scripts/verify-secret-boundary.sh
 
 repository-check:
 	@./scripts/verify-repository.sh

@@ -2,10 +2,12 @@
 
 Last verified: 2026-07-21.
 
-Phase 1 does not contact either upstream from the browser. Its MSW paths,
-source ownership, and unknown-value handling follow `api/upstream-contracts/`
-and the capability matrix. Fixture values are review data, not new runtime
-evidence; the pinned versions and compatibility findings below are unchanged.
+Phase 2 still prevents direct browser contact with either upstream. Separate Go
+clients now probe the verified read-only routes with independent timeouts,
+bounded retries, and source-scoped errors. AgentGuard requests use the verified
+`X-Api-Key` header. The pinned agentgateway admin token setting is not
+transmitted because the selected upstream exposes no verified native admin-auth
+header. Fixture values remain review data, not new runtime evidence.
 
 ## Pinned baseline
 

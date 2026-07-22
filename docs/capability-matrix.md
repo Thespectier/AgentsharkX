@@ -2,11 +2,12 @@
 
 Verified against agentgateway `v1.3.1` and AgentGuard `v2.1` on 2026-07-21.
 
-Phase 1 adds a Mock-backed presentation for every listed read surface. This is
-UI evidence only and does not upgrade an upstream capability status. Fixtures
-are labelled Mock, keep source ownership visible, and render unverified
-identity facts as `Unknown`; production adapters remain scheduled for Phases
-2–6.
+Phase 2 adds live BFF probes for agentgateway runtime, configuration and cost
+catalog routes, plus protected AgentGuard health, sessions, resources, rules,
+traffic, audit, approvals, and auditor routes. Every probe becomes a separate
+registry entry; one failed route or source does not suppress the others. The
+remaining business-data adapters stay scheduled for Phases 3–6. Mock fixtures
+remain UI evidence only and do not upgrade an upstream capability status.
 
 ## Status vocabulary
 
@@ -40,6 +41,11 @@ generated OpenAPI but a mutating request was intentionally not executed.
 | Playground | agentgateway | link-out | upstream `/ui` | Never send provider keys through AgentsharkX frontend. |
 | Admin API authentication | agentgateway | unavailable | pinned admin routes have no native auth middleware | Keep the admin listener private; BFF supplies browser authentication isolation. |
 
+The Phase 2 live registry uses `gateway.runtime`, `gateway.configuration`,
+`gateway.cost-catalog`, `gateway.request-logs`, and `gateway.admin-auth` IDs.
+`gateway.request-logs` remains `partial` from the verified database dependency;
+Phase 2 deliberately does not issue a guessed log-search request body.
+
 ## Trust and AgentGuard resources
 
 | AgentsharkX capability | Source | Status | Evidence | Adapter rule |
@@ -54,6 +60,12 @@ generated OpenAPI but a mutating request was intentionally not executed.
 | Skill detection | AgentGuard | supported | schema `POST .../skills/detect` | Long-running UI must poll real status; never synthesize progress. |
 | MCP detection | AgentGuard | supported | schema `POST .../mcps/detect` | Preserve detector result and error fields. |
 | Remote attestation | AgentGuard | unavailable | no verified route or field | Do not use cryptographic or remote-attestation claims in UI copy. |
+
+The Phase 2 AgentGuard registry probes the verified global routes independently
+and publishes `guard.health`, `guard.sessions`, `guard.tools`, `guard.skills`,
+`guard.mcps`, `guard.rules`, `guard.traffic`, `guard.audit`, `guard.approvals`,
+and `guard.auditors`. Probe responses are not promoted into business data until
+their owning integration phase.
 
 ## Protect
 

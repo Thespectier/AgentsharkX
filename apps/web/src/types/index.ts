@@ -7,7 +7,7 @@ export interface SourceHealth {
   source: Source;
   label: string;
   status: HealthStatus;
-  version: string;
+  version?: string;
   latencyMs: number | null;
   message: string;
 }
@@ -90,11 +90,12 @@ export interface UnifiedEvent {
     source: string;
     id: string;
   };
-  raw: Record<string, unknown>;
+  raw?: Record<string, unknown>;
 }
 
 export interface OverviewData {
   environment: string;
+  mode?: "health-only" | "operational";
   health: SourceHealth[];
   metrics: Metric[];
   trend: TrendPoint[];

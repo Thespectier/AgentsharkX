@@ -4,6 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "api:generate": "node scripts/generate-api-client.mjs --write",
+    "api:check": "node scripts/generate-api-client.mjs --check",
     "dev": "vite --host 127.0.0.1",
     "build": "tsc -b && vite build",
     "preview": "vite preview --host 127.0.0.1",
@@ -11,7 +13,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "format:check": "prettier --check .",
-    "check": "npm run format:check && npm run typecheck && npm run test && npm run build",
+    "check": "npm run api:check && npm run format:check && npm run typecheck && npm run test && npm run build",
     "playwright:install": "PLAYWRIGHT_BROWSERS_PATH=.cache/ms-playwright playwright install chromium",
     "test:e2e": "PLAYWRIGHT_BROWSERS_PATH=.cache/ms-playwright playwright test",
     "test:a11y": "PLAYWRIGHT_BROWSERS_PATH=.cache/ms-playwright playwright test tests/accessibility.spec.ts",
@@ -47,7 +49,8 @@
     "tailwindcss": "4.3.3",
     "typescript": "6.0.2",
     "vite": "8.1.5",
-    "vitest": "4.1.10"
+    "vitest": "4.1.10",
+    "yaml": "2.9.0"
   },
   "msw": {
     "workerDirectory": [

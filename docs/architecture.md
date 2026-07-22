@@ -1,6 +1,6 @@
 # Architecture
 
-Status: Phase 1 reviewable console, verified 2026-07-21.
+Status: Phase 2 secure BFF and capability registry, verified 2026-07-21.
 
 ## Context
 
@@ -35,31 +35,36 @@ capability registry, and error state for each source.
 
 ## BFF boundaries
 
-The Go BFF will be organized into the following packages in Phase 2:
+The Go BFF is organized into the following packages:
 
 - `config`: validated environment configuration with secret-safe diagnostics.
 - `auth`: one-admin session, strict cookie, CSRF, and write protection.
 - `gateway`: agentgateway management adapter.
 - `guard`: AgentGuard management adapter.
 - `aggregate`: source-preserving view models and partial-result handling.
-- `stream`: bounded polling, deduplication, ring buffers, heartbeat, and SSE
-  resume.
+- `stream`: non-blocking Phase 2 health-event fan-out; bounded business event
+  buffers and resume semantics remain Phase 6 work.
 - `api`: OpenAPI-backed HTTP handlers and standard errors.
-- `web`: embedded frontend assets in production.
+- `model`: source-preserving health, capability, overview, event, and error
+  contracts.
+- `upstream`: bounded retries and response-size limits shared by the two
+  adapters without sharing their source state.
 
 Adapters expose upstream facts. Aggregation may reduce display differences but
 must retain `source`, upstream object ID, original-detail reference, scope, and
 phase. A correlation flag is allowed only when both sources provide the same
 identifier and the adapter explicitly verifies its meaning.
 
-## Phase 1 frontend boundary
+## Frontend boundary
 
-The React/Vite console is independently reviewable before the BFF exists. Its
+The React/Vite console remains independently reviewable with Mock data. Its
 TanStack Router paths and TanStack Query requests target only the
 AgentsharkX-owned paths in `api/openapi.yaml`. MSW intercepts those paths in the
 browser and supplies source-labelled REST envelopes plus a bounded Mock SSE
-stream. No frontend module imports upstream code or receives an upstream
-credential.
+stream. With `VITE_ENABLE_MOCKS=false`, an OpenAPI-generated client uses the
+same paths through the Go BFF. The real mode exchanges the admin token for a
+strict session and keeps the CSRF token only in module memory. No frontend
+module imports upstream code or receives an upstream credential.
 
 The five primary views are Home, Connect, Trust, Protect, and Audit. System is
 a supporting diagnostics page, not another product capability. URL search
@@ -81,12 +86,15 @@ A gateway failure cannot suppress AgentGuard data, and an AgentGuard failure
 cannot suppress gateway data. Aggregated responses carry per-source metadata
 and stale markers rather than collapsing partial failures into a global 500.
 
-## Runtime data and storage
+## Phase 2 runtime data and storage
 
-The BFF has no database. Pollers maintain a maximum of 500 normalized events
-per source and deduplicate by `source + upstream ID`. Restarting the process may
-discard this state. Payloads are redacted before they enter a ring buffer or
-browser response. Long-term logs remain in their upstream systems.
+The BFF has no database. A background monitor polls only the two health
+contracts and publishes a normalized SSE event when status or version changes.
+New SSE connections first receive the current source-scoped health snapshot.
+Phase 2 does not poll traffic, approvals, decisions, or audit records and does
+not maintain a business-event ring buffer. `/overview` therefore returns empty
+business collections with `mode=health-only`; later phases may populate them
+only from verified contracts. Long-term logs remain in their upstream systems.
 
 ## Security baseline
 
@@ -94,6 +102,8 @@ browser response. Long-term logs remain in their upstream systems.
   development mode.
 - Successful login creates an `HttpOnly`, `SameSite=Strict`, `Secure` session
   cookie; write requests also require a CSRF token.
+- A non-Secure cookie or disabled authentication is accepted only when both the
+  environment is explicitly local/development and the listener is loopback.
 - Upstream keys are server-only and never appear in a frontend bundle, API
   response, structured log, or error message.
 - Full prompts, authorization headers, and raw sensitive payloads are denied by

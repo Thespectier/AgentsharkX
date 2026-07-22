@@ -17,6 +17,44 @@ import { auditData, baseEvents, connectData, overviewData, protectData, trustDat
 
 const capturedAt = "2026-07-21T12:42:10Z";
 
+const capabilityData = [
+  {
+    id: "gateway.runtime",
+    source: "agentgateway" as const,
+    status: "supported" as const,
+    checkedAt: capturedAt,
+    reason: "Mock live /api/runtime probe succeeded",
+  },
+  {
+    id: "gateway.configuration",
+    source: "agentgateway" as const,
+    status: "supported" as const,
+    checkedAt: capturedAt,
+    reason: "Mock configuration probes succeeded",
+  },
+  {
+    id: "gateway.admin-auth",
+    source: "agentgateway" as const,
+    status: "unavailable" as const,
+    checkedAt: capturedAt,
+    reason: "Pinned upstream does not expose native admin authentication",
+  },
+  {
+    id: "guard.resources",
+    source: "agentguard" as const,
+    status: "supported" as const,
+    checkedAt: capturedAt,
+    reason: "Mock protected resource probes succeeded",
+  },
+  {
+    id: "guard.approvals",
+    source: "agentguard" as const,
+    status: "supported" as const,
+    checkedAt: capturedAt,
+    reason: "Mock protected approval probe succeeded",
+  },
+];
+
 function scenarioFrom(request: Request): Scenario {
   const value = new URL(request.url).searchParams.get("scenario");
   if (["empty", "loading", "partial", "error"].includes(value ?? "")) {
@@ -142,6 +180,9 @@ export const handlers = [
   http.get("/api/v1/overview", ({ request }) => respond(request, overviewData, emptyOverview)),
   http.get("/api/v1/system/health", ({ request }) =>
     listResponse(request, overviewData.health, "agentgateway"),
+  ),
+  http.get("/api/v1/system/capabilities", ({ request }) =>
+    listResponse(request, capabilityData, "agentgateway"),
   ),
   http.get("/api/v1/connect/summary", ({ request }) =>
     respond(request, connectData, emptyConnect, "agentgateway"),

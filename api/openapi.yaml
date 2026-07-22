@@ -1,12 +1,12 @@
 openapi: 3.1.0
 info:
   title: AgentsharkX BFF API
-  version: 0.1.0-phase1
+  version: 0.2.0-phase2
   description: |
     Source-preserving management API above agentgateway and AgentGuard.
-    Phase 1 exercises this contract through explicitly labelled MSW fixtures;
-    BFF operations are implemented in later phases according to
-    `x-implementation-phase`.
+    Phase 2 implements authentication, independent upstream health and
+    capability probes, the health-only overview, and normalized health SSE.
+    Later operations remain reserved according to `x-implementation-phase`.
 servers:
   - url: /
 security:
@@ -26,6 +26,7 @@ paths:
       operationId: createAdminSession
       summary: Exchange the configured admin token for a browser session
       x-implementation-phase: 2
+      x-implementation-status: implemented
       security: []
       requestBody:
         required: true
@@ -43,6 +44,10 @@ paths:
               description: Token required by subsequent mutating requests
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
 
   /api/v1/system/health:
     get:
@@ -50,6 +55,7 @@ paths:
       operationId: getSystemHealth
       summary: Return independent health state for both upstream sources
       x-implementation-phase: 2
+      x-implementation-status: implemented
       responses:
         '200':
           description: Source-scoped health result
@@ -57,6 +63,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HealthEnvelope'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
 
   /api/v1/system/capabilities:
     get:
@@ -64,6 +72,7 @@ paths:
       operationId: getCapabilities
       summary: Return the probe-based capability registry
       x-implementation-phase: 2
+      x-implementation-status: implemented
       responses:
         '200':
           description: Capability registry
@@ -71,27 +80,33 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/CapabilitiesEnvelope'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
 
   /api/v1/overview:
     get:
       tags: [System]
       operationId: getOverview
-      summary: Aggregate health, metrics, approvals, and recent activity
+      summary: Aggregate source health without fabricating later-phase business data
       x-implementation-phase: 2
+      x-implementation-status: implemented
       responses:
         '200':
           description: Partial results are returned with source-scoped metadata
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/DataEnvelope'
+                $ref: '#/components/schemas/OverviewEnvelope'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
 
   /api/v1/stream:
     get:
       tags: [System]
       operationId: streamEvents
-      summary: Subscribe to normalized health, traffic, decision, and approval events
+      summary: Subscribe to normalized source health changes and heartbeat comments
       x-implementation-phase: 2
+      x-implementation-status: implemented
       parameters:
         - $ref: '#/components/parameters/LastEventId'
       responses:
@@ -101,6 +116,8 @@ paths:
             text/event-stream:
               schema:
                 type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
 
   /api/v1/connect/summary:
     get:
@@ -505,6 +522,24 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/ErrorEnvelope'
+    BadRequest:
+      description: Request validation failed
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    Forbidden:
+      description: CSRF validation failed or the operation is forbidden
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    ServiceUnavailable:
+      description: The BFF cannot safely complete the operation
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
     UpstreamUnavailable:
       description: The required upstream source is unavailable
       content:
@@ -559,6 +594,20 @@ components:
         partial:
           type: boolean
           default: false
+        sourceFailures:
+          type: array
+          items:
+            $ref: '#/components/schemas/SourceFailure'
+    SourceFailure:
+      type: object
+      required: [source, code, message]
+      properties:
+        source:
+          $ref: '#/components/schemas/Source'
+        code:
+          type: string
+        message:
+          type: string
     DataEnvelope:
       type: object
       required: [data, meta]
@@ -569,15 +618,20 @@ components:
           $ref: '#/components/schemas/Meta'
     HealthSource:
       type: object
-      required: [source, status, checkedAt]
+      required: [source, label, status, latencyMs, checkedAt]
       properties:
         source:
           $ref: '#/components/schemas/Source'
+        label:
+          type: string
         status:
           type: string
           enum: [healthy, degraded, down, unknown]
         version:
           type: string
+        latencyMs:
+          type: [integer, 'null']
+          minimum: 0
         checkedAt:
           type: string
           format: date-time
@@ -617,6 +671,107 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/Capability'
+        meta:
+          $ref: '#/components/schemas/Meta'
+    SetupStep:
+      type: object
+      additionalProperties: false
+      required: [id, label, complete]
+      properties:
+        id:
+          type: string
+        label:
+          type: string
+        complete:
+          type: boolean
+        command:
+          type: string
+    Setup:
+      type: object
+      additionalProperties: false
+      required: [complete, steps]
+      properties:
+        complete:
+          type: boolean
+        steps:
+          type: array
+          items:
+            $ref: '#/components/schemas/SetupStep'
+    Metric:
+      type: object
+      additionalProperties: false
+      required: [id, label, source, value, format, delta, trend, tone, context]
+      properties:
+        id:
+          type: string
+        label:
+          type: string
+        source:
+          $ref: '#/components/schemas/Source'
+        value:
+          type: number
+        format:
+          type: string
+          enum: [integer, percent, duration, currency]
+        delta:
+          type: number
+        trend:
+          type: string
+          enum: [up, down, flat]
+        tone:
+          type: string
+          enum: [default, success, warning, danger]
+        context:
+          type: string
+    TrendPoint:
+      type: object
+      additionalProperties: false
+      required: [time, requests, latency, errors, denied]
+      properties:
+        time:
+          type: string
+        requests:
+          type: number
+        latency:
+          type: number
+        errors:
+          type: number
+        denied:
+          type: number
+    OverviewData:
+      type: object
+      additionalProperties: false
+      required: [environment, mode, health, metrics, trend, events, setup]
+      properties:
+        environment:
+          type: string
+        mode:
+          type: string
+          enum: [health-only, operational]
+        health:
+          type: array
+          items:
+            $ref: '#/components/schemas/HealthSource'
+        metrics:
+          type: array
+          items:
+            $ref: '#/components/schemas/Metric'
+        trend:
+          type: array
+          items:
+            $ref: '#/components/schemas/TrendPoint'
+        events:
+          type: array
+          items:
+            $ref: '#/components/schemas/UnifiedEvent'
+        setup:
+          $ref: '#/components/schemas/Setup'
+    OverviewEnvelope:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          $ref: '#/components/schemas/OverviewData'
         meta:
           $ref: '#/components/schemas/Meta'
     LabelUpdate:

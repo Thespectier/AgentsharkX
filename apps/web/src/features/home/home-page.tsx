@@ -3,9 +3,8 @@ import { Link } from "@tanstack/react-router";
 import { ArrowRight, CheckCircle2, ShieldCheck, Sparkles, TerminalSquare } from "lucide-react";
 
 import { ActivityRail, LiveFlow, RequestTrendChart } from "../../motion/dashboard-motion";
-import { requestEnvelope, formatError, getScenario } from "../../lib/api";
+import { formatError, getScenario, isMockMode, requestOperation } from "../../lib/api";
 import { useLiveEvents } from "../../lib/use-live-events";
-import type { OverviewData } from "../../types";
 import {
   Button,
   Card,
@@ -25,7 +24,7 @@ export function HomePage() {
   const scenario = getScenario();
   const query = useQuery({
     queryKey: ["overview", scenario],
-    queryFn: ({ signal }) => requestEnvelope<OverviewData>("/api/v1/overview", signal),
+    queryFn: ({ signal }) => requestOperation("getOverview", signal),
     retry: false,
   });
   const live = useLiveEvents(query.isSuccess && scenario !== "empty");
@@ -93,6 +92,63 @@ export function HomePage() {
             </span>
           </div>
         </Card>
+      </PageFrame>
+    );
+  }
+
+  if (data.mode === "health-only") {
+    return (
+      <PageFrame>
+        <PageHeader
+          description="The secure BFF is connected and preserving each upstream's independent health and capability state."
+          eyebrow="Home / Phase 2 foundation"
+          title="Management planes connected"
+        >
+          <div className="health-strip">
+            {data.health.map((item) => (
+              <div className="health-strip__item" key={item.source}>
+                <StatusOrb label={`${item.label} ${item.status}`} status={item.status} />
+                <div>
+                  <SourceBadge source={item.source} />
+                  <span>
+                    {item.version ?? "version unavailable"} · {item.latencyMs ?? "—"} ms
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </PageHeader>
+        <PartialBanner meta={meta} />
+        <div className="phase-foundation-grid">
+          <Card elevated>
+            <CardHeader
+              description="Health events are normalized without collecting prompts, authorization headers, or raw upstream payloads."
+              title="Secure health stream"
+            />
+            <div className="foundation-status">
+              <StatusOrb status={live.status === "live" ? "healthy" : "connecting"} />
+              <strong>{live.status === "live" ? "SSE connected" : "Connecting to SSE"}</strong>
+              <span>Heartbeat and source health changes only</span>
+            </div>
+          </Card>
+          <Card elevated>
+            <CardHeader
+              description="Traffic, decisions, approvals, and audit arrays remain empty until their verified integration phases."
+              title="No fabricated operations"
+            />
+            <div className="foundation-status">
+              <ShieldCheck size={20} />
+              <strong>BFF boundary active</strong>
+              <span>Use System to inspect live capability probes</span>
+            </div>
+          </Card>
+        </div>
+        <div className="mock-footnote">
+          <TerminalSquare size={14} />
+          {isMockMode()
+            ? "This view is driven by the labelled Phase 1 fixture."
+            : "This view is driven by authenticated Phase 2 BFF responses."}
+        </div>
       </PageFrame>
     );
   }
@@ -214,7 +270,9 @@ export function HomePage() {
           action={
             <span className="live-caption">
               <StatusOrb status={live.status === "live" ? "healthy" : "connecting"} />
-              {live.status === "live" ? "Mock SSE connected" : "Connecting"}
+              {live.status === "live"
+                ? `${isMockMode() ? "Mock" : "Live"} SSE connected`
+                : "Connecting"}
             </span>
           }
           description="Unified presentation only. No task or time-window correlation is implied."
@@ -223,8 +281,10 @@ export function HomePage() {
         <ActivityRail events={activity} limit={6} />
       </Card>
       <div className="mock-footnote">
-        <TerminalSquare size={14} /> Dynamic elements on this page are driven by clearly labelled
-        MSW REST and SSE fixtures.
+        <TerminalSquare size={14} />
+        {isMockMode()
+          ? "Dynamic elements on this page are driven by clearly labelled MSW REST and SSE fixtures."
+          : "Dynamic elements on this page are driven by authenticated BFF REST and SSE responses."}
       </div>
     </PageFrame>
   );

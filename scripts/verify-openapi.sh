@@ -18,6 +18,7 @@ required_paths=(
 )
 
 rg -q '^openapi: 3\.1\.0$' "$spec"
+rg -q '^  version: 0\.2\.0-phase2$' "$spec"
 rg -q '^paths:$' "$spec"
 for path in "${required_paths[@]}"; do
   if ! rg -Fq "  $path:" "$spec"; then
@@ -25,5 +26,7 @@ for path in "${required_paths[@]}"; do
     exit 1
   fi
 done
+
+npm --prefix apps/web run api:check >/dev/null
 
 echo "OpenAPI contract: ok"
