@@ -1,0 +1,51 @@
+{
+  "sessions": {
+    "sessions": [
+      {
+        "session_id": "session-1",
+        "agent_id": "agent-a",
+        "user_id": "user-a",
+        "last_seen": 1784688000.25
+      }
+    ]
+  },
+  "tools": [
+    {
+      "owner_agent_id": "agent-a",
+      "name": "mail.send",
+      "labels": {
+        "boundary": "external",
+        "sensitivity": "confidential",
+        "integrity": "trusted",
+        "tags": ["write"]
+      }
+    }
+  ],
+  "skills": [
+    {
+      "owner_agent_id": "agent-a",
+      "agent_id": "agent-a",
+      "session_id": "session-1",
+      "skill_unique_id": "skill-1",
+      "name": "research",
+      "description": "Sanitized skill description",
+      "source_framework": "langchain",
+      "detect_result": null
+    }
+  ],
+  "mcps": [
+    {
+      "owner_agent_id": "agent-a",
+      "agent_id": "agent-a",
+      "session_id": "session-1",
+      "mcp_unique_id": "mcp-1",
+      "name": "inventory",
+      "description": "Sanitized MCP description",
+      "source_framework": "mcp_native",
+      "transport": "stdio",
+      "remote": false,
+      "tool_count": 3,
+      "detect_result": null
+    }
+  ]
+}

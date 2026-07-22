@@ -2,12 +2,11 @@
 
 Verified against agentgateway `v1.3.1` and AgentGuard `v2.1` on 2026-07-22.
 
-Phase 3 adds the read-only Connect adapter above the Phase 2 probes. It parses
-only verified `/api/config` fields, uses a bounded analytics summary request,
-and exposes paginated source-preserving resources. Protected AgentGuard routes
-remain independently probed; their business-data adapters stay scheduled for
-Phases 4–6. Mock fixtures remain UI evidence only and do not upgrade an
-upstream capability status.
+Phase 4 adds the Trust adapter above the existing Connect integration. It reads
+verified AgentGuard resource contracts independently, exposes source-preserving
+Agent and resource views, and implements guarded label/detection mutations.
+Mock fixtures remain UI evidence only and do not upgrade an upstream capability
+status.
 
 ## Status vocabulary
 
@@ -52,21 +51,22 @@ analytics summary body is sent.
 | AgentsharkX capability | Source | Status | Evidence | Adapter rule |
 |---|---|---|---|---|
 | Health/version | AgentGuard | supported | runtime `GET /v1/backend/health` | Requires `X-Api-Key`; report both release pin and returned service version. |
-| Agent list | AgentGuard | partial | schema has no dedicated `/agents` route | Build only from explicit AgentGuard resource/session `agent_id` fields; keep unknown values unknown. |
-| Sessions | AgentGuard | supported | runtime `GET /v1/backend/sessions` | Preserve session and agent IDs from the response. |
-| Tools | AgentGuard | supported | runtime global/agent tool routes | Never infer a tool from gateway traffic. |
-| Skills | AgentGuard | supported | runtime global route; agent route in schema | Preserve `skill_unique_id` and scan state when present. |
-| MCP resources | AgentGuard | supported | runtime global route; agent route in schema | Keep this distinct from agentgateway MCP proxy targets. |
-| Tool label update | AgentGuard | supported | schema `PATCH .../labels` | Phase 4 adds optimistic pending, then trusts the server response. |
-| Skill detection | AgentGuard | supported | schema `POST .../skills/detect` | Long-running UI must poll real status; never synthesize progress. |
-| MCP detection | AgentGuard | supported | schema `POST .../mcps/detect` | Preserve detector result and error fields. |
+| Agent list | AgentGuard | partial | Phase 4 aggregation tests; no dedicated upstream `/agents` route | Build only from explicit resource/session `agent_id` or `owner_agent_id`; keep absent identity fields unknown. |
+| Sessions | AgentGuard | supported | Phase 4 disposable runtime plus contract tests for `GET /v1/backend/sessions` | Preserve explicit session/agent IDs; omit keys, client URLs, principal, and arbitrary metadata. |
+| Tools | AgentGuard | supported | Phase 4 disposable runtime plus contract tests for `GET /v1/backend/tools` | Preserve owner, name, labels, and raw reference; never infer tools from gateway traffic. |
+| Skills | AgentGuard | supported | Phase 4 pinned-source contract tests for global/agent routes | Preserve `skill_unique_id` and safe detector summary; omit descriptor/code/path data. |
+| MCP resources | AgentGuard | supported | Phase 4 pinned-source contract tests for global/agent routes | Keep distinct from agentgateway MCP targets and omit upstream URL/descriptor data. |
+| Tool label update | AgentGuard | supported | Phase 4 disposable runtime and adapter tests for `PATCH .../labels` | UI marks the mutation pending optimistically, then replaces it with the exact server response; no retry. |
+| Skill detection | AgentGuard | supported | Phase 4 disposable runtime and adapter tests for `POST .../skills/detect` | BFF wraps the synchronous call in a bounded job; poll actual state without synthetic percentage progress. |
+| MCP detection | AgentGuard | supported | Phase 4 adapter tests for `POST .../mcps/detect` | Same bounded job contract; expose safe result fields and recoverable errors only. |
 | Remote attestation | AgentGuard | unavailable | no verified route or field | Do not use cryptographic or remote-attestation claims in UI copy. |
 
-The Phase 2 AgentGuard registry probes the verified global routes independently
-and publishes `guard.health`, `guard.sessions`, `guard.tools`, `guard.skills`,
+The AgentGuard registry probes the verified global routes independently and
+publishes `guard.health`, `guard.sessions`, `guard.tools`, `guard.skills`,
 `guard.mcps`, `guard.rules`, `guard.traffic`, `guard.audit`, `guard.approvals`,
-and `guard.auditors`. Probe responses are not promoted into business data until
-their owning integration phase.
+and `guard.auditors`. Phase 4 promotes only sessions/tools/skills/MCPs into the
+Trust view. Rules, approvals, traffic, audit, and auditors remain probe-only
+until their owning integration phases.
 
 ## Protect
 

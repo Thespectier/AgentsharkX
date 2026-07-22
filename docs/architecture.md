@@ -1,6 +1,6 @@
 # Architecture
 
-Status: Phase 3 read-only Connect integration, verified 2026-07-22.
+Status: Phase 4 Trust integration, verified 2026-07-22.
 
 ## Context
 
@@ -43,12 +43,14 @@ The Go BFF is organized into the following packages:
 - `connect`: filtering, cursor pagination, details, setup verification, and
   native-console links over sanitized gateway resources.
 - `guard`: AgentGuard management adapter.
+- `trust`: explicit AgentGuard identity/resource aggregation, filtering,
+  pagination, label writes, and bounded scan-job orchestration.
 - `aggregate`: source-preserving view models and partial-result handling.
 - `stream`: non-blocking Phase 2 health-event fan-out; bounded business event
   buffers and resume semantics remain Phase 6 work.
 - `api`: OpenAPI-backed HTTP handlers and standard errors.
-- `model`: source-preserving health, capability, Connect resource, overview,
-  event, and error contracts.
+- `model`: source-preserving health, capability, Connect/Trust resource,
+  overview, event, and error contracts.
 - `upstream`: bounded retries and response-size limits shared by the two
   adapters without sharing their source state.
 
@@ -88,18 +90,34 @@ A gateway failure cannot suppress AgentGuard data, and an AgentGuard failure
 cannot suppress gateway data. Aggregated responses carry per-source metadata
 and stale markers rather than collapsing partial failures into a global 500.
 
-## Phase 3 runtime data and storage
+## Phase 4 runtime data and storage
 
 The BFF has no database. A background monitor polls only the two health
 contracts and publishes a normalized SSE event when status or version changes.
 New SSE connections first receive the current source-scoped health snapshot.
-Phase 3 adds no database. Connect reads a bounded `/api/config` snapshot per
-request and never returns raw config, params, policies, credentials, or prompt
-payloads. Analytics is a bounded read-only POST; an absent request-log database
-produces an explicit unavailable state with null metrics. The background
-monitor still polls only health. `/overview` remains `mode=health-only`, and no
-business-event ring buffer, traffic correlation, or durable storage is added.
-Long-term logs remain in their upstream systems.
+Connect reads a bounded `/api/config` snapshot per request and never returns raw
+config, params, policies, credentials, or prompt payloads. Trust reads the four
+AgentGuard session/resource routes independently, so one failed capability does
+not erase successful siblings. It whitelists display fields and never returns
+session keys, client URLs, arbitrary principal/metadata objects, descriptors,
+file contents, MCP URLs, detector metadata, reasons, or LLM configuration.
+
+Agent rows are an AgentsharkX view over explicit AgentGuard `agent_id` and
+`owner_agent_id` fields. No gateway log, timing window, name similarity, or
+other heuristic creates an identity. A session `user_id` remains session data
+and is not promoted to Agent principal. Framework, principal, trust level, and
+status remain nullable or `unknown` when AgentGuard does not provide them.
+
+AgentGuard detection calls are synchronous. The BFF exposes them as bounded,
+in-memory jobs with `queued`, `running`, `succeeded`, and `failed` states. The UI
+polls those real states and does not invent percentage progress. Jobs use the
+configured `AGENTSHARK_SCAN_TIMEOUT`; completed state is not durable across a
+BFF restart. Tool-label updates and scan starts require CSRF and are never
+automatically retried.
+
+The background monitor still polls only health. `/overview` remains
+`mode=health-only`, and no business-event ring buffer, traffic correlation, or
+durable storage is added. Long-term logs remain in their upstream systems.
 
 ## Security baseline
 

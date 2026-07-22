@@ -43,6 +43,44 @@ test("Connect filters explicit resources, opens details, and reruns setup verifi
   await expect(page.getByText("Connection verified")).toBeVisible();
 });
 
+test("Trust uses explicit identities, confirms labels, and recovers a polled scan", async ({
+  page,
+}) => {
+  await page.goto("/trust/agents");
+  await page.getByPlaceholder("Filter explicit Trust data").fill("research-copilot");
+  const agentRow = page.getByRole("row", { name: /research-copilot/ });
+  await expect(agentRow).toBeVisible();
+  await agentRow.click();
+  const workspace = page.getByRole("dialog");
+  await expect(
+    workspace.getByRole("heading", { name: "research-copilot", level: 2 }),
+  ).toBeVisible();
+  await expect(workspace).toContainText("agent_id:research-copilot");
+  await page.keyboard.press("Escape");
+
+  await page.goto("/trust/resources");
+  await page.getByRole("button", { name: "Edit labels for send_email_to" }).click();
+  const labels = page.getByRole("dialog");
+  await labels.getByLabel("Boundary").fill("internet");
+  await labels.getByRole("button", { name: "Save labels" }).click();
+  await expect(labels).toContainText("Saving labels…");
+  await expect(labels).toBeHidden();
+  await expect(page.getByRole("row", { name: /send_email_to/ })).toContainText("server-confirmed");
+
+  await page.goto("/trust/resources?scenario=partial");
+  await page.getByRole("button", { name: "Scan web-research" }).click();
+  await expect(page.getByRole("status").filter({ hasText: "Detection running" })).toBeVisible();
+  page.once("dialog", async (dialog) => {
+    expect(dialog.message()).toContain("detection is still running");
+    await dialog.dismiss();
+  });
+  await page.getByRole("link", { name: "Agents" }).click();
+  await expect(page).toHaveURL(/\/trust\/resources/);
+  await expect(page.getByRole("alert").filter({ hasText: "Detection failed" })).toBeVisible();
+  await page.getByRole("button", { name: "Retry scan" }).click();
+  await expect(page.getByRole("status").filter({ hasText: "Detection succeeded" })).toBeVisible();
+});
+
 test("empty, loading, partial, and total failure states are explicit", async ({ page }) => {
   await page.goto("/?scenario=empty");
   await expect(

@@ -19,6 +19,7 @@ import (
 	"github.com/Thespectier/AgentsharkX/apps/server/internal/guard"
 	"github.com/Thespectier/AgentsharkX/apps/server/internal/model"
 	"github.com/Thespectier/AgentsharkX/apps/server/internal/stream"
+	"github.com/Thespectier/AgentsharkX/apps/server/internal/trust"
 )
 
 func main() {
@@ -32,27 +33,33 @@ func main() {
 
 	gatewayHTTP := &http.Client{Timeout: cfg.UpstreamTimeout}
 	guardHTTP := &http.Client{Timeout: cfg.UpstreamTimeout}
+	guardOperationHTTP := &http.Client{}
 	gatewayClient, err := gateway.New(cfg.Gateway.BaseURL, gatewayHTTP, cfg.UpstreamRetryMax)
 	if err != nil {
 		logger.Error("gateway adapter rejected", "error", err.Error())
 		os.Exit(1)
 	}
-	guardClient, err := guard.NewWithRelease(cfg.Guard.BaseURL, cfg.Guard.AdminToken.Value(), cfg.GuardRelease, guardHTTP, cfg.UpstreamRetryMax)
+	guardClient, err := guard.NewWithOperationClient(
+		cfg.Guard.BaseURL, cfg.Guard.AdminToken.Value(), cfg.GuardRelease,
+		guardHTTP, guardOperationHTTP, cfg.UpstreamRetryMax,
+	)
 	if err != nil {
 		logger.Error("guard adapter rejected", "error", err.Error())
 		os.Exit(1)
 	}
 
+	rootContext, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
 	aggregator := aggregate.New(cfg.Environment, gatewayClient, guardClient)
 	connectService := connect.New(gatewayClient, cfg.Gateway.ConsoleURL)
+	trustService := trust.New(rootContext, guardClient, cfg.ScanTimeout)
 	hub := stream.NewHub()
 	sessions := auth.New(cfg.AdminToken.Value(), auth.Options{CookieSecure: cfg.CookieSecure, TTL: 8 * time.Hour})
 	handler := api.New(api.ServerConfig{
-		Sessions: sessions, Aggregate: aggregator, Connect: connectService, Stream: hub, Logger: logger, AuthEnabled: !cfg.AuthDisabled,
+		Sessions: sessions, Aggregate: aggregator, Connect: connectService, Trust: trustService,
+		Stream: hub, Logger: logger, AuthEnabled: !cfg.AuthDisabled,
 	})
 
-	rootContext, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
 	aggregator.Refresh(rootContext)
 	go monitorHealth(rootContext, aggregator, hub, cfg.PollInterval)
 

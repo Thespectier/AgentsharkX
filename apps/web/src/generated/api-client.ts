@@ -4,6 +4,8 @@ export type Source = "agentgateway" | "agentguard";
 
 export type GatewaySource = "agentgateway";
 
+export type GuardSource = "agentguard";
+
 export type LoginRequest = { token: string };
 
 export type Meta = {
@@ -218,6 +220,128 @@ export type ConnectSetup = {
 
 export type ConnectSetupEnvelope = { data: ConnectSetup; meta: Meta };
 
+export type TrustResourceType = "tool" | "skill" | "mcp";
+
+export type TrustLabels = {
+  boundary: string;
+  sensitivity: string;
+  integrity: string;
+  tags: Array<string>;
+};
+
+export type TrustDetection = {
+  resourceUpstreamId?: string;
+  name?: string;
+  label?: string;
+  riskLevel: string;
+  capabilities: Array<string>;
+  riskLabels: Array<string>;
+  policyTargets: Array<string>;
+  suggestedPlugins: Array<string>;
+};
+
+export type TrustResource = {
+  id: string;
+  upstreamId: string;
+  source: GuardSource;
+  fetchedAt: string;
+  rawRef: RawRef;
+  name: string;
+  type: TrustResourceType;
+  ownerAgentId: string;
+  ownerAgentUpstreamId: string;
+  sessionId?: string;
+  description?: string;
+  framework?: string;
+  transport?: string;
+  remote?: boolean | null;
+  toolCount?: number | null;
+  labels?: TrustLabels;
+  detection?: TrustDetection;
+};
+
+export type TrustSession = {
+  id: string;
+  upstreamId: string;
+  source: GuardSource;
+  fetchedAt: string;
+  rawRef: RawRef;
+  agentId: string;
+  agentUpstreamId: string;
+  userId?: string;
+  lastSeen: string | null;
+  status: "unknown";
+};
+
+export type TrustAgent = {
+  id: string;
+  upstreamId: string;
+  source: GuardSource;
+  fetchedAt: string;
+  rawRef: RawRef;
+  name: string;
+  framework: string | null;
+  principal: string | null;
+  trustLevel: string | null;
+  status: "unknown";
+  sessions: number;
+  tools: number;
+  skills: number;
+  mcps: number;
+  lastActive: string | null;
+};
+
+export type TrustAgentWorkspace = {
+  agent: TrustAgent;
+  sessions: Array<TrustSession>;
+  resources: Array<TrustResource>;
+};
+
+export type TrustAgentPage = { items: Array<TrustAgent>; nextCursor: string | null; total: number };
+
+export type TrustAgentPageEnvelope = { data: TrustAgentPage; meta: Meta };
+
+export type TrustAgentWorkspaceEnvelope = { data: TrustAgentWorkspace; meta: Meta };
+
+export type TrustResourcePage = {
+  items: Array<TrustResource>;
+  nextCursor: string | null;
+  total: number;
+};
+
+export type TrustResourcePageEnvelope = { data: TrustResourcePage; meta: Meta };
+
+export type TrustResourceEnvelope = { data: TrustResource; meta: Meta };
+
+export type TrustScanError = { code: string; message: string; retryable: boolean };
+
+export type TrustScanJob = {
+  id: string;
+  source: GuardSource;
+  agentId: string;
+  agentUpstreamId: string;
+  resourceType: "skill" | "mcp";
+  resourceIds: Array<string>;
+  status: "queued" | "running" | "succeeded" | "failed";
+  createdAt: string;
+  startedAt: string | null;
+  completedAt: string | null;
+  updatedAt: string;
+  results: Array<TrustDetection>;
+  warnings: Array<string>;
+  error?: TrustScanError;
+};
+
+export type TrustScanEnvelope = { data: TrustScanJob; meta: Meta };
+
+export type TrustScanPage = {
+  items: Array<TrustScanJob>;
+  nextCursor: string | null;
+  total: number;
+};
+
+export type TrustScanPageEnvelope = { data: TrustScanPage; meta: Meta };
+
 export type LabelUpdate = {
   boundary?: string | null;
   sensitivity?: string | null;
@@ -225,7 +349,9 @@ export type LabelUpdate = {
   tags?: Array<string>;
 };
 
-export type DetectionRequest = { resourceIds?: Array<string>; useLlm?: boolean };
+export type SkillDetectionRequest = { resourceIds: Array<string>; useLlm?: boolean };
+
+export type MCPDetectionRequest = { resourceIds: Array<string> };
 
 export type RuleSource = { source: string };
 
@@ -258,6 +384,9 @@ export type ErrorEnvelope = {
 
 export const implementedOperations = {
   createAdminSession: { method: "POST", path: "/api/v1/auth/session" },
+  detectMcps: { method: "POST", path: "/api/v1/trust/agents/{agentId}/mcps/detect" },
+  detectSkills: { method: "POST", path: "/api/v1/trust/agents/{agentId}/skills/detect" },
+  getAgent: { method: "GET", path: "/api/v1/trust/agents/{agentId}" },
   getCapabilities: { method: "GET", path: "/api/v1/system/capabilities" },
   getConnectAnalytics: { method: "GET", path: "/api/v1/connect/analytics" },
   getConnectSummary: { method: "GET", path: "/api/v1/connect/summary" },
@@ -267,16 +396,24 @@ export const implementedOperations = {
   getProvider: { method: "GET", path: "/api/v1/connect/llm/providers/{resourceId}" },
   getSystemHealth: { method: "GET", path: "/api/v1/system/health" },
   getTrafficRoute: { method: "GET", path: "/api/v1/connect/traffic/routes/{resourceId}" },
+  getTrustScan: { method: "GET", path: "/api/v1/trust/scans/{scanId}" },
+  listAgents: { method: "GET", path: "/api/v1/trust/agents" },
   listGatewayMcpServers: { method: "GET", path: "/api/v1/connect/mcp/servers" },
   listModels: { method: "GET", path: "/api/v1/connect/llm/models" },
   listProviders: { method: "GET", path: "/api/v1/connect/llm/providers" },
   listTrafficRoutes: { method: "GET", path: "/api/v1/connect/traffic/routes" },
+  listTrustResources: { method: "GET", path: "/api/v1/trust/resources" },
+  listTrustScans: { method: "GET", path: "/api/v1/trust/scans" },
   streamEvents: { method: "GET", path: "/api/v1/stream" },
+  updateToolLabels: { method: "PATCH", path: "/api/v1/trust/agents/{agentId}/tools/{tool}/labels" },
   verifyGatewaySetup: { method: "GET", path: "/api/v1/connect/setup" },
 } as const;
 
 export interface OperationResponses {
   createAdminSession: undefined;
+  detectMcps: TrustScanEnvelope;
+  detectSkills: TrustScanEnvelope;
+  getAgent: TrustAgentWorkspaceEnvelope;
   getCapabilities: CapabilitiesEnvelope;
   getConnectAnalytics: AnalyticsEnvelope;
   getConnectSummary: ConnectSummaryEnvelope;
@@ -286,16 +423,24 @@ export interface OperationResponses {
   getProvider: ProviderEnvelope;
   getSystemHealth: HealthEnvelope;
   getTrafficRoute: RouteEnvelope;
+  getTrustScan: TrustScanEnvelope;
+  listAgents: TrustAgentPageEnvelope;
   listGatewayMcpServers: MCPPageEnvelope;
   listModels: ModelPageEnvelope;
   listProviders: ProviderPageEnvelope;
   listTrafficRoutes: RoutePageEnvelope;
+  listTrustResources: TrustResourcePageEnvelope;
+  listTrustScans: TrustScanPageEnvelope;
   streamEvents: string;
+  updateToolLabels: TrustResourceEnvelope;
   verifyGatewaySetup: ConnectSetupEnvelope;
 }
 
 export interface OperationBodies {
   createAdminSession: LoginRequest;
+  detectMcps: MCPDetectionRequest;
+  detectSkills: SkillDetectionRequest;
+  updateToolLabels: LabelUpdate;
 }
 
 export type ImplementedOperationId = keyof typeof implementedOperations;

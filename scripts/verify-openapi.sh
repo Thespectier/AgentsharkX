@@ -16,6 +16,11 @@ required_paths=(
   /api/v1/connect/mcp/servers
   /api/v1/connect/traffic/routes
   /api/v1/trust/agents
+  /api/v1/trust/resources
+  /api/v1/trust/scans
+  '/api/v1/trust/agents/{agentId}/tools/{tool}/labels'
+  '/api/v1/trust/agents/{agentId}/skills/detect'
+  '/api/v1/trust/agents/{agentId}/mcps/detect'
   /api/v1/protect/policies
   /api/v1/protect/approvals
   /api/v1/audit/analytics
@@ -24,7 +29,7 @@ required_paths=(
 )
 
 rg -q '^openapi: 3\.1\.0$' "$spec"
-rg -q '^  version: 0\.3\.0-phase3$' "$spec"
+rg -q '^  version: 0\.4\.0-phase4$' "$spec"
 rg -q '^paths:$' "$spec"
 for path in "${required_paths[@]}"; do
   if ! rg -Fq "  $path:" "$spec"; then

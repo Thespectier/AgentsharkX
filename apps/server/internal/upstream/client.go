@@ -65,11 +65,26 @@ func (client *Client) GetJSON(ctx context.Context, path string, destination any)
 // PostJSON performs a bounded JSON POST which callers must use only for verified,
 // side-effect-free upstream read contracts.
 func (client *Client) PostJSON(ctx context.Context, path string, body, destination any) (time.Duration, error) {
+	return client.writeJSON(ctx, http.MethodPost, path, body, destination, true)
+}
+
+// PostMutationJSON performs a non-retried mutation against a verified upstream
+// contract. Callers remain responsible for idempotency and response validation.
+func (client *Client) PostMutationJSON(ctx context.Context, path string, body, destination any) (time.Duration, error) {
+	return client.writeJSON(ctx, http.MethodPost, path, body, destination, false)
+}
+
+// PatchJSON performs a non-retried PATCH against a verified upstream contract.
+func (client *Client) PatchJSON(ctx context.Context, path string, body, destination any) (time.Duration, error) {
+	return client.writeJSON(ctx, http.MethodPatch, path, body, destination, false)
+}
+
+func (client *Client) writeJSON(ctx context.Context, method, path string, body, destination any, retrySafe bool) (time.Duration, error) {
 	encoded, err := json.Marshal(body)
 	if err != nil {
-		return 0, &Error{Source: client.source, Method: http.MethodPost, Path: path, Kind: "request encoding failed"}
+		return 0, &Error{Source: client.source, Method: method, Path: path, Kind: "request encoding failed"}
 	}
-	return client.doJSON(ctx, http.MethodPost, path, encoded, destination, true)
+	return client.doJSON(ctx, method, path, encoded, destination, retrySafe)
 }
 
 func (client *Client) doJSON(ctx context.Context, method, path string, body []byte, destination any, retrySafe bool) (time.Duration, error) {
@@ -98,7 +113,13 @@ func (client *Client) do(ctx context.Context, method, path string, body []byte, 
 		return nil, &Error{Source: client.source, Method: method, Path: "[invalid-path]", Kind: "invalid request path"}
 	}
 	endpoint := *client.baseURL
-	endpoint.Path = strings.TrimRight(client.baseURL.Path, "/") + path
+	rawPath := strings.TrimRight(client.baseURL.EscapedPath(), "/") + path
+	decodedPath, err := url.PathUnescape(rawPath)
+	if err != nil {
+		return nil, &Error{Source: client.source, Method: method, Path: "[invalid-path]", Kind: "invalid request path"}
+	}
+	endpoint.Path = decodedPath
+	endpoint.RawPath = rawPath
 	endpoint.RawQuery = ""
 	endpoint.Fragment = ""
 

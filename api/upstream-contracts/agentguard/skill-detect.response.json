@@ -1,0 +1,30 @@
+{
+  "request": {
+    "skill_unique_ids": ["skill-1"],
+    "use_llm": false
+  },
+  "response": {
+    "ok": true,
+    "agent_id": "agent-a",
+    "requested": 1,
+    "detected": 1,
+    "missing_skill_unique_ids": [],
+    "results": [
+      {
+        "skill_unique_id": "skill-1",
+        "name": "research",
+        "detect_result": {
+          "object_id": "skill-1",
+          "object_type": "skill",
+          "name": "research",
+          "capabilities": ["network"],
+          "risk_labels": ["external_io"],
+          "policy_targets": ["tool_before"],
+          "suggested_plugins": ["policy"],
+          "risk_level": "medium",
+          "label": "suspicious"
+        }
+      }
+    ]
+  }
+}

@@ -106,45 +106,6 @@ export interface OverviewData {
   };
 }
 
-export interface AgentIdentity {
-  id: string;
-  name: string;
-  framework: string;
-  principal: string;
-  trustLevel: "high" | "medium" | "low" | "unknown";
-  status: HealthStatus;
-  sessions: number;
-  tools: number;
-  lastActive: string;
-  source: "agentguard";
-}
-
-export interface TrustResource {
-  id: string;
-  name: string;
-  type: "Tool" | "Skill" | "MCP";
-  ownerAgent: string;
-  boundary: string;
-  sensitivity: string;
-  integrity: string;
-  scanStatus: "clean" | "warning" | "pending" | "not-scanned";
-  source: "agentguard";
-}
-
-export interface TrustData {
-  agents: AgentIdentity[];
-  resources: TrustResource[];
-  trustDistribution: Array<{ name: string; value: number }>;
-  scans: Array<{
-    id: string;
-    resource: string;
-    type: "Skill" | "MCP";
-    status: "clean" | "warning" | "running";
-    findings: number;
-    updatedAt: string;
-  }>;
-}
-
 export interface Policy {
   id: string;
   name: string;

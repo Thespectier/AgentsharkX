@@ -9,10 +9,25 @@ import type {
   ResponseMeta,
   Scenario,
   Source,
-  TrustData,
   UnifiedEvent,
 } from "../types";
-import { auditData, baseEvents, connectData, overviewData, protectData, trustData } from "./data";
+import type {
+  LabelUpdate,
+  MCPDetectionRequest,
+  SkillDetectionRequest,
+  TrustResource,
+  TrustScanJob,
+} from "../generated/api-client";
+import {
+  auditData,
+  baseEvents,
+  connectData,
+  overviewData,
+  protectData,
+  trustAgents,
+  trustResources,
+  trustScans,
+} from "./data";
 
 const capturedAt = "2026-07-21T12:42:10Z";
 
@@ -147,13 +162,6 @@ const emptyConnectSummary = {
   counts: connectData.summary.counts.map((item) => ({ ...item, value: 0 })),
 };
 
-const emptyTrust: TrustData = {
-  agents: [],
-  resources: [],
-  trustDistribution: [],
-  scans: [],
-};
-
 const emptyProtect: ProtectData = {
   policies: [],
   approvals: [],
@@ -187,6 +195,46 @@ async function pageResponse<T>(request: Request, data: T[], source: Source) {
     { items: [], nextCursor: null, total: 0 },
     source,
   );
+}
+
+let mockTrustResources = trustResources.map((resource) => structuredClone(resource));
+const mockScanJobs = new Map(trustScans.map((job) => [job.id, structuredClone(job)]));
+const mockScanPolls = new Map<string, number>();
+const mockScanAttempts = new Map<string, number>();
+let nextScan = 300;
+
+function trustJobEnvelope(job: TrustScanJob) {
+  return { data: job, meta: meta("agentguard", job.status === "failed") };
+}
+
+async function startMockScan(request: Request, agentId: string, resourceType: "skill" | "mcp") {
+  const body = (await request.json()) as SkillDetectionRequest | MCPDetectionRequest;
+  const resourceIds = body.resourceIds ?? [];
+  const attemptKey = `${resourceType}:${resourceIds.join(",")}`;
+  const attempt = (mockScanAttempts.get(attemptKey) ?? 0) + 1;
+  mockScanAttempts.set(attemptKey, attempt);
+  const job: TrustScanJob = {
+    id: `scan-mock-${nextScan++}`,
+    source: "agentguard",
+    agentId,
+    agentUpstreamId:
+      trustAgents.find((agent) => agent.id === agentId)?.upstreamId ?? "unknown-agent",
+    resourceType,
+    resourceIds,
+    status: "queued",
+    createdAt: new Date().toISOString(),
+    startedAt: null,
+    completedAt: null,
+    updatedAt: new Date().toISOString(),
+    results: [],
+    warnings: [],
+  };
+  if (scenarioFrom(request) === "partial" && attempt === 1) {
+    job.warnings = ["Mock failure is enabled once for recovery testing."];
+  }
+  mockScanJobs.set(job.id, job);
+  mockScanPolls.set(job.id, 0);
+  return HttpResponse.json(trustJobEnvelope(job), { status: 202 });
 }
 
 export const handlers = [
@@ -258,10 +306,10 @@ export const handlers = [
     return item ? respond(request, item, item, "agentgateway") : failure("agentgateway");
   }),
   http.get("/api/v1/trust/agents", ({ request }) =>
-    listResponse(request, trustData.agents, "agentguard"),
+    pageResponse(request, trustAgents, "agentguard"),
   ),
   http.get("/api/v1/trust/agents/:agentId", ({ request, params }) => {
-    const agent = trustData.agents.find((item) => item.id === params.agentId);
+    const agent = trustAgents.find((item) => item.id === params.agentId);
     if (!agent) {
       return HttpResponse.json(
         {
@@ -276,11 +324,105 @@ export const handlers = [
         { status: 404 },
       );
     }
-    return respond(request, agent, agent, "agentguard");
+    const resources = mockTrustResources.filter((item) => item.ownerAgentId === agent.id);
+    return respond(
+      request,
+      {
+        agent,
+        sessions: Array.from({ length: agent.sessions }, (_, index) => ({
+          id: `session-${agent.id}-${index}`,
+          upstreamId: `session-${index + 1}`,
+          source: "agentguard" as const,
+          fetchedAt: capturedAt,
+          rawRef: { source: "agentguard" as const, id: `/v1/backend/sessions/sessions/${index}` },
+          agentId: agent.id,
+          agentUpstreamId: agent.upstreamId,
+          userId: agent.principal ?? undefined,
+          lastSeen: agent.lastActive,
+          status: "unknown" as const,
+        })),
+        resources,
+      },
+      { agent, sessions: [], resources: [] },
+      "agentguard",
+    );
   }),
-  http.get("/api/v1/trust/resources", ({ request }) =>
-    respond(request, trustData, emptyTrust, "agentguard"),
+  http.get("/api/v1/trust/resources", ({ request }) => {
+    const url = new URL(request.url);
+    const resourceType = url.searchParams.get("type");
+    const agentId = url.searchParams.get("agentId");
+    const resources = mockTrustResources.filter(
+      (item) =>
+        (!resourceType || item.type === resourceType) &&
+        (!agentId || item.ownerAgentId === agentId),
+    );
+    return pageResponse(request, resources, "agentguard");
+  }),
+  http.patch("/api/v1/trust/agents/:agentId/tools/:tool/labels", async ({ request, params }) => {
+    const index = mockTrustResources.findIndex(
+      (item) =>
+        item.id === params.tool && item.ownerAgentId === params.agentId && item.type === "tool",
+    );
+    if (index < 0) return failure("agentguard");
+    const body = (await request.json()) as LabelUpdate;
+    await delay(250);
+    const current = mockTrustResources[index];
+    const updated: TrustResource = {
+      ...current,
+      fetchedAt: new Date().toISOString(),
+      labels: {
+        boundary: body.boundary ? "server-confirmed" : (current.labels?.boundary ?? "unknown"),
+        sensitivity: body.sensitivity ?? current.labels?.sensitivity ?? "unknown",
+        integrity: body.integrity ?? current.labels?.integrity ?? "unknown",
+        tags: body.tags ?? current.labels?.tags ?? [],
+      },
+    };
+    mockTrustResources[index] = updated;
+    return HttpResponse.json({ data: updated, meta: meta("agentguard") });
+  }),
+  http.post("/api/v1/trust/agents/:agentId/skills/detect", ({ request, params }) =>
+    startMockScan(request, String(params.agentId), "skill"),
   ),
+  http.post("/api/v1/trust/agents/:agentId/mcps/detect", ({ request, params }) =>
+    startMockScan(request, String(params.agentId), "mcp"),
+  ),
+  http.get("/api/v1/trust/scans", ({ request }) =>
+    pageResponse(request, [...mockScanJobs.values()].reverse(), "agentguard"),
+  ),
+  http.get("/api/v1/trust/scans/:scanId", ({ params }) => {
+    const id = String(params.scanId);
+    const current = mockScanJobs.get(id);
+    if (!current) return failure("agentguard");
+    if (current.status === "queued" || current.status === "running") {
+      const polls = (mockScanPolls.get(id) ?? 0) + 1;
+      mockScanPolls.set(id, polls);
+      const now = new Date().toISOString();
+      current.status = polls === 1 ? "running" : "succeeded";
+      current.startedAt ??= now;
+      current.updatedAt = now;
+      if (polls > 1) {
+        const shouldFail = current.warnings.some((warning) => warning.includes("recovery testing"));
+        current.status = shouldFail ? "failed" : "succeeded";
+        current.completedAt = now;
+        if (shouldFail) {
+          current.error = {
+            code: "UPSTREAM_UNAVAILABLE",
+            message: "Mock AgentGuard detector became unavailable",
+            retryable: true,
+          };
+        } else {
+          current.results = current.resourceIds.flatMap((resourceId) => {
+            const detection = mockTrustResources.find(
+              (resource) => resource.id === resourceId,
+            )?.detection;
+            return detection ? [detection] : [];
+          });
+        }
+      }
+      mockScanJobs.set(id, current);
+    }
+    return HttpResponse.json(trustJobEnvelope(current));
+  }),
   http.get("/api/v1/protect/policies", ({ request }) =>
     respond(request, protectData, emptyProtect),
   ),

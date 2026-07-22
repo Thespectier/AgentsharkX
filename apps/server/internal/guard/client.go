@@ -12,6 +12,7 @@ import (
 
 type Client struct {
 	upstream       *upstream.Client
+	operations     *upstream.Client
 	releaseVersion string
 }
 
@@ -20,11 +21,19 @@ func New(baseURL, apiKey string, httpClient *http.Client, retryMax int) (*Client
 }
 
 func NewWithRelease(baseURL, apiKey, releaseVersion string, httpClient *http.Client, retryMax int) (*Client, error) {
+	return NewWithOperationClient(baseURL, apiKey, releaseVersion, httpClient, httpClient, retryMax)
+}
+
+func NewWithOperationClient(baseURL, apiKey, releaseVersion string, httpClient, operationHTTPClient *http.Client, retryMax int) (*Client, error) {
 	client, err := upstream.New(model.SourceAgentGuard, baseURL, "X-Api-Key", apiKey, httpClient, retryMax)
 	if err != nil {
 		return nil, err
 	}
-	return &Client{upstream: client, releaseVersion: releaseVersion}, nil
+	operations, err := upstream.New(model.SourceAgentGuard, baseURL, "X-Api-Key", apiKey, operationHTTPClient, 0)
+	if err != nil {
+		return nil, err
+	}
+	return &Client{upstream: client, operations: operations, releaseVersion: releaseVersion}, nil
 }
 
 type healthResponse struct {

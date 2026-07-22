@@ -55,3 +55,23 @@ func TestGetJSONHonorsClientTimeout(t *testing.T) {
 		t.Fatal("expected client timeout")
 	}
 }
+
+func TestMutationIsNeverRetried(t *testing.T) {
+	t.Parallel()
+
+	var requests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		requests.Add(1)
+		writer.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer server.Close()
+	client, err := New(model.SourceAgentGuard, server.URL, "", "", server.Client(), 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var response any
+	_, err = client.PostMutationJSON(t.Context(), "/detect", struct{}{}, &response)
+	if err == nil || requests.Load() != 1 {
+		t.Fatalf("mutation retry behavior: requests=%d err=%v", requests.Load(), err)
+	}
+}

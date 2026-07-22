@@ -35,6 +35,7 @@ type Config struct {
 	Guard            Upstream
 	GuardRelease     string
 	UpstreamTimeout  time.Duration
+	ScanTimeout      time.Duration
 	UpstreamRetryMax int
 	PollInterval     time.Duration
 	RedactPayloads   bool
@@ -58,6 +59,7 @@ func Load(lookup LookupFunc) (Config, error) {
 		},
 		GuardRelease:     valueOr(lookup, "AGENTGUARD_VERSION", ""),
 		UpstreamTimeout:  3 * time.Second,
+		ScanTimeout:      90 * time.Second,
 		UpstreamRetryMax: 1,
 		PollInterval:     2 * time.Second,
 		RedactPayloads:   true,
@@ -74,6 +76,9 @@ func Load(lookup LookupFunc) (Config, error) {
 		return Config{}, err
 	}
 	if cfg.UpstreamTimeout, err = durationValue(lookup, "AGENTSHARK_UPSTREAM_TIMEOUT", cfg.UpstreamTimeout); err != nil {
+		return Config{}, err
+	}
+	if cfg.ScanTimeout, err = durationValue(lookup, "AGENTSHARK_SCAN_TIMEOUT", cfg.ScanTimeout); err != nil {
 		return Config{}, err
 	}
 	if cfg.PollInterval, err = durationValue(lookup, "AGENTSHARK_POLL_INTERVAL", cfg.PollInterval); err != nil {
@@ -134,6 +139,9 @@ func (cfg Config) Validate() error {
 	if cfg.UpstreamTimeout < 100*time.Millisecond || cfg.UpstreamTimeout > 30*time.Second {
 		validationErrors = append(validationErrors, errors.New("AGENTSHARK_UPSTREAM_TIMEOUT must be between 100ms and 30s"))
 	}
+	if cfg.ScanTimeout < 5*time.Second || cfg.ScanTimeout > 5*time.Minute {
+		validationErrors = append(validationErrors, errors.New("AGENTSHARK_SCAN_TIMEOUT must be between 5s and 5m"))
+	}
 	if cfg.UpstreamRetryMax < 0 || cfg.UpstreamRetryMax > 3 {
 		validationErrors = append(validationErrors, errors.New("AGENTSHARK_UPSTREAM_RETRY_MAX must be between 0 and 3"))
 	}
@@ -144,9 +152,9 @@ func (cfg Config) Validate() error {
 }
 
 func (cfg Config) SafeSummary() string {
-	return fmt.Sprintf("listen=%s environment=%s auth_disabled=%t cookie_secure=%t gateway=%s guard=%s timeout=%s retries=%d poll=%s redact_payloads=%t",
+	return fmt.Sprintf("listen=%s environment=%s auth_disabled=%t cookie_secure=%t gateway=%s guard=%s timeout=%s scan_timeout=%s retries=%d poll=%s redact_payloads=%t",
 		cfg.ListenAddr, cfg.Environment, cfg.AuthDisabled, cfg.CookieSecure, safeEndpoint(cfg.Gateway.BaseURL),
-		safeEndpoint(cfg.Guard.BaseURL), cfg.UpstreamTimeout, cfg.UpstreamRetryMax, cfg.PollInterval, cfg.RedactPayloads)
+		safeEndpoint(cfg.Guard.BaseURL), cfg.UpstreamTimeout, cfg.ScanTimeout, cfg.UpstreamRetryMax, cfg.PollInterval, cfg.RedactPayloads)
 }
 
 func safeEndpoint(raw string) string {

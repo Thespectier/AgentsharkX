@@ -6,7 +6,8 @@ import {
   type OperationResponse,
 } from "../generated/api-client";
 
-type ReadOperation = Exclude<ImplementedOperationId, "createAdminSession">;
+type WriteOperation = keyof OperationBodies & ImplementedOperationId;
+type ReadOperation = Exclude<ImplementedOperationId, WriteOperation>;
 
 interface OperationOptions {
   signal?: AbortSignal;
@@ -57,18 +58,37 @@ export async function requestOperation<K extends ReadOperation>(
   options?: AbortSignal | OperationOptions,
 ): Promise<OperationResponse<K>> {
   const normalized = options instanceof AbortSignal ? { signal: options } : (options ?? {});
+  const path = operationPath(operation, normalized);
+  return requestJSON<OperationResponse<K>>(path, {
+    signal: normalized.signal,
+  });
+}
+
+export async function mutateOperation<K extends WriteOperation>(
+  operation: K,
+  body: OperationBodies[K],
+  options: OperationOptions = {},
+): Promise<OperationResponse<K>> {
+  const definition = implementedOperations[operation];
+  return (await requestMutation(
+    withScenario(operationPath(operation, options)),
+    definition.method as "POST" | "PATCH" | "DELETE",
+    body,
+    options.signal,
+  )) as OperationResponse<K>;
+}
+
+function operationPath(operation: ImplementedOperationId, options: OperationOptions): string {
   let path: string = implementedOperations[operation].path;
-  for (const [name, value] of Object.entries(normalized.path ?? {})) {
+  for (const [name, value] of Object.entries(options.path ?? {})) {
     path = path.replace(`{${name}}`, encodeURIComponent(value));
   }
   if (path.includes("{")) throw new Error(`Missing path parameter for ${operation}`);
   const url = new URL(path, window.location.origin);
-  for (const [name, value] of Object.entries(normalized.query ?? {})) {
+  for (const [name, value] of Object.entries(options.query ?? {})) {
     if (value !== undefined && value !== "") url.searchParams.set(name, String(value));
   }
-  return requestJSON<OperationResponse<K>>(`${url.pathname}${url.search}`, {
-    signal: normalized.signal,
-  });
+  return `${url.pathname}${url.search}`;
 }
 
 export async function createAdminSession(
@@ -93,6 +113,7 @@ export async function requestMutation<T>(
   path: string,
   method: "POST" | "PATCH" | "DELETE",
   body?: unknown,
+  signal?: AbortSignal,
 ): Promise<T | undefined> {
   const response = await fetch(path, {
     method,
@@ -103,6 +124,7 @@ export async function requestMutation<T>(
       ...(csrfToken ? { "X-CSRF-Token": csrfToken } : {}),
     },
     body: body === undefined ? undefined : JSON.stringify(body),
+    signal,
   });
   if (!response.ok) throw await apiError(response);
   if (response.status === 204) return undefined;

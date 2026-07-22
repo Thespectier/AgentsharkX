@@ -1,12 +1,14 @@
 openapi: 3.1.0
 info:
   title: AgentsharkX BFF API
-  version: 0.3.0-phase3
+  version: 0.4.0-phase4
   description: |
     Source-preserving management API above agentgateway and AgentGuard.
-    Phase 3 implements authentication, independent upstream health and
+    Phase 4 implements authentication, independent upstream health and
     capability probes, the health-only overview, normalized health SSE, and
-    read-only agentgateway resources with setup verification.
+    read-only agentgateway resources with setup verification. Trust adds
+    source-preserving AgentGuard identities, resources, label updates, and
+    bounded asynchronous scan orchestration.
     Later operations remain reserved according to `x-implementation-phase`.
 servers:
   - url: /
@@ -393,9 +395,26 @@ paths:
       operationId: listAgents
       summary: List identities constructed only from explicit AgentGuard fields
       x-implementation-phase: 4
+      x-implementation-status: implemented
+      parameters:
+        - $ref: '#/components/parameters/Search'
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
       responses:
         '200':
-          $ref: '#/components/responses/DataResponse'
+          description: Explicit AgentGuard identities
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrustAgentPageEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+        '503':
+          $ref: '#/components/responses/UpstreamUnavailable'
 
   /api/v1/trust/agents/{agentId}:
     get:
@@ -403,13 +422,24 @@ paths:
       operationId: getAgent
       summary: Return an AgentGuard-backed agent workspace
       x-implementation-phase: 4
+      x-implementation-status: implemented
       parameters:
         - $ref: '#/components/parameters/AgentId'
       responses:
         '200':
-          $ref: '#/components/responses/DataResponse'
+          description: Agent identity, explicit sessions, and resources
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrustAgentWorkspaceEnvelope'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/NotFound'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+        '503':
+          $ref: '#/components/responses/UpstreamUnavailable'
 
   /api/v1/trust/resources:
     get:
@@ -417,9 +447,75 @@ paths:
       operationId: listTrustResources
       summary: List Tool, Skill, and MCP resources while preserving resource type
       x-implementation-phase: 4
+      x-implementation-status: implemented
+      parameters:
+        - $ref: '#/components/parameters/Search'
+        - $ref: '#/components/parameters/TrustResourceTypeFilter'
+        - $ref: '#/components/parameters/AgentIdFilter'
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
       responses:
         '200':
-          $ref: '#/components/responses/DataResponse'
+          description: Explicit AgentGuard tools, skills, and MCP resources
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrustResourcePageEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+        '503':
+          $ref: '#/components/responses/UpstreamUnavailable'
+
+  /api/v1/trust/scans:
+    get:
+      tags: [Trust]
+      operationId: listTrustScans
+      summary: List bounded in-memory AgentGuard detection jobs
+      x-implementation-phase: 4
+      x-implementation-status: implemented
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Scan jobs ordered by creation time
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrustScanPageEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+
+  /api/v1/trust/scans/{scanId}:
+    get:
+      tags: [Trust]
+      operationId: getTrustScan
+      summary: Poll one server-reported AgentGuard detection job
+      x-implementation-phase: 4
+      x-implementation-status: implemented
+      parameters:
+        - $ref: '#/components/parameters/ScanId'
+      responses:
+        '200':
+          description: Current job state without synthesized percentage progress
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrustScanEnvelope'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
 
   /api/v1/trust/agents/{agentId}/tools/{tool}/labels:
     patch:
@@ -427,6 +523,7 @@ paths:
       operationId: updateToolLabels
       summary: Update AgentGuard labels for one tool
       x-implementation-phase: 4
+      x-implementation-status: implemented
       parameters:
         - $ref: '#/components/parameters/AgentId'
         - $ref: '#/components/parameters/ToolName'
@@ -439,9 +536,25 @@ paths:
               $ref: '#/components/schemas/LabelUpdate'
       responses:
         '200':
-          $ref: '#/components/responses/DataResponse'
+          description: AgentGuard-confirmed tool resource
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrustResourceEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationFailed'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+        '503':
+          $ref: '#/components/responses/UpstreamUnavailable'
 
   /api/v1/trust/agents/{agentId}/skills/detect:
     post:
@@ -449,6 +562,7 @@ paths:
       operationId: detectSkills
       summary: Trigger AgentGuard skill detection
       x-implementation-phase: 4
+      x-implementation-status: implemented
       parameters:
         - $ref: '#/components/parameters/AgentId'
         - $ref: '#/components/parameters/CsrfToken'
@@ -457,10 +571,26 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/DetectionRequest'
+              $ref: '#/components/schemas/SkillDetectionRequest'
       responses:
         '202':
-          $ref: '#/components/responses/DataResponse'
+          description: Accepted bounded scan job
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrustScanEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
 
   /api/v1/trust/agents/{agentId}/mcps/detect:
     post:
@@ -468,6 +598,7 @@ paths:
       operationId: detectMcps
       summary: Trigger AgentGuard MCP detection
       x-implementation-phase: 4
+      x-implementation-status: implemented
       parameters:
         - $ref: '#/components/parameters/AgentId'
         - $ref: '#/components/parameters/CsrfToken'
@@ -476,10 +607,26 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/DetectionRequest'
+              $ref: '#/components/schemas/MCPDetectionRequest'
       responses:
         '202':
-          $ref: '#/components/responses/DataResponse'
+          description: Accepted bounded scan job
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrustScanEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
 
   /api/v1/protect/policies:
     get:
@@ -670,12 +817,38 @@ components:
       required: true
       schema:
         type: string
+        minLength: 1
+        maxLength: 256
+    AgentIdFilter:
+      name: agentId
+      in: query
+      required: false
+      schema:
+        type: string
+        maxLength: 256
     ToolName:
       name: tool
       in: path
       required: true
+      description: Opaque AgentsharkX tool resource ID, not an inferred or user-supplied upstream name
       schema:
         type: string
+        minLength: 1
+        maxLength: 256
+    ScanId:
+      name: scanId
+      in: path
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
+    TrustResourceTypeFilter:
+      name: type
+      in: query
+      required: false
+      schema:
+        $ref: '#/components/schemas/TrustResourceType'
     RuleId:
       name: ruleId
       in: path
@@ -818,6 +991,9 @@ components:
     GatewaySource:
       type: string
       enum: [agentgateway]
+    GuardSource:
+      type: string
+      enum: [agentguard]
     LoginRequest:
       type: object
       additionalProperties: false
@@ -1273,31 +1449,273 @@ components:
       properties:
         data: { $ref: '#/components/schemas/ConnectSetup' }
         meta: { $ref: '#/components/schemas/Meta' }
+    TrustResourceType:
+      type: string
+      enum: [tool, skill, mcp]
+    TrustLabels:
+      type: object
+      additionalProperties: false
+      required: [boundary, sensitivity, integrity, tags]
+      properties:
+        boundary: { type: string }
+        sensitivity: { type: string }
+        integrity: { type: string }
+        tags:
+          type: array
+          items: { type: string }
+    TrustDetection:
+      type: object
+      additionalProperties: false
+      required: [riskLevel, capabilities, riskLabels, policyTargets, suggestedPlugins]
+      properties:
+        resourceUpstreamId: { type: string }
+        name: { type: string }
+        label: { type: string }
+        riskLevel: { type: string }
+        capabilities:
+          type: array
+          items: { type: string }
+        riskLabels:
+          type: array
+          items: { type: string }
+        policyTargets:
+          type: array
+          items: { type: string }
+        suggestedPlugins:
+          type: array
+          items: { type: string }
+    TrustResource:
+      type: object
+      additionalProperties: false
+      required: [id, upstreamId, source, fetchedAt, rawRef, name, type, ownerAgentId, ownerAgentUpstreamId]
+      properties:
+        id: { type: string }
+        upstreamId: { type: string }
+        source: { $ref: '#/components/schemas/GuardSource' }
+        fetchedAt: { type: string, format: date-time }
+        rawRef: { $ref: '#/components/schemas/RawRef' }
+        name: { type: string }
+        type: { $ref: '#/components/schemas/TrustResourceType' }
+        ownerAgentId: { type: string }
+        ownerAgentUpstreamId: { type: string }
+        sessionId: { type: string }
+        description: { type: string, maxLength: 500 }
+        framework: { type: string }
+        transport: { type: string }
+        remote: { type: [boolean, 'null'] }
+        toolCount: { type: [integer, 'null'], minimum: 0 }
+        labels: { $ref: '#/components/schemas/TrustLabels' }
+        detection: { $ref: '#/components/schemas/TrustDetection' }
+    TrustSession:
+      type: object
+      additionalProperties: false
+      required: [id, upstreamId, source, fetchedAt, rawRef, agentId, agentUpstreamId, lastSeen, status]
+      properties:
+        id: { type: string }
+        upstreamId: { type: string }
+        source: { $ref: '#/components/schemas/GuardSource' }
+        fetchedAt: { type: string, format: date-time }
+        rawRef: { $ref: '#/components/schemas/RawRef' }
+        agentId: { type: string }
+        agentUpstreamId: { type: string }
+        userId: { type: string }
+        lastSeen: { type: [string, 'null'], format: date-time }
+        status: { type: string, enum: [unknown] }
+    TrustAgent:
+      type: object
+      additionalProperties: false
+      required: [id, upstreamId, source, fetchedAt, rawRef, name, framework, principal, trustLevel, status, sessions, tools, skills, mcps, lastActive]
+      properties:
+        id: { type: string }
+        upstreamId: { type: string }
+        source: { $ref: '#/components/schemas/GuardSource' }
+        fetchedAt: { type: string, format: date-time }
+        rawRef: { $ref: '#/components/schemas/RawRef' }
+        name: { type: string }
+        framework: { type: [string, 'null'] }
+        principal: { type: [string, 'null'] }
+        trustLevel: { type: [string, 'null'] }
+        status: { type: string, enum: [unknown] }
+        sessions: { type: integer, minimum: 0 }
+        tools: { type: integer, minimum: 0 }
+        skills: { type: integer, minimum: 0 }
+        mcps: { type: integer, minimum: 0 }
+        lastActive: { type: [string, 'null'], format: date-time }
+    TrustAgentWorkspace:
+      type: object
+      additionalProperties: false
+      required: [agent, sessions, resources]
+      properties:
+        agent: { $ref: '#/components/schemas/TrustAgent' }
+        sessions:
+          type: array
+          items: { $ref: '#/components/schemas/TrustSession' }
+        resources:
+          type: array
+          items: { $ref: '#/components/schemas/TrustResource' }
+    TrustAgentPage:
+      type: object
+      additionalProperties: false
+      required: [items, nextCursor, total]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/TrustAgent' }
+        nextCursor: { type: [string, 'null'] }
+        total: { type: integer, minimum: 0 }
+    TrustAgentPageEnvelope:
+      type: object
+      additionalProperties: false
+      required: [data, meta]
+      properties:
+        data: { $ref: '#/components/schemas/TrustAgentPage' }
+        meta: { $ref: '#/components/schemas/Meta' }
+    TrustAgentWorkspaceEnvelope:
+      type: object
+      additionalProperties: false
+      required: [data, meta]
+      properties:
+        data: { $ref: '#/components/schemas/TrustAgentWorkspace' }
+        meta: { $ref: '#/components/schemas/Meta' }
+    TrustResourcePage:
+      type: object
+      additionalProperties: false
+      required: [items, nextCursor, total]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/TrustResource' }
+        nextCursor: { type: [string, 'null'] }
+        total: { type: integer, minimum: 0 }
+    TrustResourcePageEnvelope:
+      type: object
+      additionalProperties: false
+      required: [data, meta]
+      properties:
+        data: { $ref: '#/components/schemas/TrustResourcePage' }
+        meta: { $ref: '#/components/schemas/Meta' }
+    TrustResourceEnvelope:
+      type: object
+      additionalProperties: false
+      required: [data, meta]
+      properties:
+        data: { $ref: '#/components/schemas/TrustResource' }
+        meta: { $ref: '#/components/schemas/Meta' }
+    TrustScanError:
+      type: object
+      additionalProperties: false
+      required: [code, message, retryable]
+      properties:
+        code: { type: string }
+        message: { type: string }
+        retryable: { type: boolean }
+    TrustScanJob:
+      type: object
+      additionalProperties: false
+      required: [id, source, agentId, agentUpstreamId, resourceType, resourceIds, status, createdAt, startedAt, completedAt, updatedAt, results, warnings]
+      properties:
+        id: { type: string }
+        source: { $ref: '#/components/schemas/GuardSource' }
+        agentId: { type: string }
+        agentUpstreamId: { type: string }
+        resourceType:
+          type: string
+          enum: [skill, mcp]
+        resourceIds:
+          type: array
+          minItems: 1
+          items: { type: string }
+        status:
+          type: string
+          enum: [queued, running, succeeded, failed]
+        createdAt: { type: string, format: date-time }
+        startedAt: { type: [string, 'null'], format: date-time }
+        completedAt: { type: [string, 'null'], format: date-time }
+        updatedAt: { type: string, format: date-time }
+        results:
+          type: array
+          items: { $ref: '#/components/schemas/TrustDetection' }
+        warnings:
+          type: array
+          items: { type: string }
+        error: { $ref: '#/components/schemas/TrustScanError' }
+    TrustScanEnvelope:
+      type: object
+      additionalProperties: false
+      required: [data, meta]
+      properties:
+        data: { $ref: '#/components/schemas/TrustScanJob' }
+        meta: { $ref: '#/components/schemas/Meta' }
+    TrustScanPage:
+      type: object
+      additionalProperties: false
+      required: [items, nextCursor, total]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/TrustScanJob' }
+        nextCursor: { type: [string, 'null'] }
+        total: { type: integer, minimum: 0 }
+    TrustScanPageEnvelope:
+      type: object
+      additionalProperties: false
+      required: [data, meta]
+      properties:
+        data: { $ref: '#/components/schemas/TrustScanPage' }
+        meta: { $ref: '#/components/schemas/Meta' }
     LabelUpdate:
       type: object
       additionalProperties: false
+      minProperties: 1
       properties:
         boundary:
           type: [string, 'null']
+          minLength: 1
+          maxLength: 64
         sensitivity:
           type: [string, 'null']
+          minLength: 1
+          maxLength: 64
         integrity:
           type: [string, 'null']
+          minLength: 1
+          maxLength: 64
         tags:
           type: array
+          maxItems: 20
           items:
             type: string
-    DetectionRequest:
+            minLength: 1
+            maxLength: 64
+    SkillDetectionRequest:
       type: object
       additionalProperties: false
+      required: [resourceIds]
       properties:
         resourceIds:
           type: array
+          minItems: 1
+          maxItems: 25
           items:
             type: string
+            minLength: 1
+            maxLength: 256
         useLlm:
           type: boolean
           default: false
+    MCPDetectionRequest:
+      type: object
+      additionalProperties: false
+      required: [resourceIds]
+      properties:
+        resourceIds:
+          type: array
+          minItems: 1
+          maxItems: 25
+          items:
+            type: string
+            minLength: 1
+            maxLength: 256
     RuleSource:
       type: object
       additionalProperties: false

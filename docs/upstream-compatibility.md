@@ -2,12 +2,12 @@
 
 Last verified: 2026-07-22.
 
-Phase 3 still prevents direct browser contact with either upstream. The
-agentgateway client now reads explicit resources from `/api/config` and invokes
-the verified read-only analytics POST with independent timeout, bounded retry,
-and source-scoped errors. AgentGuard requests use the verified `X-Api-Key`
-header. The pinned agentgateway admin token setting is not transmitted because
-the selected upstream exposes no verified native admin-auth header.
+Phase 4 still prevents direct browser contact with either upstream. The
+agentgateway adapter remains read-only. The AgentGuard adapter now reads
+sessions/tools/skills/MCPs and invokes the verified label/detection mutations
+with `X-Api-Key`, source-scoped errors, strict response bounds, and no automatic
+write retries. The pinned agentgateway admin token setting is not transmitted
+because the selected upstream exposes no verified native admin-auth header.
 
 ## Pinned baseline
 
@@ -72,6 +72,26 @@ strategies, or MCP transport shapes change.
   they are interchangeable.
 - There is no dedicated agent-list route. Agent views may use only explicit
   AgentGuard `agent_id` fields from resources and sessions.
+
+For Phase 4, populated reads plus tool-label, Skill detection, and MCP detection
+shapes were cross-checked against the exact pinned source revision and its HTTP
+tests. Sanitized fixtures freeze the fields used by the adapter. Contract tests
+fail with a field-scoped error when required arrays, IDs, names, label objects,
+or detector result shapes change.
+
+A disposable pinned container was also populated on 2026-07-22 with one
+session, tool, and Skill. The authenticated Phase 4 BFF returned the explicit
+Agent with `principal=null` and `status=unknown`, applied a CSRF-protected tool
+label update using the server-confirmed response, and polled the Skill detection
+wrapper to `succeeded`. No disposable session credentials or detector detail
+payloads were retained in repository fixtures.
+
+The upstream detection endpoints are synchronous and do not expose a remote job
+ID or percentage progress. AgentsharkX therefore owns only a bounded in-memory
+wrapper job, polls that wrapper state, applies a configurable deadline, and
+forwards no fabricated progress. The adapter deliberately drops session keys,
+client URLs, arbitrary metadata/principal objects, descriptors, source/code
+paths, detector metadata/reasons, MCP URLs, and LLM configuration.
 
 The upstream `v2.1` Dockerfile healthcheck calls `/health`, which returns 404;
 the real protected route is `/v1/backend/health`. Compose overrides the

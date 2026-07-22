@@ -1,0 +1,21 @@
+{
+  "request": {
+    "boundary": "external",
+    "sensitivity": "confidential",
+    "integrity": "trusted",
+    "tags": ["approved"]
+  },
+  "response": {
+    "ok": true,
+    "tool": {
+      "owner_agent_id": "agent-a",
+      "name": "mail.send",
+      "labels": {
+        "boundary": "external",
+        "sensitivity": "confidential",
+        "integrity": "trusted",
+        "tags": ["approved"]
+      }
+    }
+  }
+}

@@ -19,12 +19,15 @@ import (
 	"github.com/Thespectier/AgentsharkX/apps/server/internal/auth"
 	"github.com/Thespectier/AgentsharkX/apps/server/internal/connect"
 	"github.com/Thespectier/AgentsharkX/apps/server/internal/gateway"
+	"github.com/Thespectier/AgentsharkX/apps/server/internal/guard"
 	"github.com/Thespectier/AgentsharkX/apps/server/internal/model"
 	"github.com/Thespectier/AgentsharkX/apps/server/internal/stream"
+	"github.com/Thespectier/AgentsharkX/apps/server/internal/trust"
 	"github.com/Thespectier/AgentsharkX/apps/server/internal/upstream"
 )
 
 const maxLoginBodyBytes = 4096
+const maxMutationBodyBytes = 16 * 1024
 
 type contextKey string
 
@@ -34,6 +37,7 @@ type ServerConfig struct {
 	Sessions    *auth.Manager
 	Aggregate   *aggregate.Service
 	Connect     *connect.Service
+	Trust       *trust.Service
 	Stream      *stream.Hub
 	Logger      *slog.Logger
 	AuthEnabled bool
@@ -73,6 +77,14 @@ func (server *server) routes() {
 	server.mux.Handle("GET /api/v1/connect/mcp/servers/{resourceId}", server.requireAuth(http.HandlerFunc(server.mcpServer)))
 	server.mux.Handle("GET /api/v1/connect/traffic/routes", server.requireAuth(http.HandlerFunc(server.trafficRoutes)))
 	server.mux.Handle("GET /api/v1/connect/traffic/routes/{resourceId}", server.requireAuth(http.HandlerFunc(server.route)))
+	server.mux.Handle("GET /api/v1/trust/agents", server.requireAuth(http.HandlerFunc(server.trustAgents)))
+	server.mux.Handle("GET /api/v1/trust/agents/{agentId}", server.requireAuth(http.HandlerFunc(server.trustAgent)))
+	server.mux.Handle("GET /api/v1/trust/resources", server.requireAuth(http.HandlerFunc(server.trustResources)))
+	server.mux.Handle("GET /api/v1/trust/scans", server.requireAuth(http.HandlerFunc(server.trustScans)))
+	server.mux.Handle("GET /api/v1/trust/scans/{scanId}", server.requireAuth(http.HandlerFunc(server.trustScan)))
+	server.mux.Handle("PATCH /api/v1/trust/agents/{agentId}/tools/{tool}/labels", server.requireAuth(server.requireCSRF(http.HandlerFunc(server.updateToolLabels))))
+	server.mux.Handle("POST /api/v1/trust/agents/{agentId}/skills/detect", server.requireAuth(server.requireCSRF(http.HandlerFunc(server.detectSkills))))
+	server.mux.Handle("POST /api/v1/trust/agents/{agentId}/mcps/detect", server.requireAuth(server.requireCSRF(http.HandlerFunc(server.detectMCPs))))
 	server.mux.Handle("/api/v1/", server.requireAuth(http.HandlerFunc(server.notImplemented)))
 }
 
@@ -211,6 +223,91 @@ func (server *server) route(writer http.ResponseWriter, request *http.Request) {
 	server.writeConnectResult(writer, request, envelope, err)
 }
 
+func (server *server) trustAgents(writer http.ResponseWriter, request *http.Request) {
+	query, ok := server.resourceQuery(writer, request)
+	if !ok || !server.trustAvailable(writer, request) {
+		return
+	}
+	envelope, err := server.config.Trust.Agents(request.Context(), query.search, query.cursor, query.limit)
+	server.writeTrustResult(writer, request, http.StatusOK, envelope, err)
+}
+
+func (server *server) trustAgent(writer http.ResponseWriter, request *http.Request) {
+	if !server.trustAvailable(writer, request) {
+		return
+	}
+	envelope, err := server.config.Trust.Agent(request.Context(), request.PathValue("agentId"))
+	server.writeTrustResult(writer, request, http.StatusOK, envelope, err)
+}
+
+func (server *server) trustResources(writer http.ResponseWriter, request *http.Request) {
+	query, ok := server.resourceQuery(writer, request)
+	if !ok || !server.trustAvailable(writer, request) {
+		return
+	}
+	resourceType := strings.TrimSpace(request.URL.Query().Get("type"))
+	agentID := strings.TrimSpace(request.URL.Query().Get("agentId"))
+	if len(resourceType) > 16 || len(agentID) > 256 {
+		server.writeError(writer, request, http.StatusBadRequest, "INVALID_REQUEST", "trust resource query is invalid", source(model.SourceAgentGuard), false)
+		return
+	}
+	envelope, err := server.config.Trust.Resources(request.Context(), query.search, resourceType, agentID, query.cursor, query.limit)
+	server.writeTrustResult(writer, request, http.StatusOK, envelope, err)
+}
+
+func (server *server) trustScans(writer http.ResponseWriter, request *http.Request) {
+	query, ok := server.resourceQuery(writer, request)
+	if !ok || !server.trustAvailable(writer, request) {
+		return
+	}
+	if query.search != "" {
+		server.writeError(writer, request, http.StatusBadRequest, "INVALID_REQUEST", "scan jobs do not support search", source(model.SourceAgentGuard), false)
+		return
+	}
+	envelope, err := server.config.Trust.ScanJobs(query.cursor, query.limit)
+	server.writeTrustResult(writer, request, http.StatusOK, envelope, err)
+}
+
+func (server *server) trustScan(writer http.ResponseWriter, request *http.Request) {
+	if !server.trustAvailable(writer, request) {
+		return
+	}
+	envelope, err := server.config.Trust.ScanJob(request.PathValue("scanId"))
+	server.writeTrustResult(writer, request, http.StatusOK, envelope, err)
+}
+
+func (server *server) updateToolLabels(writer http.ResponseWriter, request *http.Request) {
+	if !server.trustAvailable(writer, request) {
+		return
+	}
+	var update model.TrustLabelUpdate
+	if !server.decodeMutation(writer, request, &update) {
+		return
+	}
+	envelope, err := server.config.Trust.UpdateToolLabels(request.Context(), request.PathValue("agentId"), request.PathValue("tool"), update)
+	server.writeTrustResult(writer, request, http.StatusOK, envelope, err)
+}
+
+func (server *server) detectSkills(writer http.ResponseWriter, request *http.Request) {
+	server.startDetection(writer, request, "skill")
+}
+
+func (server *server) detectMCPs(writer http.ResponseWriter, request *http.Request) {
+	server.startDetection(writer, request, "mcp")
+}
+
+func (server *server) startDetection(writer http.ResponseWriter, request *http.Request, resourceType string) {
+	if !server.trustAvailable(writer, request) {
+		return
+	}
+	var input model.TrustDetectionRequest
+	if !server.decodeMutation(writer, request, &input) {
+		return
+	}
+	envelope, err := server.config.Trust.StartScan(request.Context(), request.PathValue("agentId"), resourceType, input)
+	server.writeTrustResult(writer, request, http.StatusAccepted, envelope, err)
+}
+
 type listQuery struct {
 	search string
 	cursor string
@@ -242,6 +339,14 @@ func (server *server) connectAvailable(writer http.ResponseWriter, request *http
 	return false
 }
 
+func (server *server) trustAvailable(writer http.ResponseWriter, request *http.Request) bool {
+	if server.config.Trust != nil {
+		return true
+	}
+	server.writeError(writer, request, http.StatusServiceUnavailable, "TRUST_UNAVAILABLE", "AgentGuard trust integration is unavailable", source(model.SourceAgentGuard), true)
+	return false
+}
+
 func (server *server) writeConnectResult(writer http.ResponseWriter, request *http.Request, envelope any, err error) {
 	if err == nil {
 		server.writeJSON(writer, http.StatusOK, envelope)
@@ -266,6 +371,63 @@ func (server *server) writeConnectResult(writer http.ResponseWriter, request *ht
 		return
 	}
 	server.writeError(writer, request, http.StatusInternalServerError, "INTERNAL_ERROR", "the request could not be completed", source(model.SourceAgentGateway), true)
+}
+
+func (server *server) writeTrustResult(writer http.ResponseWriter, request *http.Request, status int, envelope any, err error) {
+	if err == nil {
+		server.writeJSON(writer, status, envelope)
+		return
+	}
+	if errors.Is(err, trust.ErrInvalidCursor) {
+		server.writeError(writer, request, http.StatusBadRequest, "INVALID_CURSOR", "pagination cursor is invalid", source(model.SourceAgentGuard), false)
+		return
+	}
+	if errors.Is(err, trust.ErrInvalidRequest) {
+		server.writeError(writer, request, http.StatusBadRequest, "INVALID_REQUEST", "the trust request is invalid", source(model.SourceAgentGuard), false)
+		return
+	}
+	if errors.Is(err, trust.ErrNotFound) {
+		server.writeError(writer, request, http.StatusNotFound, "NOT_FOUND", "AgentGuard identity or resource was not found", source(model.SourceAgentGuard), false)
+		return
+	}
+	if errors.Is(err, trust.ErrScanCapacity) {
+		server.writeError(writer, request, http.StatusServiceUnavailable, "SCAN_CAPACITY_REACHED", "scan capacity is temporarily exhausted", source(model.SourceAgentGuard), true)
+		return
+	}
+	var contractError *guard.ContractError
+	if errors.As(err, &contractError) {
+		server.writeError(writer, request, http.StatusBadGateway, "UPSTREAM_CONTRACT_MISMATCH", contractError.Error(), source(model.SourceAgentGuard), false)
+		return
+	}
+	var upstreamError *upstream.Error
+	if errors.As(err, &upstreamError) {
+		if upstreamError.Status == http.StatusNotFound {
+			server.writeError(writer, request, http.StatusNotFound, "NOT_FOUND", "AgentGuard identity or resource was not found", source(model.SourceAgentGuard), false)
+			return
+		}
+		if upstreamError.Status == http.StatusBadRequest || upstreamError.Status == http.StatusUnprocessableEntity {
+			server.writeError(writer, request, http.StatusUnprocessableEntity, "UPSTREAM_VALIDATION_FAILED", "AgentGuard rejected the request", source(model.SourceAgentGuard), false)
+			return
+		}
+		server.writeError(writer, request, http.StatusServiceUnavailable, "UPSTREAM_UNAVAILABLE", "AgentGuard management API is unavailable", source(model.SourceAgentGuard), upstreamError.Retryable)
+		return
+	}
+	server.writeError(writer, request, http.StatusInternalServerError, "INTERNAL_ERROR", "the request could not be completed", source(model.SourceAgentGuard), true)
+}
+
+func (server *server) decodeMutation(writer http.ResponseWriter, request *http.Request, destination any) bool {
+	request.Body = http.MaxBytesReader(writer, request.Body, maxMutationBodyBytes)
+	decoder := json.NewDecoder(request.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(destination); err != nil {
+		server.writeError(writer, request, http.StatusBadRequest, "INVALID_REQUEST", "a valid JSON request is required", nil, false)
+		return false
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		server.writeError(writer, request, http.StatusBadRequest, "INVALID_REQUEST", "a single JSON request is required", nil, false)
+		return false
+	}
+	return true
 }
 
 func source(value model.Source) *model.Source { return &value }
@@ -311,14 +473,30 @@ func (server *server) eventStream(writer http.ResponseWriter, request *http.Requ
 }
 
 func (server *server) notImplemented(writer http.ResponseWriter, request *http.Request) {
-	if server.config.AuthEnabled && isWrite(request.Method) {
-		session, ok := server.session(request)
-		if !ok || request.Header.Get("X-CSRF-Token") == "" || !server.config.Sessions.ValidCSRF(session, request.Header.Get("X-CSRF-Token")) {
-			server.writeError(writer, request, http.StatusForbidden, "CSRF_REQUIRED", "a valid CSRF token is required", nil, false)
-			return
-		}
+	if server.config.AuthEnabled && isWrite(request.Method) && !server.validCSRF(request) {
+		server.writeError(writer, request, http.StatusForbidden, "CSRF_REQUIRED", "a valid CSRF token is required", nil, false)
+		return
 	}
 	server.writeError(writer, request, http.StatusNotImplemented, "PHASE_NOT_IMPLEMENTED", "this operation is reserved for a later integration phase", nil, false)
+}
+
+func (server *server) requireCSRF(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if !server.config.AuthEnabled || server.validCSRF(request) {
+			next.ServeHTTP(writer, request)
+			return
+		}
+		server.writeError(writer, request, http.StatusForbidden, "CSRF_REQUIRED", "a valid CSRF token is required", nil, false)
+	})
+}
+
+func (server *server) validCSRF(request *http.Request) bool {
+	if server.config.Sessions == nil {
+		return false
+	}
+	session, ok := server.session(request)
+	token := request.Header.Get("X-CSRF-Token")
+	return ok && token != "" && server.config.Sessions.ValidCSRF(session, token)
 }
 
 func (server *server) requireAuth(next http.Handler) http.Handler {

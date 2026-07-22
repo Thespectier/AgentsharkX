@@ -12,11 +12,13 @@ import (
 	"time"
 
 	"github.com/Thespectier/AgentsharkX/apps/server/internal/aggregate"
+	"github.com/Thespectier/AgentsharkX/apps/server/internal/auth"
 	"github.com/Thespectier/AgentsharkX/apps/server/internal/connect"
 	"github.com/Thespectier/AgentsharkX/apps/server/internal/gateway"
 	"github.com/Thespectier/AgentsharkX/apps/server/internal/guard"
 	"github.com/Thespectier/AgentsharkX/apps/server/internal/model"
 	"github.com/Thespectier/AgentsharkX/apps/server/internal/stream"
+	"github.com/Thespectier/AgentsharkX/apps/server/internal/trust"
 )
 
 func TestFakeUpstreamsRemainIndependentThroughBFF(t *testing.T) {
@@ -183,4 +185,157 @@ func TestConnectResourcesFlowThroughBFFWithFilteringAndDetails(t *testing.T) {
 	if invalid.StatusCode != http.StatusBadRequest {
 		t.Fatalf("invalid cursor status = %d", invalid.StatusCode)
 	}
+}
+
+func TestTrustResourcesLabelsAndScanFlowThroughAuthenticatedBFF(t *testing.T) {
+	t.Parallel()
+
+	const guardSecret = "guard-secret-with-enough-entropy"
+	guardServer := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.Header.Get("X-Api-Key") != guardSecret {
+			t.Errorf("guard API key missing")
+		}
+		writer.Header().Set("Content-Type", "application/json")
+		switch request.URL.Path {
+		case "/v1/backend/sessions":
+			_, _ = writer.Write([]byte(`{"sessions":[{"session_id":"s-1","agent_id":"agent-a","user_id":"user-a","last_seen":1784688000}]}`))
+		case "/v1/backend/tools":
+			_, _ = writer.Write([]byte(`[{"owner_agent_id":"agent-a","name":"mail.send","labels":{"boundary":"internal","sensitivity":"low","integrity":"trusted","tags":[]}}]`))
+		case "/v1/backend/skills":
+			_, _ = writer.Write([]byte(`[{"owner_agent_id":"agent-a","agent_id":"agent-a","skill_unique_id":"skill-1","name":"research","source_framework":"langchain","detect_result":null}]`))
+		case "/v1/backend/mcps":
+			_, _ = writer.Write([]byte(`[]`))
+		case "/v1/backend/agents/agent-a/tools/mail.send/labels":
+			if request.Method != http.MethodPatch {
+				t.Errorf("label method = %s", request.Method)
+			}
+			_, _ = writer.Write([]byte(`{"ok":true,"tool":{"owner_agent_id":"agent-a","name":"mail.send","labels":{"boundary":"server-confirmed","sensitivity":"low","integrity":"trusted","tags":[]}}}`))
+		case "/v1/backend/agents/agent-a/skills/detect":
+			_, _ = writer.Write([]byte(`{"ok":true,"agent_id":"agent-a","requested":1,"detected":1,"missing_skill_unique_ids":[],"results":[{"skill_unique_id":"skill-1","name":"research","detect_result":{"object_id":"skill-1","name":"research","label":"benign","risk_level":"low","capabilities":[],"risk_labels":[],"policy_targets":[],"suggested_plugins":[]}}]}`))
+		default:
+			http.NotFound(writer, request)
+		}
+	}))
+	defer guardServer.Close()
+	guardClient, err := guard.NewWithOperationClient(guardServer.URL, guardSecret, "v2.1", guardServer.Client(), guardServer.Client(), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const adminToken = "admin-token-with-enough-entropy"
+	handler := New(ServerConfig{
+		Sessions: auth.New(adminToken, auth.Options{TTL: time.Hour}), Trust: trust.New(t.Context(), guardClient, time.Second),
+		Logger: slog.New(slog.DiscardHandler), AuthEnabled: true,
+	})
+	server := httptest.NewServer(handler)
+	defer server.Close()
+
+	login, err := server.Client().Post(server.URL+"/api/v1/auth/session", "application/json", strings.NewReader(`{"token":"`+adminToken+`"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cookie := login.Cookies()[0]
+	csrf := login.Header.Get("X-CSRF-Token")
+	_ = login.Body.Close()
+
+	agentsRequest, _ := http.NewRequest(http.MethodGet, server.URL+"/api/v1/trust/agents", nil)
+	agentsRequest.AddCookie(cookie)
+	agentsResponse, err := server.Client().Do(agentsRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var agents model.ResourcePageEnvelope[model.TrustAgent]
+	if err := json.NewDecoder(agentsResponse.Body).Decode(&agents); err != nil {
+		t.Fatal(err)
+	}
+	_ = agentsResponse.Body.Close()
+	if agents.Data.Total != 1 || agents.Data.Items[0].UpstreamID != "agent-a" {
+		t.Fatalf("unexpected agents: %#v", agents)
+	}
+	agentID := agents.Data.Items[0].ID
+
+	resourcesRequest, _ := http.NewRequest(http.MethodGet, server.URL+"/api/v1/trust/resources", nil)
+	resourcesRequest.AddCookie(cookie)
+	resourcesResponse, err := server.Client().Do(resourcesRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var resources model.ResourcePageEnvelope[model.TrustResource]
+	if err := json.NewDecoder(resourcesResponse.Body).Decode(&resources); err != nil {
+		t.Fatal(err)
+	}
+	_ = resourcesResponse.Body.Close()
+	if resources.Data.Total != 2 {
+		t.Fatalf("unexpected resources: %#v", resources)
+	}
+	toolID := resources.Data.Items[0].ID
+	skillID := resources.Data.Items[1].ID
+
+	labelURL := server.URL + "/api/v1/trust/agents/" + agentID + "/tools/" + toolID + "/labels"
+	withoutCSRF, _ := http.NewRequest(http.MethodPatch, labelURL, strings.NewReader(`{"boundary":"external"}`))
+	withoutCSRF.AddCookie(cookie)
+	withoutCSRFResponse, err := server.Client().Do(withoutCSRF)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = withoutCSRFResponse.Body.Close()
+	if withoutCSRFResponse.StatusCode != http.StatusForbidden {
+		t.Fatalf("label update without CSRF status = %d", withoutCSRFResponse.StatusCode)
+	}
+
+	withCSRF, _ := http.NewRequest(http.MethodPatch, labelURL, strings.NewReader(`{"boundary":"external"}`))
+	withCSRF.AddCookie(cookie)
+	withCSRF.Header.Set("Content-Type", "application/json")
+	withCSRF.Header.Set("X-CSRF-Token", csrf)
+	labelResponse, err := server.Client().Do(withCSRF)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var updated model.ResourceEnvelope[model.TrustResource]
+	if err := json.NewDecoder(labelResponse.Body).Decode(&updated); err != nil {
+		t.Fatal(err)
+	}
+	_ = labelResponse.Body.Close()
+	if labelResponse.StatusCode != http.StatusOK || updated.Data.Labels == nil || updated.Data.Labels.Boundary != "server-confirmed" {
+		t.Fatalf("unexpected label response: status=%d data=%#v", labelResponse.StatusCode, updated.Data)
+	}
+
+	scanRequest, _ := http.NewRequest(http.MethodPost, server.URL+"/api/v1/trust/agents/"+agentID+"/skills/detect", strings.NewReader(`{"resourceIds":["`+skillID+`"]}`))
+	scanRequest.AddCookie(cookie)
+	scanRequest.Header.Set("Content-Type", "application/json")
+	scanRequest.Header.Set("X-CSRF-Token", csrf)
+	scanResponse, err := server.Client().Do(scanRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var scan model.ResourceEnvelope[model.TrustScanJob]
+	if err := json.NewDecoder(scanResponse.Body).Decode(&scan); err != nil {
+		t.Fatal(err)
+	}
+	_ = scanResponse.Body.Close()
+	if scanResponse.StatusCode != http.StatusAccepted {
+		t.Fatalf("scan status = %d", scanResponse.StatusCode)
+	}
+
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		pollRequest, _ := http.NewRequest(http.MethodGet, server.URL+"/api/v1/trust/scans/"+scan.Data.ID, nil)
+		pollRequest.AddCookie(cookie)
+		pollResponse, pollErr := server.Client().Do(pollRequest)
+		if pollErr != nil {
+			t.Fatal(pollErr)
+		}
+		var current model.ResourceEnvelope[model.TrustScanJob]
+		if err := json.NewDecoder(pollResponse.Body).Decode(&current); err != nil {
+			t.Fatal(err)
+		}
+		_ = pollResponse.Body.Close()
+		if current.Data.Status == "succeeded" {
+			if len(current.Data.Results) != 1 || current.Data.Results[0].Label != "benign" {
+				t.Fatalf("unexpected scan result: %#v", current.Data)
+			}
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatal("scan did not complete")
 }

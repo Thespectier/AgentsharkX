@@ -82,7 +82,7 @@ type Setup struct {
 	Steps    []SetupStep `json:"steps"`
 }
 
-// OverviewData remains health-only through Phase 3. Later phases populate its
+// OverviewData remains health-only through Phase 4. Later phases populate its
 // business collections only from verified upstream contracts.
 type OverviewData struct {
 	Environment string         `json:"environment"`
@@ -230,6 +230,119 @@ type ConnectSetup struct {
 	CheckedAt             time.Time    `json:"checkedAt"`
 	Message               string       `json:"message,omitempty"`
 	Links                 ConsoleLinks `json:"links"`
+}
+
+type TrustResourceBase struct {
+	ID         string    `json:"id"`
+	UpstreamID string    `json:"upstreamId"`
+	Source     Source    `json:"source"`
+	FetchedAt  time.Time `json:"fetchedAt"`
+	RawRef     RawRef    `json:"rawRef"`
+}
+
+type TrustLabels struct {
+	Boundary    string   `json:"boundary"`
+	Sensitivity string   `json:"sensitivity"`
+	Integrity   string   `json:"integrity"`
+	Tags        []string `json:"tags"`
+}
+
+type TrustDetection struct {
+	ResourceUpstreamID string   `json:"resourceUpstreamId,omitempty"`
+	Name               string   `json:"name,omitempty"`
+	Label              string   `json:"label,omitempty"`
+	RiskLevel          string   `json:"riskLevel"`
+	Capabilities       []string `json:"capabilities"`
+	RiskLabels         []string `json:"riskLabels"`
+	PolicyTargets      []string `json:"policyTargets"`
+	SuggestedPlugins   []string `json:"suggestedPlugins"`
+}
+
+type TrustResource struct {
+	TrustResourceBase
+	Name                 string          `json:"name"`
+	Type                 string          `json:"type"`
+	OwnerAgentID         string          `json:"ownerAgentId"`
+	OwnerAgentUpstreamID string          `json:"ownerAgentUpstreamId"`
+	SessionID            string          `json:"sessionId,omitempty"`
+	Description          string          `json:"description,omitempty"`
+	Framework            string          `json:"framework,omitempty"`
+	Transport            string          `json:"transport,omitempty"`
+	Remote               *bool           `json:"remote,omitempty"`
+	ToolCount            *int            `json:"toolCount,omitempty"`
+	Labels               *TrustLabels    `json:"labels,omitempty"`
+	Detection            *TrustDetection `json:"detection,omitempty"`
+}
+
+type TrustSession struct {
+	TrustResourceBase
+	AgentID         string     `json:"agentId"`
+	AgentUpstreamID string     `json:"agentUpstreamId"`
+	UserID          string     `json:"userId,omitempty"`
+	LastSeen        *time.Time `json:"lastSeen"`
+	Status          string     `json:"status"`
+}
+
+type TrustAgent struct {
+	TrustResourceBase
+	Name       string     `json:"name"`
+	Framework  *string    `json:"framework"`
+	Principal  *string    `json:"principal"`
+	TrustLevel *string    `json:"trustLevel"`
+	Status     string     `json:"status"`
+	Sessions   int        `json:"sessions"`
+	Tools      int        `json:"tools"`
+	Skills     int        `json:"skills"`
+	MCPs       int        `json:"mcps"`
+	LastActive *time.Time `json:"lastActive"`
+}
+
+type TrustAgentWorkspace struct {
+	Agent     TrustAgent      `json:"agent"`
+	Sessions  []TrustSession  `json:"sessions"`
+	Resources []TrustResource `json:"resources"`
+}
+
+type TrustSnapshot struct {
+	Sessions  []TrustSession
+	Resources []TrustResource
+	FetchedAt time.Time
+	Failures  []SourceFailure
+}
+
+type TrustLabelUpdate struct {
+	Boundary    *string   `json:"boundary,omitempty"`
+	Sensitivity *string   `json:"sensitivity,omitempty"`
+	Integrity   *string   `json:"integrity,omitempty"`
+	Tags        *[]string `json:"tags,omitempty"`
+}
+
+type TrustDetectionRequest struct {
+	ResourceIDs []string `json:"resourceIds"`
+	UseLLM      bool     `json:"useLlm"`
+}
+
+type TrustScanError struct {
+	Code      string `json:"code"`
+	Message   string `json:"message"`
+	Retryable bool   `json:"retryable"`
+}
+
+type TrustScanJob struct {
+	ID              string           `json:"id"`
+	Source          Source           `json:"source"`
+	AgentID         string           `json:"agentId"`
+	AgentUpstreamID string           `json:"agentUpstreamId"`
+	ResourceType    string           `json:"resourceType"`
+	ResourceIDs     []string         `json:"resourceIds"`
+	Status          string           `json:"status"`
+	CreatedAt       time.Time        `json:"createdAt"`
+	StartedAt       *time.Time       `json:"startedAt"`
+	CompletedAt     *time.Time       `json:"completedAt"`
+	UpdatedAt       time.Time        `json:"updatedAt"`
+	Results         []TrustDetection `json:"results"`
+	Warnings        []string         `json:"warnings"`
+	Error           *TrustScanError  `json:"error,omitempty"`
 }
 
 type UnifiedEvent struct {

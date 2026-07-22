@@ -21,6 +21,7 @@ func TestLoadValidConfigurationAndRedactsSecrets(t *testing.T) {
 		"AGENTGUARD_ADMIN_TOKEN":        "guard-secret-with-enough-entropy",
 		"AGENTGUARD_CONSOLE_URL":        "http://localhost:38008",
 		"AGENTSHARK_UPSTREAM_TIMEOUT":   "750ms",
+		"AGENTSHARK_SCAN_TIMEOUT":       "45s",
 		"AGENTSHARK_UPSTREAM_RETRY_MAX": "2",
 		"AGENTSHARK_POLL_INTERVAL":      "3s",
 		"AGENTSHARK_REDACT_PAYLOADS":    "true",
@@ -33,8 +34,8 @@ func TestLoadValidConfigurationAndRedactsSecrets(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
-	if cfg.UpstreamTimeout != 750*time.Millisecond || cfg.UpstreamRetryMax != 2 {
-		t.Fatalf("unexpected upstream policy: timeout=%s retry=%d", cfg.UpstreamTimeout, cfg.UpstreamRetryMax)
+	if cfg.UpstreamTimeout != 750*time.Millisecond || cfg.ScanTimeout != 45*time.Second || cfg.UpstreamRetryMax != 2 {
+		t.Fatalf("unexpected upstream policy: timeout=%s scan=%s retry=%d", cfg.UpstreamTimeout, cfg.ScanTimeout, cfg.UpstreamRetryMax)
 	}
 	if got := cfg.AdminToken.Value(); got != values["AGENTSHARK_ADMIN_TOKEN"] {
 		t.Fatalf("admin token did not round trip")

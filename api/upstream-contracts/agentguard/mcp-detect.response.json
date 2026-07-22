@@ -1,0 +1,29 @@
+{
+  "request": {
+    "mcp_unique_ids": ["mcp-1"]
+  },
+  "response": {
+    "ok": true,
+    "agent_id": "agent-a",
+    "requested": 1,
+    "detected": 1,
+    "missing_mcp_unique_ids": [],
+    "results": [
+      {
+        "mcp_unique_id": "mcp-1",
+        "name": "inventory",
+        "detect_result": {
+          "object_id": "mcp-1",
+          "object_type": "mcp",
+          "name": "inventory",
+          "capabilities": ["tools"],
+          "risk_labels": [],
+          "policy_targets": [],
+          "suggested_plugins": [],
+          "risk_level": "low",
+          "label": "benign"
+        }
+      }
+    ]
+  }
+}
