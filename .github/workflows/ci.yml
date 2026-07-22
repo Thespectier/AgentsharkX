@@ -65,11 +65,13 @@ jobs:
         working-directory: apps/web
         run: PLAYWRIGHT_BROWSERS_PATH=.cache/ms-playwright npm exec playwright -- install --with-deps chromium
       - name: Mock browser acceptance and visual baselines
-        run: AGENTSHARK_PLAYWRIGHT_PORT=4174 npm --prefix apps/web run test:e2e
+        working-directory: apps/web
+        run: AGENTSHARK_PLAYWRIGHT_PORT=4174 npm run test:e2e
       - name: Real BFF release path
         run: make release-e2e
       - name: Lighthouse accessibility
-        run: npm --prefix apps/web run lighthouse
+        working-directory: apps/web
+        run: npm run lighthouse
 
   container:
     runs-on: ubuntu-latest

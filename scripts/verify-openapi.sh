@@ -2,6 +2,14 @@
 set -euo pipefail
 
 spec=api/openapi.yaml
+search() {
+  if command -v rg >/dev/null 2>&1; then
+    rg "$@"
+  else
+    grep "$@"
+  fi
+}
+
 required_paths=(
   /healthz
   /api/v1/auth/session
@@ -36,11 +44,11 @@ required_paths=(
   /api/v1/audit/sessions
 )
 
-rg -q '^openapi: 3\.1\.0$' "$spec"
-rg -q '^  version: 0\.7\.0-preview$' "$spec"
-rg -q '^paths:$' "$spec"
+search -q '^openapi: 3\.1\.0$' "$spec"
+search -q '^  version: 0\.7\.0-preview$' "$spec"
+search -q '^paths:$' "$spec"
 for path in "${required_paths[@]}"; do
-  if ! rg -Fq "  $path:" "$spec"; then
+  if ! search -Fq "  $path:" "$spec"; then
     echo "OpenAPI path missing: $path" >&2
     exit 1
   fi

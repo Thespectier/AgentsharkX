@@ -43,14 +43,18 @@ for file in "${required_files[@]}"; do
   fi
 done
 
-if rg -n --glob '!Agentshark_New_Repository_Codex_Execution_Plan.md' \
-  --glob '!scripts/verify-repository.sh' \
-  '(^|[/:@-])latest([^[:alnum:]_]|$)' deploy; then
+if command -v rg >/dev/null 2>&1; then
+  latest_matches="$(rg -n '(^|[/:@-])latest([^[:alnum:]_]|$)' deploy || true)"
+else
+  latest_matches="$(grep -RInE '(^|[/:@-])latest([^[:alnum:]_]|$)' deploy || true)"
+fi
+if [[ -n "$latest_matches" ]]; then
+  printf '%s\n' "$latest_matches"
   echo "unpinned latest reference found under deploy/" >&2
   exit 1
 fi
 
-if git submodule status 2>/dev/null | rg -q '.'; then
+if [[ -n "$(git submodule status 2>/dev/null)" ]]; then
   echo "git submodules are not allowed" >&2
   exit 1
 fi
