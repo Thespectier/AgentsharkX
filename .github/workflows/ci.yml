@@ -65,8 +65,17 @@ jobs:
         working-directory: apps/web
         run: PLAYWRIGHT_BROWSERS_PATH=.cache/ms-playwright npm exec playwright -- install --with-deps chromium
       - name: Mock browser acceptance and visual baselines
-        working-directory: apps/web
-        run: AGENTSHARK_PLAYWRIGHT_PORT=4174 npm run test:e2e
+        run: |
+          docker run --rm --network host \
+            --user "$(id -u):$(id -g)" \
+            -e HOME=/tmp \
+            -e CI=1 \
+            -e PLAYWRIGHT_BROWSERS_PATH=/ms-playwright \
+            -e AGENTSHARK_PLAYWRIGHT_PORT=4174 \
+            -v "$GITHUB_WORKSPACE:/work" \
+            -w /work/apps/web \
+            mcr.microsoft.com/playwright:v1.61.1-noble \
+            npm exec playwright -- test --config playwright.config.ts
       - name: Real BFF release path
         run: make release-e2e
       - name: Lighthouse accessibility
