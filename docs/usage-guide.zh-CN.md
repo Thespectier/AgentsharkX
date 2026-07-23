@@ -33,7 +33,9 @@ AgentsharkX 是管理平面，不在 Agent 数据平面中，因此：
 运行预览环境需要：
 
 - GNU Make；
-- Docker 和 Docker Compose v2；
+- Linux x86_64/arm64 或 macOS arm64（运行固定的原生网关二进制）；
+- Docker 和 Docker Compose v2（运行 AgentsharkX 与 AgentGuard）；
+- `curl`、`jq` 和 `sha256sum` 或 `shasum`（下载并验证 agentgateway）；
 - OpenSSL；
 - Python 3.11+ 和 Git，用于运行首条真实事件示例。
 
@@ -51,10 +53,11 @@ make preview-bootstrap
 该命令会：
 
 - 创建被 Git 忽略的根目录 `.env`；
+- 创建被 Git 忽略、权限为 `0600` 的 `.agentgateway.env`；
 - 生成随机的 AgentsharkX 管理员令牌和 AgentGuard API Key；
 - 将 `.env` 权限设置为 `0600`；
 - 默认把所有发布端口绑定到 `127.0.0.1`；
-- 在 `.env` 已存在时拒绝覆盖，也不会把生成的凭据输出到终端。
+- 在 `.env` 已存在时保留原文件，也不会把生成的凭据输出到终端。
 
 不要直接使用未修改的 `deploy/example.env` 启动服务。模板中的占位令牌会被 BFF
 启动校验拒绝。
@@ -65,21 +68,40 @@ make preview-bootstrap
 make preview-up
 ```
 
-首次启动需要拉取 agentgateway 镜像，并构建 AgentGuard 和 AgentsharkX，耗时可能
-长于后续启动。
+默认启动方式不是 agentgateway 容器，而是：
 
-查看容器状态：
+```text
+宿主机：官方 agentgateway v1.3.1 二进制
+Docker Compose：AgentsharkX + AgentGuard server + AgentGuard console
+```
+
+首次启动会从官方 GitHub Release 下载当前平台的固定版本二进制到被 Git 忽略的
+`.cache/agentgateway-standalone/`，校验固定 SHA-256、版本号和 Git revision 后才会
+运行，不会安装到 `/usr/local/bin`。同时会构建 AgentGuard 和 AgentsharkX，首次耗时
+可能长于后续启动。Linux 上优先使用用户级 systemd 临时服务托管进程；没有可用用户
+manager 时自动回退到 `nohup`。
+
+查看整体状态：
 
 ```bash
 make preview-status
 ```
 
-正常情况下，应看到以下服务处于运行或健康状态：
+正常情况下，首先会看到 `agentgateway standalone: running`，随后应看到以下容器处于
+运行或健康状态：
 
 - `agentshark`；
-- `agentgateway`；
 - `agentguard`；
 - `agentguard-console`。
+
+这种模式下，Raw Configuration 新增的 LLM、MCP 等业务监听器会直接监听宿主机端口，
+无需再为每个端口修改 Compose `ports`。默认管理端口仍只绑定 `127.0.0.1`。
+
+启动脚本还会自动判断 Docker 运行方式：
+
+- Docker Desktop 使用 `host.docker.internal` 让 AgentsharkX 容器访问宿主机网关；
+- 原生 Linux Docker 使用 host networking；
+- 两种方式都不会把无原生认证的网关管理端口改成 `0.0.0.0`。
 
 ### 2.4 登录控制台
 
@@ -186,12 +208,33 @@ Connect 汇总 agentgateway 中显式配置的：
 agentgateway 管理控制台默认地址为 <http://127.0.0.1:15000/ui>。
 
 页面右上角的 **Configure agentgateway** 会直接打开固定版本原生 Raw Configuration
-编辑器。预览环境将明确的 `deploy/agentgateway/config.yaml` 以可写方式挂载，并把
-agentgateway 容器的非 root UID/GID 对齐到该文件的所有者，因此可以通过原生编辑器
-校验并保存；管理端口仍只绑定回环地址。Docker 的 `read-write` 挂载不会绕过 Unix
-权限：镜像默认 UID `65532` 无法写入检出用户持有的 `0644` 文件。请始终使用
-`make preview-up` 启动或重建服务。保存后返回 AgentsharkX，页面会在重新获得焦点时
+编辑器。默认 standalone 进程以当前检出用户身份直接读取和写入
+`deploy/agentgateway/config.yaml`，不再经过 Docker bind mount 或容器 UID/GID
+转换，因此可以通过原生编辑器校验并保存；管理端口仍只绑定回环地址。请始终使用
+`make preview-up` 启动完整环境。保存后返回 AgentsharkX，页面会在重新获得焦点时
 刷新，也会按固定间隔同步。
+
+Provider 密钥建议保存在根目录 `.agentgateway.env`，不要直接写进被 Git 跟踪的 YAML：
+
+```bash
+# .agentgateway.env；这是 shell 赋值语法，建议给值加单引号
+DEEPSEEK_API_KEY='替换为本机密钥'
+```
+
+然后在 `deploy/agentgateway/config.yaml` 中引用环境变量：
+
+```yaml
+params:
+  apiKey: "$DEEPSEEK_API_KEY"
+```
+
+agentgateway 官方支持在配置加载时替换环境变量。修改 `.agentgateway.env` 后需要
+重启进程，因为已运行的进程不会自动获得新的环境：
+
+```bash
+make gateway-standalone-down
+make preview-up
+```
 
 可以执行下面的原生保存回归检查：
 
@@ -304,7 +347,9 @@ Agent → agentgateway 业务监听器 → 路由/策略 → 模型或 MCP Provi
 ```
 
 默认的 `15000` 是管理端口，不是预配置的模型业务端点。不要把管理 API 直接暴露到
-公网；固定版本的 agentgateway 管理 API 没有经过验证的原生认证中间件。
+公网；固定版本的 agentgateway 管理 API 没有经过验证的原生认证中间件。standalone
+模式下，假设 Raw Configuration 把 LLM 监听器设为 `4000`，客户端即可直接访问
+`http://127.0.0.1:4000/v1/...`；不需要新增 Docker 端口映射。
 
 ### 5.2 将 AgentGuard 接入运行时
 
@@ -368,8 +413,8 @@ docker compose --env-file deploy/versions.env --env-file .env \
 查看 agentgateway：
 
 ```bash
-docker compose --env-file deploy/versions.env --env-file .env \
-  -f deploy/compose.yaml logs -f agentgateway
+make gateway-standalone-status
+make gateway-standalone-logs
 ```
 
 查看 AgentGuard：
@@ -381,11 +426,17 @@ docker compose --env-file deploy/versions.env --env-file .env \
 
 ### 6.3 重启或停止
 
+只重启 agentgateway：
+
+```bash
+make gateway-standalone-down
+make gateway-standalone-up
+```
+
 只重启 AgentsharkX：
 
 ```bash
-docker compose --env-file deploy/versions.env --env-file .env \
-  -f deploy/compose.yaml restart agentshark
+./scripts/standalone-compose.sh restart agentshark
 ```
 
 停止整个预览环境：
@@ -396,6 +447,30 @@ make preview-down
 
 停止后，`.env` 和 `.venv-quickstart` 仍保留在本地。事件窗口、检测任务和规则检查
 令牌是内存状态，会随 BFF 停止而消失。
+
+### 6.4 standalone 与容器模式切换
+
+默认 `.env` 中的 `AGENTGATEWAY_RUNTIME_MODE=standalone` 适合受支持的 Linux 或
+macOS 平台。本机原生模式的优点是业务监听器端口直接可用，Raw Configuration 直接
+写入检出文件，日志和进程也可单独管理。
+
+Docker Desktop 与原生 Linux Docker 默认自动识别。仅在自动识别不正确时，才在
+`.env` 中设置 `AGENTGATEWAY_DOCKER_HOST_MODE=desktop` 或 `host-network`。如果使用
+Windows、无固定二进制的平台，或者两种连接方式都不可用，可临时运行完整容器模式：
+
+```bash
+make preview-container-up
+```
+
+也可以在本地 `.env` 中持久设置：
+
+```dotenv
+AGENTGATEWAY_RUNTIME_MODE=container
+```
+
+容器模式仍使用固定镜像 digest，但新增加的 LLM/MCP 业务端口不会自动发布到宿主机，
+必须在 `deploy/compose.yaml` 中显式添加端口映射。切换模式时启动脚本会停止另一种
+模式的 agentgateway，避免管理端口冲突。
 
 ## 7. 本地开发
 
@@ -490,10 +565,14 @@ git diff --check
 
 ### 9.3 agentgateway 不健康
 
-1. 确认容器内的 `AGENTGATEWAY_BASE_URL` 指向管理监听器，而不是业务监听器；
+1. 运行 `make gateway-standalone-status` 确认进程状态和版本；
 2. 检查 <http://127.0.0.1:15021/healthz/ready> 是否返回 `ready`；
-3. 查看 `agentgateway` 容器日志；
+3. 运行 `make gateway-standalone-logs` 查看原生日志；
 4. 加载 `.env` 后运行 `make upstream-smoke`。
+
+首次下载失败可以运行 `make gateway-standalone-install` 重试。SHA-256、版本或 revision
+不匹配会直接拒绝安装，不应跳过校验。如果日志报告端口已占用，先找出占用该管理端口
+或业务监听器端口的进程，再停止冲突进程或调整端口。
 
 ### 9.4 AgentGuard 不健康
 
@@ -523,11 +602,13 @@ AgentGuard server 容器，不要写进 JSON、提交到 Git 或输入 Agentshar
 
 如果原生编辑器保存时报 `Permission denied`：
 
-1. 使用 `make preview-up` 重建 agentgateway，使 Compose wrapper 重新读取配置文件
-   所有者 UID/GID；
+1. 确认当前用户对 `deploy/agentgateway/config.yaml` 同时具有读写权限；
 2. 不要把配置文件修改为全局可写；
 3. 加载 `.env` 后运行 `make gateway-config-write-smoke`；
-4. 检查 `make preview-status` 和 agentgateway 日志。
+4. 执行 `make gateway-standalone-down && make preview-up` 后再检查日志。
+
+只有在容器回退模式中才涉及 bind mount UID/GID 对齐；默认 standalone 模式没有该
+层转换。
 
 ### 9.6 Audit 没有网关流量
 
@@ -553,9 +634,10 @@ BFF 会拒绝：
 
 ## 10. 安全和数据边界
 
-- `.env` 不得提交到 Git；
+- `.env` 和 `.agentgateway.env` 不得提交到 Git；
 - AgentsharkX 管理令牌与 AgentGuard API Key 不能混用；
-- Provider API Key 只保存在 agentgateway 或对应服务端 Secret Store；
+- Provider API Key 只保存在 `.agentgateway.env`、agentgateway 支持的文件/Secret
+  Store 或其他服务端密钥存储中；
 - 生产环境必须使用 HTTPS 和 Secure Cookie；
 - agentgateway 管理端口和 AgentGuard 管理 API 应位于私有管理网络；
 - AgentsharkX 不请求或展示原始网关 Payload、工具参数、运行时结果和上游密钥；

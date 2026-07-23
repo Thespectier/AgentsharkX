@@ -1,0 +1,8 @@
+services:
+  agentshark:
+    # Docker Desktop forwards this stable host name to services bound on the
+    # desktop host, including the loopback-only native gateway listener.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      AGENTGATEWAY_BASE_URL: http://host.docker.internal:${AGENTGATEWAY_ADMIN_PORT}

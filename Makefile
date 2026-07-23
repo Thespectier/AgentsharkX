@@ -4,9 +4,9 @@ GO_VERSION := 1.26.5
 GO_IMAGE := golang:$(GO_VERSION)-alpine
 GO_RACE_IMAGE := golang:$(GO_VERSION)
 COMPOSE := docker compose --env-file deploy/versions.env --env-file deploy/example.env -f deploy/compose.yaml
-PREVIEW_COMPOSE := ./scripts/preview-compose.sh
+PREVIEW := ./scripts/preview.sh
 
-.PHONY: verify format-check test race-test web-check secret-boundary secret-scan repository-check openapi-validate compose-validate upstream-smoke gateway-config-write-smoke preview-bootstrap preview-up preview-down preview-status container-build release-e2e sbom security-scan release-gate
+.PHONY: verify format-check test race-test web-check secret-boundary secret-scan repository-check openapi-validate compose-validate upstream-smoke gateway-config-write-smoke gateway-standalone-install gateway-standalone-up gateway-standalone-down gateway-standalone-status gateway-standalone-logs preview-bootstrap preview-up preview-container-up preview-down preview-status container-build release-e2e sbom security-scan release-gate
 
 verify: format-check test race-test web-check secret-boundary repository-check openapi-validate compose-validate
 
@@ -47,6 +47,12 @@ openapi-validate:
 
 compose-validate:
 	@$(COMPOSE) config --quiet
+	@docker compose --env-file deploy/versions.env --env-file deploy/example.env \
+		-f deploy/compose.yaml -f deploy/compose.standalone-gateway.yaml \
+		config --quiet
+	@docker compose --env-file deploy/versions.env --env-file deploy/example.env \
+		-f deploy/compose.yaml -f deploy/compose.standalone-gateway.host-network.yaml \
+		config --quiet
 
 upstream-smoke:
 	@./scripts/upstream-smoke.sh
@@ -54,17 +60,35 @@ upstream-smoke:
 gateway-config-write-smoke:
 	@./scripts/gateway-config-write-smoke.sh
 
+gateway-standalone-install:
+	@./scripts/agentgateway-standalone.sh install
+
+gateway-standalone-up:
+	@./scripts/agentgateway-standalone.sh start
+
+gateway-standalone-down:
+	@./scripts/agentgateway-standalone.sh stop
+
+gateway-standalone-status:
+	@./scripts/agentgateway-standalone.sh status
+
+gateway-standalone-logs:
+	@./scripts/agentgateway-standalone.sh logs
+
 preview-bootstrap:
 	@./scripts/bootstrap-preview.sh
 
 preview-up:
-	@$(PREVIEW_COMPOSE) up --build -d
+	@$(PREVIEW) up
+
+preview-container-up:
+	@AGENTGATEWAY_RUNTIME_MODE=container $(PREVIEW) up
 
 preview-down:
-	@$(PREVIEW_COMPOSE) down
+	@$(PREVIEW) down
 
 preview-status:
-	@$(PREVIEW_COMPOSE) ps
+	@$(PREVIEW) status
 
 container-build:
 	@docker build -f deploy/Dockerfile \

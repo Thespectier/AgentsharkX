@@ -41,7 +41,10 @@ an adapter contract.
 ## Prerequisites
 
 - GNU Make
-- Docker with Compose v2
+- Linux x86_64/arm64 or macOS arm64 for the pinned native gateway
+- Docker with Compose v2 for AgentsharkX and AgentGuard
+- `curl`, `jq`, and either `sha256sum` or `shasum` for the pinned
+  agentgateway binary
 - OpenSSL and Python 3.11+ for the first-event quickstart
 - Node.js 24 and npm
 - Go 1.26.5 when developing the server locally (the Makefile can use the pinned
@@ -65,9 +68,12 @@ operations, development, release verification, and troubleshooting, see the
 [中文使用指南](docs/usage-guide.zh-CN.md).
 
 The bootstrap command refuses to overwrite `.env`, generates random
-non-placeholder credentials with mode `0600`, and leaves every published port
-on loopback. An unchanged `deploy/example.env` is intentionally rejected by the
-BFF; there is no default password or token.
+non-placeholder credentials with mode `0600`, and creates an ignored
+`.agentgateway.env` for provider credentials. `make preview-up` downloads the
+exact pinned agentgateway binary, verifies its SHA-256 digest and embedded
+version/revision, and runs it directly as the checkout user. Every management
+port remains on loopback. An unchanged `deploy/example.env` is intentionally
+rejected by the BFF; there is no default password or token.
 
 ## Verify the repository
 
@@ -133,7 +139,7 @@ memory and are lost when the BFF restarts. AgentGuard mutations are never
 automatically retried. Request-log payloads and attributes are never requested
 by the Audit poller; event detail is an allow-listed redacted projection.
 
-## Compose and pinned upstreams
+## Preview topology and pinned upstreams
 
 AgentGuard does not publish an upstream image. Its official `scripts/start.sh`
 builds the server and console from the current checkout. Compose mirrors that
@@ -147,6 +153,21 @@ make preview-bootstrap
 make preview-up
 ```
 
+The default topology is:
+
+```text
+host: pinned agentgateway binary
+Docker Compose: AgentsharkX + AgentGuard server + AgentGuard console
+```
+
+This lets agentgateway LLM and MCP listeners, including ports created later in
+Raw Configuration, bind directly on the host without adding Docker port
+mappings. The download is cached under ignored `.cache/` and is never installed
+system-wide. On Linux, the launcher prefers a transient user-level systemd
+service and falls back to `nohup` when no user manager is available. Use
+`make gateway-standalone-status` and
+`make gateway-standalone-logs` for process diagnostics.
+
 Default local endpoints:
 
 - AgentsharkX preview: <http://localhost:8080>
@@ -154,6 +175,27 @@ Default local endpoints:
 - agentgateway readiness: <http://127.0.0.1:15021/healthz/ready>
 - AgentGuard server: <http://127.0.0.1:38080/v1/backend/health>
 - AgentGuard console: <http://127.0.0.1:38008/>
+
+Keep provider secrets out of tracked YAML by adding shell assignments to the
+ignored `.agentgateway.env`, for example `DEEPSEEK_API_KEY='...'`, and reference
+the value as `apiKey: "$DEEPSEEK_API_KEY"` in
+`deploy/agentgateway/config.yaml`. Restart the native process after changing
+provider environment variables:
+
+```bash
+make gateway-standalone-down
+make preview-up
+```
+
+The connector is selected automatically: Docker Desktop uses
+`host.docker.internal`, while native Linux Docker uses host networking. Both
+keep the unauthenticated gateway management listener on host loopback. For a
+fully containerized fallback, set `AGENTGATEWAY_RUNTIME_MODE=container` in
+`.env` or run:
+
+```bash
+make preview-container-up
+```
 
 Run the read-only compatibility smoke test after startup:
 
@@ -168,10 +210,10 @@ make gateway-config-write-smoke
 The second smoke test reads the active agentgateway configuration and submits
 the same JSON through the native `POST /api/config` save path. It keeps that
 potentially sensitive payload in mode-0600 temporary files and never prints it.
-Preview Compose runs only the agentgateway service as the owner of
-`deploy/agentgateway/config.yaml`, so the upstream Raw Configuration editor can
-write the bind-mounted file without making it world-writable or running as
-root.
+The default native process already runs as the checkout user, so the upstream
+Raw Configuration editor can write `deploy/agentgateway/config.yaml` directly.
+The container fallback aligns only the gateway container UID/GID with that
+file's owner instead of making it world-writable or running as root.
 
 `make preview-down` stops the stack. The BFF starts even if one source is down,
 and `/system` provides source-specific recovery checks. `/healthz` reports only

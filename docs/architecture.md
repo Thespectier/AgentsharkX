@@ -172,8 +172,9 @@ task model, DAG, payload vault, replay engine, or traffic collector.
 - Full prompts, rule source, operator notes, approval arguments, authorization
   headers, and raw sensitive payloads are denied by
   default. Raw event views use a redacted copy.
-- The Phase 0 Compose baseline publishes upstream management ports on loopback.
-  It is a development topology, not an internet-facing deployment.
+- The default Phase 7 preview runs the pinned agentgateway binary on the host
+  and publishes the remaining management services on loopback. It is a
+  development topology, not an internet-facing deployment.
 
 ## Phase 7 deployment boundary
 
@@ -185,19 +186,33 @@ as UID/GID `65532:65532`, and exposes one same-origin port. `/healthz` is public
 and reports process readiness only; authenticated `/system` diagnostics remain
 the authority for independent upstream state.
 
-Compose builds AgentGuard from its immutable main revision, pulls agentgateway
-by tag plus digest, and builds AgentsharkX locally. This follows AgentGuard's
-official source-build topology while avoiding a floating `latest` tag.
-AgentsharkX has no dependency condition on either upstream so it can start
-degraded and explain recovery. Every published port remains loopback in the
-example environment. Missing or placeholder AgentsharkX/AgentGuard credentials
-cause configuration validation to fail before the HTTP listener opens.
+The Linux preview runs agentgateway as an official host-native binary while
+Compose builds AgentGuard from its immutable main revision and builds
+AgentsharkX locally. The binary release, Git revision, and per-platform SHA-256
+digests are fixed in `deploy/versions.env`; installation is repository-local
+under ignored `.cache/` and refuses a checksum or embedded-version mismatch.
+It reads the same explicit `deploy/agentgateway/config.yaml` as the previous
+container topology and runs as the checkout user, so native Raw Configuration
+writes need no bind-mount UID workaround.
 
-The preview Compose wrapper resolves the owner UID/GID of the explicit
-agentgateway config file and runs only that container as the same non-root
-identity. A read-write bind does not bypass Unix mode bits: without the
-identity alignment, the image's default UID `65532` cannot save a checkout-owned
-mode-0644 file through the native Raw Configuration editor.
+The integrated connector is environment-specific. Native Linux Docker gives
+AgentsharkX host networking so the BFF reaches the gateway's loopback-only
+management listener and AgentGuard's loopback-published API. Docker Desktop
+keeps AgentsharkX on the Compose bridge and uses its verified
+`host.docker.internal` forwarding path for the loopback gateway; AgentGuard
+remains reachable by service name. In both cases newly configured LLM/MCP
+listeners bind host ports directly, and the unauthenticated gateway admin
+listener is not widened to `0.0.0.0`.
+
+AgentGuard server and console remain separate Compose services. AgentsharkX has
+no dependency condition on either upstream, so it can start degraded and
+explain recovery. Missing or placeholder AgentsharkX/AgentGuard credentials
+still fail validation before the HTTP listener opens.
+
+The portable fallback keeps the original fully containerized topology and pins
+agentgateway by tag plus image digest. In that mode the Compose wrapper resolves
+the config file owner UID/GID and runs only the gateway container as that
+non-root identity; extra business listeners require explicit published ports.
 
 The release E2E runs contract-shaped upstream fixtures as separate processes
 and exercises the actual BFF session, Connect probe, Audit poll/SSE path, and
@@ -206,12 +221,14 @@ evidence; pinned upstream samples and smoke checks remain authoritative.
 
 ## Phase 0 deployment decisions
 
-- agentgateway is pulled by tag plus digest.
+- agentgateway has both a host-native release with verified per-platform
+  checksums and a container fallback pinned by tag plus digest.
 - AgentGuard publishes no official prebuilt container image; Compose builds the
   server and console from the verified current-main revision and assigns a
   revision-qualified local image name.
 - No submodules and no upstream source are committed here.
-- agentgateway needs explicit wildcard management bindings inside a container.
+- agentgateway needs explicit wildcard management bindings inside its container
+  fallback; the native default keeps management listeners on host loopback.
 - The pinned AgentGuard main snapshot still needs the corrected Compose
   healthcheck path. Details and evidence are in
   [upstream compatibility](upstream-compatibility.md).

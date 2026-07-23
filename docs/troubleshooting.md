@@ -8,30 +8,38 @@ responses.
 
 ### agentgateway is down
 
-1. Confirm `AGENTGATEWAY_BASE_URL` reaches the admin listener from the
-   AgentsharkX container, not an agent traffic listener.
-2. Run `docker compose --env-file deploy/versions.env --env-file .env -f deploy/compose.yaml logs agentgateway`.
+1. Run `make gateway-standalone-status`.
+2. Inspect the native log with `make gateway-standalone-logs`.
 3. Verify <http://127.0.0.1:15021/healthz/ready> returns `ready`.
 4. Load `.env` and run `make upstream-smoke`.
 
+The binary is cached under `.cache/agentgateway-standalone/` only after its
+pinned SHA-256 digest and embedded release metadata pass verification. A
+checksum failure is terminal; do not bypass it. Run
+`make gateway-standalone-install` to retry a missing download.
+On Linux, `status` also reports whether the process is managed by a transient
+user-level systemd service or the `nohup` fallback.
+
 The pinned standalone admin API has no verified native authentication. Keep its
-published port on loopback or a private management network.
+listener on loopback or a private management network.
 
 ### agentgateway Raw Configuration cannot save
 
 1. Start and manage the preview with `make preview-up`, `make preview-status`,
-   and `make preview-down`; these targets use the UID/GID-aware Compose wrapper.
+   and `make preview-down`; the default native process runs as the checkout
+   user.
 2. Load `.env` and run `make gateway-config-write-smoke`. It reads the current
    configuration and submits it unchanged without printing the payload.
 3. Confirm `deploy/agentgateway/config.yaml` is owned by the checkout user and
    remains writable by that owner. Do not solve this by making it
    world-writable.
-4. Recreate the service with `make preview-up` after changing file ownership.
+4. Restart the process with `make gateway-standalone-down` and
+   `make preview-up` after changing file ownership or provider environment.
 
-Docker reporting a bind mount as read-write is insufficient: the pinned image
-normally runs as UID `65532`, while a checkout-owned mode-0644 file rejects
-writes from that identity. The preview wrapper runs only agentgateway as the
-file owner's non-root UID/GID.
+In the optional container fallback, Docker reporting a bind mount as read-write
+is insufficient: the pinned image normally runs as UID `65532`, while a
+checkout-owned mode-0644 file rejects writes from that identity. The fallback
+wrapper runs only agentgateway as the file owner's non-root UID/GID.
 
 The smoke scripts intentionally use the published loopback ports even after
 `.env` is loaded. Override `AGENTGATEWAY_SMOKE_BASE_URL` or
@@ -89,3 +97,17 @@ use **Connect → Setup** and the upstream smoke test.
 `GET /healthz` is an unauthenticated process-readiness check and must return
 `{"status":"ok"}`. It does not claim that either upstream is healthy. Inspect
 System for upstream state and `docker inspect` for the container health log.
+
+## Native gateway port is unavailable
+
+The default standalone process binds every configured LLM/MCP listener directly
+on the host. Check for a conflicting host process, then stop or move that
+listener before restarting agentgateway. Do not add a Compose port mapping in
+standalone mode.
+
+Docker Desktop should auto-select its `host.docker.internal` connector; native
+Linux Docker should auto-select host networking. Override a bad detection with
+`AGENTGATEWAY_DOCKER_HOST_MODE=desktop` or `host-network` in `.env`. On an
+unsupported platform, use `make preview-container-up`. Additional gateway
+business ports must then be published explicitly in `deploy/compose.yaml`; the
+management-only defaults do not publish arbitrary listener ports.

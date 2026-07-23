@@ -4,17 +4,25 @@ set -euo pipefail
 root_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 target="$root_dir/.env"
 template="$root_dir/deploy/example.env"
+gateway_target="$root_dir/.agentgateway.env"
+gateway_template="$root_dir/deploy/agentgateway/example.env"
+
+umask 077
+if [[ ! -e "$gateway_target" ]]; then
+  cp "$gateway_template" "$gateway_target"
+  chmod 0600 "$gateway_target"
+  echo "Created .agentgateway.env with mode 0600 for provider credentials."
+fi
 
 if [[ -e "$target" ]]; then
   echo ".env already exists; leaving it unchanged" >&2
-  exit 1
+  exit 0
 fi
 if ! command -v openssl >/dev/null 2>&1; then
   echo "openssl is required to generate preview credentials" >&2
   exit 1
 fi
 
-umask 077
 cp "$template" "$target"
 admin_token="$(openssl rand -hex 24)"
 guard_token="$(openssl rand -hex 24)"
@@ -32,5 +40,5 @@ sed -i "s/^AGENTGATEWAY_RUNTIME_UID=.*/AGENTGATEWAY_RUNTIME_UID=$gateway_uid/" "
 sed -i "s/^AGENTGATEWAY_RUNTIME_GID=.*/AGENTGATEWAY_RUNTIME_GID=$gateway_gid/" "$target"
 
 echo "Created .env with mode 0600 and generated non-placeholder credentials."
-echo "agentgateway will run as the owner of deploy/agentgateway/config.yaml."
+echo "The default preview runs agentgateway as a verified host-native binary."
 echo "Review bind addresses before exposing the preview beyond loopback."

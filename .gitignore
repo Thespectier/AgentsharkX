@@ -1,4 +1,5 @@
 .env
+.agentgateway.env
 .venv*/
 __pycache__/
 *.pyc

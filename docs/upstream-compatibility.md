@@ -15,7 +15,7 @@ because the selected upstream exposes no verified native admin-auth header.
 
 | Upstream | Selected release | Immutable revision | Runtime artifact |
 |---|---|---|---|
-| agentgateway | `v1.3.1` | `dbaaf7ed73671e7aec9195e35e7f726c0b14b84a` | `cr.agentgateway.dev/agentgateway:v1.3.1@sha256:c3ce7b75da90fef70239befcc1c3adc05152d7b9dd21fcb8351178026a2c4381` |
+| agentgateway | `v1.3.1` | `dbaaf7ed73671e7aec9195e35e7f726c0b14b84a` | Default: official host binary verified by platform SHA-256; fallback: `cr.agentgateway.dev/agentgateway:v1.3.1@sha256:c3ce7b75da90fef70239befcc1c3adc05152d7b9dd21fcb8351178026a2c4381` |
 | AgentGuard | main snapshot (package `2.1`) | `4b755fb4a4a2763b7e817b3d0220fe5c22187b59` | Built from `https://github.com/WhitzardAgent/AgentGuard.git#4b755fb4a4a2763b7e817b3d0220fe5c22187b59` as local image `agentsharkx/agentguard:main-4b755fb` |
 
 The agentgateway GitHub release API reported `v1.4.0-alpha.2` as
@@ -27,16 +27,22 @@ contains newer opt-in Thought-Aligner support. The preview therefore uses the
 exact verified main revision rather than the older release commit or a floating
 tag.
 
-`deploy/versions.env` is the machine-readable source of these pins. Default
-Compose configuration contains no floating tag.
+`deploy/versions.env` is the machine-readable source of these pins. It records
+the Linux amd64, Linux arm64, and Darwin arm64 binary checksums plus the
+container digest. Default configuration contains no floating tag.
 
 ## Runtime verification record
 
-Both pinned revisions were run as containers again on 2026-07-23. Sanitized
-responses are stored under `api/upstream-contracts/`.
+Both pinned revisions were run as containers again on 2026-07-23, and the
+official agentgateway Linux amd64 binary was independently checksum/version
+verified. Sanitized management responses are stored under
+`api/upstream-contracts/`.
 
 ### agentgateway v1.3.1
 
+- The official Linux amd64 binary matched its pinned SHA-256, reported version
+  `1.3.1` and the selected Git revision prefix, and remained active under the
+  user-level systemd manager after the launch command exited.
 - `GET :15021/healthz/ready` returned `200 ready`.
 - `GET /api/runtime` returned version `1.3.1`, the pinned Git revision, and
   `gatewayMode=standalone`.
@@ -44,12 +50,30 @@ responses are stored under `api/upstream-contracts/`.
   configuration and normalized stores.
 - `GET /api/costs/models` returned `loaded=false` and an empty provider list.
 - `GET :15020/metrics` returned Prometheus metrics.
+- The configured host-native LLM listener returned the explicit model from
+  `GET :4000/v1/models`; a minimal chat completion reached the configured
+  DeepSeek provider and returned HTTP 200 with a valid chat-completion shape.
 - Log search and analytics routes exist but returned HTTP 500 with
   `request log database is not configured` under the minimal config. These
   capabilities are `partial`, not silently empty.
 
-The image binds the admin listener to container loopback by default. Port
-publishing alone therefore resets external connections. Compose sets
+The default Linux preview starts the official binary with an explicit file
+source and loopback admin, metrics, and readiness addresses. LLM and MCP
+listeners from that file bind directly on the host, which removes the need to
+predict and publish business ports through Compose. The binary is stored only
+under ignored `.cache/` after its checksum and embedded release/revision match
+the pinned metadata.
+
+Native Linux Docker connects the BFF through host networking. Docker Desktop
+was separately verified to reach the same loopback-only readiness listener
+through `host.docker.internal` while retaining the normal bridge publication
+for AgentsharkX. Auto-detection selects between these two overlays; neither
+requires binding the unauthenticated admin listener to all interfaces. In the
+Docker Desktop topology, authenticated `GET /api/v1/system/health` reported
+both agentgateway and AgentGuard healthy with `partial=false`.
+
+The fallback image binds the admin listener to container loopback by default.
+Port publishing alone therefore resets external connections. Compose sets
 `ADMIN_ADDR=0.0.0.0:15000` and `STATS_ADDR=0.0.0.0:15020`; host publication
 remains loopback by default.
 
@@ -61,14 +85,14 @@ sections as unavailable. Advanced workflows remain in the native console.
 
 The pinned native UI writes configuration through `POST /api/config`. Its
 implementation accepts only a file-backed `ConfigSource`, validates the proposed
-configuration, and writes the active YAML file. The preview therefore mounts
-`deploy/agentgateway/config.yaml` read-write so **Configure agentgateway** can
-save through the upstream-owned editor; the admin port remains bound to
-loopback. A read-write bind does not bypass file ownership and mode bits, so the
-preview Compose wrapper runs only agentgateway as the config file's non-root
-owner. A live read-and-unchanged-write through `POST /api/config` returned 200;
-the same request under the image's default UID `65532` returned 500 permission
-denied against the checkout-owned mode-0644 file. The
+configuration, and writes the active YAML file. The default native process uses
+the explicit checkout file as the checkout user, so **Configure agentgateway**
+can save without container ownership translation; the admin port remains bound
+to loopback. The container fallback still mounts the file read-write and aligns
+only the gateway service with its non-root owner. A live
+read-and-unchanged-write through `POST /api/config` returned 200; the same
+request under the image's default UID `65532` returned 500 permission denied
+against the checkout-owned mode-0644 file. The
 `make gateway-config-write-smoke` check keeps the potentially sensitive config
 in mode-0600 temporary files and never prints it. AgentsharkX still does not
 accept, inspect, or relay raw configuration or provider credentials.

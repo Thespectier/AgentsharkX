@@ -12,8 +12,11 @@ required_files=(
   apps/web/src/main.tsx
   api/openapi.yaml
   deploy/compose.yaml
+  deploy/compose.standalone-gateway.yaml
+  deploy/compose.standalone-gateway.host-network.yaml
   deploy/Dockerfile
   deploy/versions.env
+  deploy/agentgateway/example.env
   docs/quickstart.md
   docs/agent-integration.md
   docs/troubleshooting.md
@@ -32,6 +35,9 @@ required_files=(
   docs/screenshots/system-degraded-1440.png
   docs/screenshots/lighthouse-accessibility.json
   scripts/bootstrap-preview.sh
+  scripts/agentgateway-standalone.sh
+  scripts/standalone-compose.sh
+  scripts/preview.sh
   scripts/preview-compose.sh
   scripts/gateway-config-write-smoke.sh
   scripts/release-e2e.sh
@@ -44,6 +50,49 @@ for file in "${required_files[@]}"; do
     exit 1
   fi
 done
+
+binary_version="$(sed -n 's/^AGENTGATEWAY_BINARY_VERSION=//p' deploy/versions.env)"
+if [[ ! "$binary_version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  echo "agentgateway standalone binary version is not pinned to a stable release" >&2
+  exit 1
+fi
+
+for variable in \
+  AGENTGATEWAY_BINARY_LINUX_AMD64_SHA256 \
+  AGENTGATEWAY_BINARY_LINUX_ARM64_SHA256 \
+  AGENTGATEWAY_BINARY_DARWIN_ARM64_SHA256; do
+  checksum="$(sed -n "s/^${variable}=//p" deploy/versions.env)"
+  if [[ ! "$checksum" =~ ^[[:xdigit:]]{64}$ ]]; then
+    echo "invalid or missing agentgateway binary checksum: $variable" >&2
+    exit 1
+  fi
+done
+
+if ! grep -qx 'AGENTGATEWAY_RUNTIME_MODE=standalone' deploy/example.env; then
+  echo "standalone agentgateway must remain the default local preview mode" >&2
+  exit 1
+fi
+
+if ! grep -qx 'AGENTGATEWAY_DOCKER_HOST_MODE=auto' deploy/example.env; then
+  echo "standalone Docker host connector must remain auto-detected by default" >&2
+  exit 1
+fi
+
+for script in \
+  scripts/agentgateway-standalone.sh \
+  scripts/standalone-compose.sh \
+  scripts/preview.sh; do
+  if [[ ! -x "$script" ]]; then
+    echo "standalone preview script is not executable: $script" >&2
+    exit 1
+  fi
+done
+
+bash -n \
+  scripts/agentgateway-standalone.sh \
+  scripts/standalone-compose.sh \
+  scripts/preview.sh \
+  scripts/bootstrap-preview.sh
 
 if command -v rg >/dev/null 2>&1; then
   latest_matches="$(rg -n '(^|[/:@-])latest([^[:alnum:]_]|$)' deploy || true)"
