@@ -1,8 +1,8 @@
 # 10-minute preview quickstart
 
-This path starts the pinned agentgateway and AgentGuard releases plus the
-AgentsharkX `0.7.0-preview` image, then emits one real AgentGuard event. Docker
-with Compose v2, OpenSSL, Python 3.11+, and Git are required.
+This path starts the pinned agentgateway release and AgentGuard main snapshot
+plus the AgentsharkX `0.7.0-preview` image, then emits one real AgentGuard
+event. Docker with Compose v2, OpenSSL, Python 3.11+, and Git are required.
 
 ## 1. Create local credentials
 
@@ -19,8 +19,7 @@ from loopback.
 
 ```bash
 make preview-up
-docker compose --env-file deploy/versions.env --env-file .env \
-  -f deploy/compose.yaml ps
+make preview-status
 ```
 
 Open <http://localhost:8080>. Retrieve the local administrator token from
@@ -36,7 +35,7 @@ Install the exact pinned AgentGuard client in a disposable virtual environment:
 ```bash
 python3 -m venv .venv-quickstart
 .venv-quickstart/bin/pip install \
-  'agentguard @ git+https://github.com/WhitzardAgent/AgentGuard.git@6f95deb9f405eca41efb6cc58ccee5b1791c7b03'
+  'agentguard @ git+https://github.com/WhitzardAgent/AgentGuard.git@4b755fb4a4a2763b7e817b3d0220fe5c22187b59'
 ```
 
 Run the repository example using the same AgentGuard API key as Compose:

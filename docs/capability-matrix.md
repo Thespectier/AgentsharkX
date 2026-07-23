@@ -1,6 +1,7 @@
 # Capability matrix
 
-Verified against agentgateway `v1.3.1` and AgentGuard `v2.1` on 2026-07-22.
+Verified against agentgateway `v1.3.1` and AgentGuard main revision
+`4b755fb4a4a2763b7e817b3d0220fe5c22187b59` (package `2.1`) on 2026-07-23.
 
 Phase 7 adds reproducible deployment, session/CSRF reload recovery,
 source-specific diagnostics, release E2E, and supply-chain gates above the
@@ -35,7 +36,7 @@ generated OpenAPI but a mutating request was intentionally not executed.
 | Request logs | agentgateway | partial | runtime `POST /api/logs/search`; 500 without request-log DB | Capability probe must surface `request log database is not configured`. |
 | Analytics | agentgateway | partial | Phase 3 bounded `POST /api/logs/analytics/summary` with `bucketCount=12`; same DB dependency | Sum non-overlapping returned buckets; return explicit `unavailable` and null metrics when storage is missing. |
 | Metrics | agentgateway | supported | runtime `GET :15020/metrics` | Metrics are diagnostics, not a substitute for request-log records. |
-| Raw config editor/save | agentgateway | link-out | pinned UI `/raw-config`; pinned `POST /api/config` validates then writes the active file | Keep editing upstream-owned; the preview mounts its explicit config file read-write while the management port remains loopback-only. |
+| Raw config editor/save | agentgateway | link-out | pinned UI `/raw-config`; live unchanged `POST /api/config` returned 200 when the service used the config owner's UID/GID | Keep editing upstream-owned; the preview wrapper aligns the non-root service identity with the explicit read-write config file while the management port remains loopback-only. |
 | CEL editor/evaluator | agentgateway | link-out | pinned UI `/cel`; evaluation API remains upstream-owned | BFF creates a validated deep link only. |
 | Playground | agentgateway | link-out | pinned UI `/llm/playground`, `/mcp/playground` | Never send provider keys through AgentsharkX frontend. |
 | Admin API authentication | agentgateway | unavailable | pinned admin routes have no native auth middleware | Keep the admin listener private; BFF supplies browser authentication isolation. |
@@ -64,6 +65,7 @@ traffic claim.
 | MCP detection | AgentGuard | supported | Phase 4 adapter tests for `POST .../mcps/detect` | Same bounded job contract; expose safe result fields and recoverable errors only. |
 | Remote attestation | AgentGuard | unavailable | no verified route or field | Do not use cryptographic or remote-attestation claims in UI copy. |
 | Native configuration console | AgentGuard | link-out | configured `AGENTGUARD_CONSOLE_URL`; no new upstream mutation contract | Expose the validated native-console URL from Protect for settings not covered by verified AgentsharkX writes. |
+| Thought-Aligner plugin | AgentGuard | link-out | pinned main source and `config/plugins.thought-aligner.example.json` | The code is present in the runtime image but opt-in and upstream-owned; configure it through AgentGuard, never infer an AgentsharkX mutation API. |
 
 The AgentGuard registry probes the verified global routes independently and
 publishes `guard.health`, `guard.sessions`, `guard.tools`, `guard.skills`,

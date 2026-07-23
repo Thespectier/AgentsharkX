@@ -54,7 +54,7 @@ AGENTGATEWAY_CONSOLE_URL=http://127.0.0.1:19000/ui \
 AGENTGUARD_BASE_URL=http://127.0.0.1:19001 \
 AGENTGUARD_ADMIN_TOKEN=release-guard-token-with-entropy \
 AGENTGUARD_CONSOLE_URL=http://127.0.0.1:19001 \
-AGENTGUARD_VERSION=v2.1 \
+AGENTGUARD_VERSION=main-4b755fb \
 AGENTSHARK_POLL_INTERVAL=1s \
 "$work_dir/agentshark" >"$work_dir/server.log" 2>&1 &
 server_pid=$!

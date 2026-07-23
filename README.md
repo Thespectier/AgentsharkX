@@ -107,7 +107,7 @@ export AGENTGATEWAY_BASE_URL=http://127.0.0.1:15000
 export AGENTGATEWAY_CONSOLE_URL=http://127.0.0.1:15000/ui
 export AGENTGUARD_BASE_URL=http://127.0.0.1:38080
 export AGENTGUARD_ADMIN_TOKEN='replace-with-the-agentguard-api-key'
-export AGENTGUARD_VERSION=v2.1
+export AGENTGUARD_VERSION=main-4b755fb
 export AGENTSHARK_SCAN_TIMEOUT=90s
 export AGENTSHARK_POLL_INTERVAL=2s
 
@@ -135,9 +135,12 @@ by the Audit poller; event detail is an allow-listed redacted projection.
 
 ## Compose and pinned upstreams
 
-The AgentGuard release does not publish an upstream image. Compose therefore
-builds it directly from the verified `v2.1` commit and assigns a local image
-name; no source is vendored into this repository.
+AgentGuard does not publish an upstream image. Its official `scripts/start.sh`
+builds the server and console from the current checkout. Compose mirrors that
+model but pins the verified main revision
+`4b755fb4a4a2763b7e817b3d0220fe5c22187b59` as the local image
+`agentsharkx/agentguard:main-4b755fb`; no source is vendored into this
+repository and no floating tag is used.
 
 ```bash
 make preview-bootstrap
@@ -159,7 +162,16 @@ set -a
 . ./.env
 set +a
 make upstream-smoke
+make gateway-config-write-smoke
 ```
+
+The second smoke test reads the active agentgateway configuration and submits
+the same JSON through the native `POST /api/config` save path. It keeps that
+potentially sensitive payload in mode-0600 temporary files and never prints it.
+Preview Compose runs only the agentgateway service as the owner of
+`deploy/agentgateway/config.yaml`, so the upstream Raw Configuration editor can
+write the bind-mounted file without making it world-writable or running as
+root.
 
 `make preview-down` stops the stack. The BFF starts even if one source is down,
 and `/system` provides source-specific recovery checks. `/healthz` reports only

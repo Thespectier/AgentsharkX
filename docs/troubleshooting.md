@@ -17,6 +17,28 @@ responses.
 The pinned standalone admin API has no verified native authentication. Keep its
 published port on loopback or a private management network.
 
+### agentgateway Raw Configuration cannot save
+
+1. Start and manage the preview with `make preview-up`, `make preview-status`,
+   and `make preview-down`; these targets use the UID/GID-aware Compose wrapper.
+2. Load `.env` and run `make gateway-config-write-smoke`. It reads the current
+   configuration and submits it unchanged without printing the payload.
+3. Confirm `deploy/agentgateway/config.yaml` is owned by the checkout user and
+   remains writable by that owner. Do not solve this by making it
+   world-writable.
+4. Recreate the service with `make preview-up` after changing file ownership.
+
+Docker reporting a bind mount as read-write is insufficient: the pinned image
+normally runs as UID `65532`, while a checkout-owned mode-0644 file rejects
+writes from that identity. The preview wrapper runs only agentgateway as the
+file owner's non-root UID/GID.
+
+The smoke scripts intentionally use the published loopback ports even after
+`.env` is loaded. Override `AGENTGATEWAY_SMOKE_BASE_URL` or
+`AGENTGUARD_SMOKE_BASE_URL` only when testing a different host-side endpoint;
+the Compose-internal `AGENTGATEWAY_BASE_URL` and `AGENTGUARD_BASE_URL` are not
+host-resolvable.
+
 ### AgentGuard is down
 
 1. Confirm `AGENTGUARD_BASE_URL` reaches port `38080` inside Compose.
@@ -25,6 +47,11 @@ published port on loopback or a private management network.
 3. Inspect `docker compose --env-file deploy/versions.env --env-file .env -f deploy/compose.yaml logs agentguard`.
 4. Run an authenticated `GET /v1/backend/health`; an unauthenticated request is
    expected to return 401.
+
+`make preview-status` should show
+`agentsharkx/agentguard:main-4b755fb`. The image is built from immutable main
+revision `4b755fb4a4a2763b7e817b3d0220fe5c22187b59`, following the upstream
+source-build startup model without using a floating `latest` tag.
 
 AgentsharkX starts even when either upstream is unavailable so System can show
 source-specific recovery guidance.

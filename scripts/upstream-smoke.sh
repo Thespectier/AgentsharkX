@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-gateway_admin="${AGENTGATEWAY_BASE_URL:-http://127.0.0.1:15000}"
+gateway_admin="${AGENTGATEWAY_SMOKE_BASE_URL:-http://127.0.0.1:15000}"
 gateway_ready="${AGENTGATEWAY_READINESS_URL:-http://127.0.0.1:15021/healthz/ready}"
-guard_base="${AGENTGUARD_BASE_URL:-http://127.0.0.1:38080}"
+guard_base="${AGENTGUARD_SMOKE_BASE_URL:-http://127.0.0.1:38080}"
 guard_key="${AGENTGUARD_ADMIN_TOKEN:-}"
 
 if [[ -z "$guard_key" ]]; then

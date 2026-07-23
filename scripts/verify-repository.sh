@@ -32,6 +32,8 @@ required_files=(
   docs/screenshots/system-degraded-1440.png
   docs/screenshots/lighthouse-accessibility.json
   scripts/bootstrap-preview.sh
+  scripts/preview-compose.sh
+  scripts/gateway-config-write-smoke.sh
   scripts/release-e2e.sh
   scripts/secret-scan.sh
 )

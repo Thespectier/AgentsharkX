@@ -142,7 +142,7 @@ make upstream-smoke
 ```bash
 python3 -m venv .venv-quickstart
 .venv-quickstart/bin/pip install \
-  'agentguard @ git+https://github.com/WhitzardAgent/AgentGuard.git@6f95deb9f405eca41efb6cc58ccee5b1791c7b03'
+  'agentguard @ git+https://github.com/WhitzardAgent/AgentGuard.git@4b755fb4a4a2763b7e817b3d0220fe5c22187b59'
 ```
 
 加载本地凭据并运行示例：
@@ -186,9 +186,25 @@ Connect 汇总 agentgateway 中显式配置的：
 agentgateway 管理控制台默认地址为 <http://127.0.0.1:15000/ui>。
 
 页面右上角的 **Configure agentgateway** 会直接打开固定版本原生 Raw Configuration
-编辑器。预览环境将明确的 `deploy/agentgateway/config.yaml` 以可写方式挂载，因此可以
-通过原生编辑器校验并保存；管理端口仍只绑定回环地址。保存后返回 AgentsharkX，页面
-会在重新获得焦点时刷新，也会按固定间隔同步。
+编辑器。预览环境将明确的 `deploy/agentgateway/config.yaml` 以可写方式挂载，并把
+agentgateway 容器的非 root UID/GID 对齐到该文件的所有者，因此可以通过原生编辑器
+校验并保存；管理端口仍只绑定回环地址。Docker 的 `read-write` 挂载不会绕过 Unix
+权限：镜像默认 UID `65532` 无法写入检出用户持有的 `0644` 文件。请始终使用
+`make preview-up` 启动或重建服务。保存后返回 AgentsharkX，页面会在重新获得焦点时
+刷新，也会按固定间隔同步。
+
+可以执行下面的原生保存回归检查：
+
+```bash
+set -a
+. ./.env
+set +a
+make gateway-config-write-smoke
+```
+
+该检查读取当前配置并通过原生 `POST /api/config` 原样写回；可能包含敏感信息的内容
+只保存在权限为 `0600` 的临时文件中，不会输出到终端。检查脚本默认访问宿主机回环
+端口，不会误用 `.env` 中仅供 Compose 网络解析的 `http://agentgateway:15000`。
 
 默认预览配置没有业务监听器、Provider 凭据、真实业务路由和请求日志数据库，因此
 Connect 或网关审计显示 `partial` 是预期行为。Provider API Key 应配置在
@@ -302,7 +318,7 @@ export AGENTGUARD_API_KEY='<AgentGuard API Key>'
 这里使用 AgentGuard API Key，也就是预览 `.env` 中
 `AGENTGUARD_ADMIN_TOKEN` 对应的值，不能使用 `AGENTSHARK_ADMIN_TOKEN`。
 
-固定版本 AgentGuard 提供的适配器包括：
+固定 main 提交的 AgentGuard 提供的适配器包括：
 
 - `attach_langchain`；
 - `attach_langgraph`；
@@ -312,7 +328,7 @@ export AGENTGUARD_API_KEY='<AgentGuard API Key>'
 
 接入时应保留 `agent_id`、`session_id`、`user_id` 等显式身份，并保留
 `llm_before`、`llm_after`、`tool_before`、`tool_after` 等原始事件阶段。详细契约请参阅
-[Agent integration](agent-integration.md) 和固定版本 AgentGuard 文档。
+[Agent integration](agent-integration.md) 和固定提交的 AgentGuard 文档。
 
 ### 5.3 验证接入结果
 
@@ -408,7 +424,7 @@ export AGENTGATEWAY_BASE_URL=http://127.0.0.1:15000
 export AGENTGATEWAY_CONSOLE_URL=http://127.0.0.1:15000/ui
 export AGENTGUARD_BASE_URL=http://127.0.0.1:38080
 export AGENTGUARD_ADMIN_TOKEN='replace-with-the-agentguard-api-key'
-export AGENTGUARD_VERSION=v2.1
+export AGENTGUARD_VERSION=main-4b755fb
 export AGENTSHARK_SCAN_TIMEOUT=90s
 export AGENTSHARK_POLL_INTERVAL=2s
 
@@ -487,18 +503,35 @@ git diff --check
 3. 查看 `agentguard` 容器日志；
 4. 使用 `X-Api-Key` 请求 `/v1/backend/health`。未认证请求返回 `401` 属于预期行为。
 
-### 9.5 Audit 没有网关流量
+执行 `make preview-status`，AgentGuard 镜像应为
+`agentsharkx/agentguard:main-4b755fb`。该镜像固定到官方仓库 main 提交
+`4b755fb4a4a2763b7e817b3d0220fe5c22187b59`，构建并启动独立 server/frontend，
+与官方 `./scripts/start.sh` 的源代码构建方式一致，但不会使用不可复现的 `latest`
+标签。该提交已经包含服务端 Thought-Aligner；它在官方配置中是可选插件，默认不会
+自动启用，应通过 AgentGuard 自己的插件配置管理。
+
+### 9.5 Raw Configuration 保存失败
+
+如果原生编辑器保存时报 `Permission denied`：
+
+1. 使用 `make preview-up` 重建 agentgateway，使 Compose wrapper 重新读取配置文件
+   所有者 UID/GID；
+2. 不要把配置文件修改为全局可写；
+3. 加载 `.env` 后运行 `make gateway-config-write-smoke`；
+4. 检查 `make preview-status` 和 agentgateway 日志。
+
+### 9.6 Audit 没有网关流量
 
 默认网关配置没有业务监听器和请求日志数据库。先在 agentgateway 中配置真实路由、
 Provider 凭据和日志存储，再产生实际流量。不要把“没有配置日志数据库”理解为“成功
 返回空记录”。
 
-### 9.6 Trust 没有 Agent
+### 9.7 Trust 没有 Agent
 
 确认 AgentGuard 已接入 Agent 运行时，使用了正确的服务 URL 和 API Key，并且至少
 执行过一次运行时操作。同时确认接入代码显式提供 `agent_id` 和 `session_id`。
 
-### 9.7 启动配置被拒绝
+### 9.8 启动配置被拒绝
 
 BFF 会拒绝：
 

@@ -1,6 +1,6 @@
 # Upstream compatibility
 
-Last verified: 2026-07-22.
+Last verified: 2026-07-23.
 
 Phase 7 still prevents direct browser contact with either upstream. The
 agentgateway adapter remains read-only and now also reads redacted request-log
@@ -16,20 +16,24 @@ because the selected upstream exposes no verified native admin-auth header.
 | Upstream | Selected release | Immutable revision | Runtime artifact |
 |---|---|---|---|
 | agentgateway | `v1.3.1` | `dbaaf7ed73671e7aec9195e35e7f726c0b14b84a` | `cr.agentgateway.dev/agentgateway:v1.3.1@sha256:c3ce7b75da90fef70239befcc1c3adc05152d7b9dd21fcb8351178026a2c4381` |
-| AgentGuard | `v2.1` | `6f95deb9f405eca41efb6cc58ccee5b1791c7b03` | Built from `https://github.com/WhitzardAgent/AgentGuard.git#6f95deb9f405eca41efb6cc58ccee5b1791c7b03` as local image `agentsharkx/agentguard:v2.1` |
+| AgentGuard | main snapshot (package `2.1`) | `4b755fb4a4a2763b7e817b3d0220fe5c22187b59` | Built from `https://github.com/WhitzardAgent/AgentGuard.git#4b755fb4a4a2763b7e817b3d0220fe5c22187b59` as local image `agentsharkx/agentguard:main-4b755fb` |
 
 The agentgateway GitHub release API reported `v1.4.0-alpha.2` as
 `prerelease=false`, even though the tag is explicitly an alpha. Phase 0
 therefore selected the latest release whose semantic tag has no pre-release
-suffix: `v1.3.1`. AgentGuard `v2.1` is its latest stable tag.
+suffix: `v1.3.1`. AgentGuard `v2.1` remains its latest stable tag, but the
+official repository's startup script builds the current checkout and main now
+contains newer opt-in Thought-Aligner support. The preview therefore uses the
+exact verified main revision rather than the older release commit or a floating
+tag.
 
 `deploy/versions.env` is the machine-readable source of these pins. Default
 Compose configuration contains no floating tag.
 
 ## Runtime verification record
 
-Both pinned revisions were run as containers on 2026-07-21. Sanitized responses
-are stored under `api/upstream-contracts/`.
+Both pinned revisions were run as containers again on 2026-07-23. Sanitized
+responses are stored under `api/upstream-contracts/`.
 
 ### agentgateway v1.3.1
 
@@ -60,8 +64,14 @@ implementation accepts only a file-backed `ConfigSource`, validates the proposed
 configuration, and writes the active YAML file. The preview therefore mounts
 `deploy/agentgateway/config.yaml` read-write so **Configure agentgateway** can
 save through the upstream-owned editor; the admin port remains bound to
-loopback. AgentsharkX still does not accept, inspect, or relay raw configuration
-or provider credentials.
+loopback. A read-write bind does not bypass file ownership and mode bits, so the
+preview Compose wrapper runs only agentgateway as the config file's non-root
+owner. A live read-and-unchanged-write through `POST /api/config` returned 200;
+the same request under the image's default UID `65532` returned 500 permission
+denied against the checkout-owned mode-0644 file. The
+`make gateway-config-write-smoke` check keeps the potentially sensitive config
+in mode-0600 temporary files and never prints it. AgentsharkX still does not
+accept, inspect, or relay raw configuration or provider credentials.
 
 For Phase 3, the populated config shape and UI routes were also checked against
 the exact pinned source revision. The sanitized
@@ -72,17 +82,22 @@ sensitive values. Contract tests fail
 with a field-scoped error when required names, provider shapes, routing
 strategies, or MCP transport shapes change.
 
-### AgentGuard v2.1
+### AgentGuard main snapshot `4b755fb`
 
 - Authenticated health, stats, tools, skills, MCPs, rules, traffic, audit,
   approvals, sessions, and auditors returned HTTP 200.
 - An unauthenticated backend health request returned HTTP 401 with
   `missing backend API key`.
 - Runtime OpenAPI reported 45 routes and OpenAPI info version `0.3.0`, while the
-  package/release version is `2.1`. AgentsharkX records both and does not assume
+  package version is `2.1`. AgentsharkX records both and does not assume
   they are interchangeable.
 - There is no dedicated agent-list route. Agent views may use only explicit
   AgentGuard `agent_id` fields from resources and sessions.
+- The verified main snapshot contains the server-side Thought-Aligner plugin
+  and example plugin configuration. It remains opt-in and upstream-owned;
+  AgentsharkX does not invent a management route for it.
+- Its 45 management OpenAPI paths are identical to the checked-in summary, and
+  the read-only compatibility smoke passed against the rebuilt server.
 
 For Phase 4, populated reads plus tool-label, Skill detection, and MCP detection
 shapes were cross-checked against the exact pinned source revision and its HTTP
@@ -105,8 +120,9 @@ client URLs, arbitrary metadata/principal objects, descriptors, source/code
 paths, detector metadata/reasons, MCP URLs, and LLM configuration.
 
 For Phase 5, the rule list/check/publish/delete, pending approval/resolve, and
-per-agent plugin config/available shapes were cross-checked against the exact
-`v2.1` source and captured as sanitized fixtures. The BFF deliberately omits
+per-agent plugin config/available shapes originated from the exact `v2.1`
+source, were revalidated against the pinned main snapshot, and remain captured
+as sanitized fixtures. The BFF deliberately omits
 rule source and prompt fields, approval tool arguments and targets, plugin
 parameters, and arbitrary event bodies. Publish requires exactly one successful
 current syntax check; its token is short-lived, source-bound, one-use, and held
@@ -118,11 +134,11 @@ client timeout followed by a distinct manual retry. Successful operations emit
 only request ID, operation, target, status, and `note_present=true` to the
 structured audit log; rule source and operator note are never logged.
 
-The upstream `v2.1` Dockerfile healthcheck calls `/health`, which returns 404;
-the real protected route is `/v1/backend/health`. Compose overrides the
-server healthcheck and supplies `X-Api-Key`; the console service receives its
-own port-38008 root-page check. This is why an unmodified upstream image can
-appear `unhealthy` even when its API or console is serving successfully.
+The pinned upstream Dockerfile healthcheck calls `/health`, which returns 404;
+the real protected route is `/v1/backend/health`. Compose overrides the server
+healthcheck and supplies `X-Api-Key`; the console service receives its own
+port-38008 root-page check. This is why an unmodified upstream image can appear
+`unhealthy` even when its API or console is serving successfully.
 
 For Phase 6, request-log search, Analytics, AgentGuard Traffic/Audit/Sessions,
 and their exact populated shapes were cross-checked against the pinned source.
@@ -140,9 +156,11 @@ AgentsharkX solely for bounded delivery/resume and are not presented as
 upstream identity or cross-source correlation. Correlation remains false unless
 the same explicit non-empty identifier appears in both sources.
 
-AgentGuard does not publish a prebuilt container image for this release. The
-Compose build context points at the release's full Git revision instead of
-copying or vendoring GPL source into AgentsharkX.
+AgentGuard does not publish a prebuilt container image for this snapshot. Its
+official `scripts/start.sh` builds the current source tree and starts separate
+server and frontend services. AgentsharkX Compose preserves that topology while
+pointing the build context at the verified full Git revision instead of copying
+or vendoring GPL source into AgentsharkX.
 
 For Phase 7, the production image embeds only the AgentsharkX Web build and Go
 BFF. agentgateway and AgentGuard remain separate Compose services and SPDX
@@ -159,7 +177,7 @@ The release E2E fixtures implement only already-frozen contract shapes and run
 outside default Compose. They prove BFF/browser orchestration, including a hard
 navigation followed by CSRF recovery and one approval, but do not replace live
 upstream compatibility verification. The image and Compose build passed on
-2026-07-22 with the pinned Node 24.13.0, Go 1.26.5, and Alpine 3.23.3 digests.
+2026-07-23 with the pinned Node 24.13.0, Go 1.26.5, and Alpine 3.23.3 digests.
 
 ## Authentication and exposure
 
@@ -180,7 +198,8 @@ license review.
 
 ## Upgrade protocol
 
-1. Inspect the new release tag and immutable revision; reject floating tags.
+1. Inspect the candidate release or main snapshot and immutable revision;
+   reject floating tags.
 2. Start each upstream independently with the candidate pin.
 3. Re-run `make upstream-smoke` and capture sanitized read responses.
 4. Compare every adapter field with `api/upstream-contracts/`.

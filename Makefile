@@ -4,9 +4,9 @@ GO_VERSION := 1.26.5
 GO_IMAGE := golang:$(GO_VERSION)-alpine
 GO_RACE_IMAGE := golang:$(GO_VERSION)
 COMPOSE := docker compose --env-file deploy/versions.env --env-file deploy/example.env -f deploy/compose.yaml
-PREVIEW_COMPOSE := docker compose --env-file deploy/versions.env --env-file .env -f deploy/compose.yaml
+PREVIEW_COMPOSE := ./scripts/preview-compose.sh
 
-.PHONY: verify format-check test race-test web-check secret-boundary secret-scan repository-check openapi-validate compose-validate upstream-smoke preview-bootstrap preview-up preview-down preview-status container-build release-e2e sbom security-scan release-gate
+.PHONY: verify format-check test race-test web-check secret-boundary secret-scan repository-check openapi-validate compose-validate upstream-smoke gateway-config-write-smoke preview-bootstrap preview-up preview-down preview-status container-build release-e2e sbom security-scan release-gate
 
 verify: format-check test race-test web-check secret-boundary repository-check openapi-validate compose-validate
 
@@ -50,6 +50,9 @@ compose-validate:
 
 upstream-smoke:
 	@./scripts/upstream-smoke.sh
+
+gateway-config-write-smoke:
+	@./scripts/gateway-config-write-smoke.sh
 
 preview-bootstrap:
 	@./scripts/bootstrap-preview.sh

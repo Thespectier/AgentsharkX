@@ -185,12 +185,19 @@ as UID/GID `65532:65532`, and exposes one same-origin port. `/healthz` is public
 and reports process readiness only; authenticated `/system` diagnostics remain
 the authority for independent upstream state.
 
-Compose builds AgentGuard from its immutable revision, pulls agentgateway by
-tag plus digest, and builds AgentsharkX locally. AgentsharkX has no dependency
-condition on either upstream so it can start degraded and explain recovery.
-Every published port remains loopback in the example environment. Missing or
-placeholder AgentsharkX/AgentGuard credentials cause configuration validation
-to fail before the HTTP listener opens.
+Compose builds AgentGuard from its immutable main revision, pulls agentgateway
+by tag plus digest, and builds AgentsharkX locally. This follows AgentGuard's
+official source-build topology while avoiding a floating `latest` tag.
+AgentsharkX has no dependency condition on either upstream so it can start
+degraded and explain recovery. Every published port remains loopback in the
+example environment. Missing or placeholder AgentsharkX/AgentGuard credentials
+cause configuration validation to fail before the HTTP listener opens.
+
+The preview Compose wrapper resolves the owner UID/GID of the explicit
+agentgateway config file and runs only that container as the same non-root
+identity. A read-write bind does not bypass Unix mode bits: without the
+identity alignment, the image's default UID `65532` cannot save a checkout-owned
+mode-0644 file through the native Raw Configuration editor.
 
 The release E2E runs contract-shaped upstream fixtures as separate processes
 and exercises the actual BFF session, Connect probe, Audit poll/SSE path, and
@@ -200,10 +207,11 @@ evidence; pinned upstream samples and smoke checks remain authoritative.
 ## Phase 0 deployment decisions
 
 - agentgateway is pulled by tag plus digest.
-- AgentGuard publishes a release tag but no official prebuilt container image;
-  Compose builds directly from that release's full Git revision and assigns a
-  local image name.
+- AgentGuard publishes no official prebuilt container image; Compose builds the
+  server and console from the verified current-main revision and assigns a
+  revision-qualified local image name.
 - No submodules and no upstream source are committed here.
 - agentgateway needs explicit wildcard management bindings inside a container.
-- AgentGuard `v2.1` needs a corrected Compose healthcheck path. Details and
-  evidence are in [upstream compatibility](upstream-compatibility.md).
+- The pinned AgentGuard main snapshot still needs the corrected Compose
+  healthcheck path. Details and evidence are in
+  [upstream compatibility](upstream-compatibility.md).

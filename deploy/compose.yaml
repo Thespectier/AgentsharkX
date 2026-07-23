@@ -38,6 +38,7 @@ services:
       start_period: 10s
   agentgateway:
     image: ${AGENTGATEWAY_IMAGE}:${AGENTGATEWAY_VERSION}
+    user: "${AGENTGATEWAY_RUNTIME_UID:-65532}:${AGENTGATEWAY_RUNTIME_GID:-65532}"
     command: ["-f", "/etc/agentgateway/config.yaml"]
     restart: unless-stopped
     environment:
@@ -64,6 +65,11 @@ services:
       AGENTGUARD_HOST: 0.0.0.0
       AGENTGUARD_PORT: 38080
       AGENTGUARD_API_KEY: ${AGENTGUARD_ADMIN_TOKEN}
+      AGENTGUARD_SERVER_PLUGIN_CONFIG: ${AGENTGUARD_SERVER_PLUGIN_CONFIG:-./config/plugins.json}
+      AGENTGUARD_POLICY: ${AGENTGUARD_POLICY:-}
+      AGENTGUARD_LLM_BASE_URL: ${AGENTGUARD_LLM_BASE_URL:-}
+      AGENTGUARD_LLM_MODEL: ${AGENTGUARD_LLM_MODEL:-}
+      AGENTGUARD_LLM_API_KEY: ${AGENTGUARD_LLM_API_KEY:-}
     ports:
       - "${AGENTGUARD_API_BIND}:${AGENTGUARD_API_PORT}:38080"
     healthcheck:
@@ -78,9 +84,6 @@ services:
 
   agentguard-console:
     image: ${AGENTGUARD_IMAGE}:${AGENTGUARD_VERSION}
-    build:
-      context: ${AGENTGUARD_BUILD_CONTEXT}
-      dockerfile: Dockerfile
     command: ["frontend"]
     restart: unless-stopped
     environment:

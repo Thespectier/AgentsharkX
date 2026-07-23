@@ -7,7 +7,9 @@ AgentsharkX reads only the two management APIs.
 ## Minimal AgentGuard event
 
 [`examples/agentguard_minimal.py`](../examples/agentguard_minimal.py) uses the
-verified AgentGuard `v2.1` constructor and `wrap_tool` contract. Configure:
+verified AgentGuard main revision
+`4b755fb4a4a2763b7e817b3d0220fe5c22187b59` constructor and `wrap_tool`
+contract. Configure:
 
 - `AGENTGUARD_SERVER_URL`: the AgentGuard API reachable by the agent process;
 - `AGENTGUARD_API_KEY`: the AgentGuard server API key, never an AgentsharkX
@@ -19,12 +21,13 @@ from timing, names, or gateway logs.
 
 ## Framework adapters
 
-The pinned AgentGuard release exposes `Guard`/`Principal` plus adapters including
-`attach_langchain`, `attach_langgraph`, `attach_autogen`,
-`attach_openai_agents`, and `attach_llamaindex`. Use the exact release
-documentation and keep the AgentGuard API key in the agent's server-side secret
-store. Adapter event phases remain `llm_before`, `llm_after`, `tool_before`, or
-`tool_after`; AgentsharkX does not rename them into a synthetic policy model.
+The pinned AgentGuard snapshot exposes `Guard`/`Principal` plus adapters
+including `attach_langchain`, `attach_langgraph`, `attach_autogen`,
+`attach_openai_agents`, and `attach_llamaindex`. Use the exact
+pinned-revision documentation and keep the AgentGuard API key in the agent's
+server-side secret store. Adapter event phases remain `llm_before`,
+`llm_after`, `tool_before`, or `tool_after`; AgentsharkX does not rename them
+into a synthetic policy model.
 
 For gateway traffic, point the agent's OpenAI-compatible or MCP client at an
 explicit listener configured in agentgateway. The repository's default

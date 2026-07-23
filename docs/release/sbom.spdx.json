@@ -9699,7 +9699,7 @@
     {
       "name": "AgentGuard",
       "SPDXID": "SPDXRef-Upstream-AgentGuard",
-      "versionInfo": "v2.1",
+      "versionInfo": "main-4b755fb",
       "downloadLocation": "https://github.com/WhitzardAgent/AgentGuard",
       "filesAnalyzed": false,
       "licenseConcluded": "NOASSERTION",
