@@ -510,6 +510,15 @@ git diff --check
 标签。该提交已经包含服务端 Thought-Aligner；它在官方配置中是可选插件，默认不会
 自动启用，应通过 AgentGuard 自己的插件配置管理。
 
+如需启用 Thought-Aligner，在本地 `.env` 中把
+`AGENTGUARD_SERVER_PLUGIN_CONFIG` 改为
+`./config/plugins.thought-aligner.example.json`，并设置
+`THOUGHT_ALIGNER_BASE_URL`、`THOUGHT_ALIGNER_MODEL` 和
+`THOUGHT_ALIGNER_API_KEY`，然后运行 `make preview-up` 重建服务。密钥只传给
+AgentGuard server 容器，不要写进 JSON、提交到 Git 或输入 AgentsharkX 页面。该插件
+会把显式推理和选定的观察结果发送到配置的 Thought-Aligner 端点，启用前应确认数据
+留存、脱敏、区域处理和模型许可证要求。
+
 ### 9.5 Raw Configuration 保存失败
 
 如果原生编辑器保存时报 `Permission denied`：

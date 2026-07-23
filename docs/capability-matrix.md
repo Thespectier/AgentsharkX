@@ -65,7 +65,7 @@ traffic claim.
 | MCP detection | AgentGuard | supported | Phase 4 adapter tests for `POST .../mcps/detect` | Same bounded job contract; expose safe result fields and recoverable errors only. |
 | Remote attestation | AgentGuard | unavailable | no verified route or field | Do not use cryptographic or remote-attestation claims in UI copy. |
 | Native configuration console | AgentGuard | link-out | configured `AGENTGUARD_CONSOLE_URL`; no new upstream mutation contract | Expose the validated native-console URL from Protect for settings not covered by verified AgentsharkX writes. |
-| Thought-Aligner plugin | AgentGuard | link-out | pinned main source and `config/plugins.thought-aligner.example.json` | The code is present in the runtime image but opt-in and upstream-owned; configure it through AgentGuard, never infer an AgentsharkX mutation API. |
+| Thought-Aligner plugin | AgentGuard | link-out | pinned main source, example config, and Compose environment render check | The code and dedicated server-only environment inputs are present but opt-in and upstream-owned; configure it through AgentGuard, never infer an AgentsharkX mutation API. |
 
 The AgentGuard registry probes the verified global routes independently and
 publishes `guard.health`, `guard.sessions`, `guard.tools`, `guard.skills`,

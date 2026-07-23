@@ -95,7 +95,10 @@ strategies, or MCP transport shapes change.
   AgentGuard `agent_id` fields from resources and sessions.
 - The verified main snapshot contains the server-side Thought-Aligner plugin
   and example plugin configuration. It remains opt-in and upstream-owned;
-  AgentsharkX does not invent a management route for it.
+  AgentsharkX does not invent a management route for it. Preview Compose
+  forwards its three dedicated endpoint/model/key environment variables only
+  to the AgentGuard server so the upstream example config can be selected
+  without storing a key in JSON.
 - Its 45 management OpenAPI paths are identical to the checked-in summary, and
   the read-only compatibility smoke passed against the rebuilt server.
 

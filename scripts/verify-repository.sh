@@ -56,6 +56,17 @@ if [[ -n "$latest_matches" ]]; then
   exit 1
 fi
 
+for variable in \
+  AGENTGUARD_SERVER_PLUGIN_CONFIG \
+  THOUGHT_ALIGNER_BASE_URL \
+  THOUGHT_ALIGNER_MODEL \
+  THOUGHT_ALIGNER_API_KEY; do
+  if ! rg -q "^[[:space:]]+$variable:" deploy/compose.yaml; then
+    echo "AgentGuard runtime variable is not forwarded by Compose: $variable" >&2
+    exit 1
+  fi
+done
+
 if [[ -n "$(git submodule status 2>/dev/null)" ]]; then
   echo "git submodules are not allowed" >&2
   exit 1
