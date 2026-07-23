@@ -61,7 +61,12 @@ for variable in \
   THOUGHT_ALIGNER_BASE_URL \
   THOUGHT_ALIGNER_MODEL \
   THOUGHT_ALIGNER_API_KEY; do
-  if ! rg -q "^[[:space:]]+$variable:" deploy/compose.yaml; then
+  if command -v rg >/dev/null 2>&1; then
+    variable_is_forwarded="$(rg -n "^[[:space:]]+$variable:" deploy/compose.yaml || true)"
+  else
+    variable_is_forwarded="$(grep -nE "^[[:space:]]+$variable:" deploy/compose.yaml || true)"
+  fi
+  if [[ -z "$variable_is_forwarded" ]]; then
     echo "AgentGuard runtime variable is not forwarded by Compose: $variable" >&2
     exit 1
   fi
