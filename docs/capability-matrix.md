@@ -34,8 +34,8 @@ generated OpenAPI but a mutating request was intentionally not executed.
 | MCP servers | agentgateway | partial | Phase 3 adapter over runtime `/api/config`; no dedicated read API | Normalize top-level and inline explicit MCP targets only and preserve transport and scope. |
 | Listeners, routes, backends | agentgateway | partial | Phase 3 adapter over runtime `/api/config` | Apply only verified HTTP defaults; provide filter, cursor pagination, and detail without claiming backend health. |
 | Cost catalog | agentgateway | supported | runtime `GET /api/costs/models` | `loaded:false` is an empty state, not fabricated providers. |
-| Request logs | agentgateway | partial | runtime `POST /api/logs/search`; 500 without request-log DB | Capability probe must surface `request log database is not configured`. |
-| Analytics | agentgateway | partial | Phase 3 bounded `POST /api/logs/analytics/summary` with `bucketCount=12`; same DB dependency | Sum non-overlapping returned buckets; return explicit `unavailable` and null metrics when storage is missing. |
+| Request logs | agentgateway | supported | runtime `POST /api/logs/search` returned 200 from the bundled SQLite store and returned the real LLM request | Probe the redacted search contract; surface an explicit unavailable status if an external deployment omits storage. |
+| Analytics | agentgateway | supported | runtime bounded `POST /api/logs/analytics/summary` returned the real request/token aggregate | Sum non-overlapping returned buckets; return explicit `unavailable` and null metrics when storage is missing. |
 | Metrics | agentgateway | supported | runtime `GET :15020/metrics` | Metrics are diagnostics, not a substitute for request-log records. |
 | Raw config editor/save | agentgateway | link-out | pinned UI `/raw-config`; live unchanged `POST /api/config` returned 200 from the host-native process | Keep editing upstream-owned; the default process runs as the checkout user against the explicit config file, while the container fallback aligns its non-root UID/GID. |
 | CEL editor/evaluator | agentgateway | link-out | pinned UI `/cel`; evaluation API remains upstream-owned | BFF creates a validated deep link only. |
@@ -46,10 +46,10 @@ generated OpenAPI but a mutating request was intentionally not executed.
 
 The live registry uses `gateway.runtime`, `gateway.configuration`,
 `gateway.cost-catalog`, `gateway.request-logs`, and `gateway.admin-auth` IDs.
-`gateway.request-logs` remains `partial` from the verified database dependency.
-Phase 6 sends the verified log-search body with `includeAttributes=false`; a
-missing database becomes a source-scoped Audit failure rather than an empty
-traffic claim.
+`gateway.request-logs` is now determined by a live redacted search probe rather
+than a static `partial` label. Phase 6 sends the verified log-search body with
+`includeAttributes=false`; a missing database in an external deployment becomes
+a source-scoped Audit failure rather than an empty traffic claim.
 
 ## Trust and AgentGuard resources
 
@@ -92,8 +92,8 @@ probe-only because this phase does not add an auditor-management surface.
 
 | AgentsharkX capability | Source | Status | Evidence | Adapter rule |
 |---|---|---|---|---|
-| Gateway traffic detail | agentgateway | partial | Phase 6 adapter tests; request-log API requires configured DB | Never request attributes or payload; return only allow-listed redacted detail. |
-| Gateway analytics | agentgateway | partial | Phase 6 adapter plus source-independent service tests; API requires configured DB | Surface explicit capability failure while peer-source data remains available. |
+| Gateway traffic detail | agentgateway | supported | Phase 6 adapter tests plus bundled SQLite runtime request | Never request attributes or payload; return only allow-listed redacted detail. |
+| Gateway analytics | agentgateway | supported | Phase 6 adapter tests plus bundled SQLite runtime aggregate | Surface explicit capability failure while peer-source data remains available. |
 | AgentGuard traffic | AgentGuard | supported | Phase 6 contract tests for `GET /v1/backend/traffic?n=500` | Use scalar action/latency/risk fields for metrics only; the route has no event ID, so do not synthesize an event. |
 | AgentGuard recent audit | AgentGuard | supported | Phase 6 redaction and BFF integration tests for `GET /v1/backend/audit/recent?n=500` | Preserve `event_id`, phase, action, subject, and safe tool identity; omit runtime state, args/results, plugins, and reason. |
 | AgentGuard sessions in Audit | AgentGuard | supported | Phase 6 exact-ID count tests plus verified sessions contract | Preserve session/agent IDs; count events and denies only by exact AgentGuard session ID. |

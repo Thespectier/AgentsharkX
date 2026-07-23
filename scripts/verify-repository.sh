@@ -40,6 +40,7 @@ required_files=(
   scripts/preview.sh
   scripts/preview-compose.sh
   scripts/gateway-config-write-smoke.sh
+  scripts/gateway-observability-smoke.sh
   scripts/release-e2e.sh
   scripts/secret-scan.sh
 )
@@ -80,6 +81,7 @@ fi
 
 for script in \
   scripts/agentgateway-standalone.sh \
+  scripts/gateway-observability-smoke.sh \
   scripts/standalone-compose.sh \
   scripts/preview.sh; do
   if [[ ! -x "$script" ]]; then
@@ -90,6 +92,7 @@ done
 
 bash -n \
   scripts/agentgateway-standalone.sh \
+  scripts/gateway-observability-smoke.sh \
   scripts/standalone-compose.sh \
   scripts/preview.sh \
   scripts/bootstrap-preview.sh

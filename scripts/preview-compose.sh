@@ -3,6 +3,7 @@ set -euo pipefail
 
 root_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 config_path="$root_dir/deploy/agentgateway/config.yaml"
+gateway_data_path="$root_dir/.cache/agentgateway-standalone/data"
 
 if stat -c '%u' "$config_path" >/dev/null 2>&1; then
   config_uid="$(stat -c '%u' "$config_path")"
@@ -17,6 +18,8 @@ fi
 # Run only agentgateway as the file owner; the service remains non-root.
 export AGENTGATEWAY_RUNTIME_UID="${AGENTGATEWAY_RUNTIME_UID:-$config_uid}"
 export AGENTGATEWAY_RUNTIME_GID="${AGENTGATEWAY_RUNTIME_GID:-$config_gid}"
+mkdir -p "$gateway_data_path"
+chmod 0700 "$gateway_data_path"
 
 exec docker compose \
   --env-file "$root_dir/deploy/versions.env" \

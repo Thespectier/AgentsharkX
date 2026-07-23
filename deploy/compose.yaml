@@ -40,6 +40,7 @@ services:
     image: ${AGENTGATEWAY_IMAGE}:${AGENTGATEWAY_VERSION}
     user: "${AGENTGATEWAY_RUNTIME_UID:-65532}:${AGENTGATEWAY_RUNTIME_GID:-65532}"
     command: ["-f", "/etc/agentgateway/config.yaml"]
+    working_dir: /workspace
     restart: unless-stopped
     environment:
       ADMIN_ADDR: 0.0.0.0:15000
@@ -53,6 +54,7 @@ services:
       # The pinned native console saves POST /api/config back to this file.
       # Keep the host path explicit and management ports loopback-only.
       - ./agentgateway/config.yaml:/etc/agentgateway/config.yaml
+      - ../.cache/agentgateway-standalone/data:/workspace/.cache/agentgateway-standalone/data
 
   agentguard:
     image: ${AGENTGUARD_IMAGE}:${AGENTGUARD_VERSION}

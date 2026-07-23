@@ -168,6 +168,15 @@ service and falls back to `nohup` when no user manager is available. Use
 `make gateway-standalone-status` and
 `make gateway-standalone-logs` for process diagnostics.
 
+The preview also enables agentgateway's own SQLite request-log store at
+`.cache/agentgateway-standalone/data/request-logs.db`. This is upstream-owned
+state, not an AgentsharkX database. It persists across normal preview restarts
+and makes the native agentgateway **Logs** and **Analytics** pages available.
+The launcher limits the data directory to the checkout user. Agentgateway
+v1.3.1 can retain LLM prompt/completion payloads in this store; AgentsharkX
+never requests or returns those payloads, but operators must still treat the
+database as sensitive.
+
 Default local endpoints:
 
 - AgentsharkX preview: <http://localhost:8080>
@@ -205,6 +214,7 @@ set -a
 set +a
 make upstream-smoke
 make gateway-config-write-smoke
+make gateway-observability-smoke
 ```
 
 The second smoke test reads the active agentgateway configuration and submits
@@ -214,6 +224,8 @@ The default native process already runs as the checkout user, so the upstream
 Raw Configuration editor can write `deploy/agentgateway/config.yaml` directly.
 The container fallback aligns only the gateway container UID/GID with that
 file's owner instead of making it world-writable or running as root.
+The observability smoke test verifies the configured database URL and calls
+redacted log search plus Analytics without printing request contents.
 
 `make preview-down` stops the stack. The BFF starts even if one source is down,
 and `/system` provides source-specific recovery checks. `/healthz` reports only

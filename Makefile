@@ -6,7 +6,7 @@ GO_RACE_IMAGE := golang:$(GO_VERSION)
 COMPOSE := docker compose --env-file deploy/versions.env --env-file deploy/example.env -f deploy/compose.yaml
 PREVIEW := ./scripts/preview.sh
 
-.PHONY: verify format-check test race-test web-check secret-boundary secret-scan repository-check openapi-validate compose-validate upstream-smoke gateway-config-write-smoke gateway-standalone-install gateway-standalone-up gateway-standalone-down gateway-standalone-status gateway-standalone-logs preview-bootstrap preview-up preview-container-up preview-down preview-status container-build release-e2e sbom security-scan release-gate
+.PHONY: verify format-check test race-test web-check secret-boundary secret-scan repository-check openapi-validate compose-validate upstream-smoke gateway-config-write-smoke gateway-observability-smoke gateway-standalone-install gateway-standalone-up gateway-standalone-down gateway-standalone-status gateway-standalone-logs preview-bootstrap preview-up preview-container-up preview-down preview-status container-build release-e2e sbom security-scan release-gate
 
 verify: format-check test race-test web-check secret-boundary repository-check openapi-validate compose-validate
 
@@ -59,6 +59,9 @@ upstream-smoke:
 
 gateway-config-write-smoke:
 	@./scripts/gateway-config-write-smoke.sh
+
+gateway-observability-smoke:
+	@./scripts/gateway-observability-smoke.sh
 
 gateway-standalone-install:
 	@./scripts/agentgateway-standalone.sh install

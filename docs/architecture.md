@@ -156,8 +156,12 @@ correlation is marked verified only when both sources explicitly return the
 same non-empty trace or session identifier; timestamps are never used.
 
 No Audit state is durable. SSE resume covers only the retained ring, and
-long-term logs remain in their upstream systems. AgentsharkX still provides no
-task model, DAG, payload vault, replay engine, or traffic collector.
+long-term logs remain in their upstream systems. The bundled preview configures
+agentgateway's upstream-owned SQLite request-log store under ignored
+`.cache/agentgateway-standalone/data/`; this does not make AgentsharkX the
+database owner. The BFF requests neither payload nor attributes from that
+store. AgentsharkX still provides no task model, DAG, payload vault, replay
+engine, or traffic collector.
 
 ## Security baseline
 
@@ -194,6 +198,11 @@ under ignored `.cache/` and refuses a checksum or embedded-version mismatch.
 It reads the same explicit `deploy/agentgateway/config.yaml` as the previous
 container topology and runs as the checkout user, so native Raw Configuration
 writes need no bind-mount UID workaround.
+The explicit config enables the pinned upstream's SQLite log store at a
+repository-relative path. Both the native launcher and container fallback use
+the repository root as their working directory and share the same ignored data
+directory, so Logs and Analytics survive either runtime mode without adding an
+AgentsharkX database service.
 
 The integrated connector is environment-specific. Native Linux Docker gives
 AgentsharkX host networking so the BFF reaches the gateway's loopback-only

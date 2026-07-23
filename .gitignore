@@ -6,6 +6,7 @@ __pycache__/
 .DS_Store
 node_modules/
 .cache/
+deploy/agentgateway/base-costs.json
 dist/
 coverage/
 playwright-report/

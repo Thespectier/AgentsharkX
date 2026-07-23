@@ -53,9 +53,13 @@ verified. Sanitized management responses are stored under
 - The configured host-native LLM listener returned the explicit model from
   `GET :4000/v1/models`; a minimal chat completion reached the configured
   DeepSeek provider and returned HTTP 200 with a valid chat-completion shape.
-- Log search and analytics routes exist but returned HTTP 500 with
-  `request log database is not configured` under the minimal config. These
-  capabilities are `partial`, not silently empty.
+- The exact v1.3.1 schema and source confirm `config.database.url` selects the
+  request-log backend; a non-PostgreSQL URL uses SQLite, creates the schema, and
+  enables WAL automatically.
+- The bundled preview SQLite store made `POST /api/logs/search` and
+  `POST /api/logs/analytics/summary` return HTTP 200. After one real DeepSeek
+  proxy request, redacted search returned one HTTP-200 record and Analytics
+  returned one request with its token count.
 
 The default Linux preview starts the official binary with an explicit file
 source and loopback admin, metrics, and readiness addresses. LLM and MCP
@@ -63,6 +67,15 @@ listeners from that file bind directly on the host, which removes the need to
 predict and publish business ports through Compose. The binary is stored only
 under ignored `.cache/` after its checksum and embedded release/revision match
 the pinned metadata.
+
+The explicit file uses the verified `config.database.url` field with the
+repository-relative SQLite URL
+`sqlite://.cache/agentgateway-standalone/data/request-logs.db`. Both the native
+launcher and fallback container run from the repository root and keep that
+directory persistent and owner-only. This store is owned by agentgateway, not
+AgentsharkX. The pinned upstream retains LLM prompt/completion payload rows when
+available; AgentsharkX searches with `includeAttributes=false` and never calls
+payload detail, so those fields do not cross the BFF contract.
 
 Native Linux Docker connects the BFF through host networking. Docker Desktop
 was separately verified to reach the same loopback-only readiness listener

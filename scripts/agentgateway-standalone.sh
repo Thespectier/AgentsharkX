@@ -9,6 +9,8 @@ gateway_env="$root_dir/.agentgateway.env"
 config_path="$root_dir/deploy/agentgateway/config.yaml"
 cache_root="$root_dir/.cache/agentgateway-standalone"
 runtime_root="$cache_root/runtime"
+data_root="$cache_root/data"
+database_path="$data_root/request-logs.db"
 pid_file="$runtime_root/agentgateway.pid"
 manager_file="$runtime_root/manager"
 log_file="$runtime_root/agentgateway.log"
@@ -176,6 +178,7 @@ start_with_systemd() {
     --quiet
     "--property=Type=exec"
     "--property=Restart=no"
+    "--property=UMask=0077"
     "--property=WorkingDirectory=$root_dir"
     "--property=StandardOutput=append:$log_file"
     "--property=StandardError=append:$log_file"
@@ -229,7 +232,13 @@ start_gateway() {
     echo "curl is required to check agentgateway readiness" >&2
     exit 1
   }
-  mkdir -p "$runtime_root"
+  mkdir -p "$runtime_root" "$data_root"
+  chmod 0700 "$runtime_root" "$data_root"
+  for database_file in "$database_path" "$database_path-wal" "$database_path-shm"; do
+    if [[ -e "$database_file" ]]; then
+      chmod 0600 "$database_file"
+    fi
+  done
   if pid="$(running_pid)"; then
     echo "agentgateway standalone is already running (pid $pid)"
     return
@@ -308,6 +317,7 @@ status_gateway() {
     echo "agentgateway standalone: running (pid $pid, version $version, manager $manager)"
     echo "binary: $binary_path"
     echo "config: $config_path"
+    echo "request log database: $database_path"
     return
   fi
   echo "agentgateway standalone: stopped"

@@ -87,10 +87,21 @@ an existing file.
 
 ## No gateway traffic events
 
-The minimal agentgateway config contains no business listeners and no request-log
-database. A missing database is shown as `partial`, never as an empty-success
-claim. Configure routes/provider credentials and logging in agentgateway, then
-use **Connect → Setup** and the upstream smoke test.
+Run `make gateway-observability-smoke` first. The bundled preview configures
+agentgateway's SQLite request-log store at
+`.cache/agentgateway-standalone/data/request-logs.db`; zero traffic must return
+successful empty Logs/Analytics responses. Then configure routes/provider
+credentials, send one request through a gateway business listener, and repeat
+the smoke test.
+
+If the error is `request log database is not configured`, confirm
+`config.database.url` remains in Raw Configuration and restart agentgateway
+because this top-level setting is static. If startup reports a database
+permission failure, keep the data directory owner-only and restart through
+`make preview-up`; do not make the database world-readable. Agentgateway
+v1.3.1 may retain LLM prompt/completion payloads in this upstream-owned SQLite
+store, even though AgentsharkX always searches with
+`includeAttributes=false` and never fetches payload detail.
 
 ## Container is unhealthy
 

@@ -49,6 +49,7 @@ func (client *Client) Capabilities(ctx context.Context) []model.Capability {
 	configErr := client.upstream.ProbeJSON(ctx, "/api/config")
 	dumpErr := client.upstream.ProbeJSON(ctx, "/config_dump")
 	costErr := client.upstream.ProbeJSON(ctx, "/api/costs/models")
+	requestLogs, requestLogsErr := client.Traffic(ctx, 1)
 
 	configurationStatus := model.CapabilitySupported
 	configurationReason := "live probes confirmed /api/config and /config_dump"
@@ -60,11 +61,21 @@ func (client *Client) Capabilities(ctx context.Context) []model.Capability {
 		configurationReason = "only one live configuration probe succeeded"
 	}
 
+	requestLogsStatus := model.CapabilitySupported
+	requestLogsReason := "live redacted /api/logs/search probe succeeded"
+	if requestLogsErr != nil {
+		requestLogsStatus = model.CapabilityUnavailable
+		requestLogsReason = "live request-log probe failed"
+	} else if requestLogs.Status != "available" {
+		requestLogsStatus = model.CapabilityUnavailable
+		requestLogsReason = requestLogs.Reason
+	}
+
 	return []model.Capability{
 		capability("gateway.runtime", model.SourceAgentGateway, runtimeErr, checkedAt, "live /api/runtime probe succeeded"),
 		{ID: "gateway.configuration", Source: model.SourceAgentGateway, Status: configurationStatus, CheckedAt: checkedAt, Reason: configurationReason},
 		capability("gateway.cost-catalog", model.SourceAgentGateway, costErr, checkedAt, "live /api/costs/models probe succeeded"),
-		{ID: "gateway.request-logs", Source: model.SourceAgentGateway, Status: model.CapabilityPartial, CheckedAt: checkedAt, Reason: "Phase 6 uses the verified search contract; availability depends on configured request-log storage and is reported by Audit"},
+		{ID: "gateway.request-logs", Source: model.SourceAgentGateway, Status: requestLogsStatus, CheckedAt: checkedAt, Reason: requestLogsReason},
 		{ID: "gateway.admin-auth", Source: model.SourceAgentGateway, Status: model.CapabilityUnavailable, CheckedAt: checkedAt, Reason: "pinned upstream does not expose native admin authentication"},
 	}
 }

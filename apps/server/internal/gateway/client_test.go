@@ -57,6 +57,12 @@ func TestCapabilitiesAreIndependentlyProbed(t *testing.T) {
 		case "/api/runtime", "/api/config", "/api/costs/models":
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{}`))
+		case "/api/logs/search":
+			if r.Method != http.MethodPost {
+				t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"logs":[],"nextCursor":null}`))
 		case "/config_dump":
 			http.Error(w, "unavailable", http.StatusServiceUnavailable)
 		default:
@@ -83,6 +89,37 @@ func TestCapabilitiesAreIndependentlyProbed(t *testing.T) {
 	if statuses["gateway.cost-catalog"] != model.CapabilitySupported {
 		t.Fatalf("cost catalog status = %q", statuses["gateway.cost-catalog"])
 	}
+	if statuses["gateway.request-logs"] != model.CapabilitySupported {
+		t.Fatalf("request logs status = %q", statuses["gateway.request-logs"])
+	}
+}
+
+func TestCapabilitiesReportRequestLogStorageAvailability(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.URL.Path == "/api/logs/search" {
+			http.Error(writer, "request log database is not configured", http.StatusInternalServerError)
+			return
+		}
+		writer.Header().Set("Content-Type", "application/json")
+		_, _ = writer.Write([]byte(`{}`))
+	}))
+	defer server.Close()
+
+	client, err := New(server.URL, server.Client(), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, capability := range client.Capabilities(t.Context()) {
+		if capability.ID == "gateway.request-logs" {
+			if capability.Status != model.CapabilityUnavailable || !strings.Contains(capability.Reason, "not configured") {
+				t.Fatalf("unexpected request-log capability: %#v", capability)
+			}
+			return
+		}
+	}
+	t.Fatal("request-log capability is missing")
 }
 
 func TestSnapshotUsesOnlyVerifiedSafeConfigFields(t *testing.T) {

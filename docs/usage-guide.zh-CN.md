@@ -249,8 +249,8 @@ make gateway-config-write-smoke
 只保存在权限为 `0600` 的临时文件中，不会输出到终端。检查脚本默认访问宿主机回环
 端口，不会误用 `.env` 中仅供 Compose 网络解析的 `http://agentgateway:15000`。
 
-默认预览配置没有业务监听器、Provider 凭据、真实业务路由和请求日志数据库，因此
-Connect 或网关审计显示 `partial` 是预期行为。Provider API Key 应配置在
+默认预览配置没有业务监听器、Provider 凭据或真实业务路由，但已经启用
+agentgateway 自己的 SQLite 请求日志数据库。Provider API Key 应配置在
 agentgateway 中，不能放入 AgentsharkX。
 
 ### 4.2 Trust：Agent 和运行时资源
@@ -310,9 +310,12 @@ Audit 独立汇总：
 - AgentGuard Traffic、Audit 和 Sessions；
 - 可以通过完全一致标识确认的跨来源关联。
 
-默认 agentgateway 配置没有请求日志数据库，因此缺少网关流量记录时，界面会显示
-来源范围内的 `partial` 或错误，而不会伪装成“成功但没有数据”。如需网关历史记录，
-应先在 agentgateway 中配置业务路由、Provider 和请求日志数据库。
+默认预览会把 agentgateway 请求日志保存到
+`.cache/agentgateway-standalone/data/request-logs.db`，因此 Logs 与 Analytics
+接口在没有业务流量时会正常返回空结果，而不是报
+`request log database is not configured`。产生真实网关流量后，记录和汇总会同步
+出现；如果该文件不可写或外部 agentgateway 没有配置数据库，界面才会显示该来源
+不可用，而不会伪装成“成功但没有数据”。
 
 AgentsharkX 只在两个来源提供完全相同且非空的 Trace ID 或 Session ID 时标记关联。
 它不会按时间窗口猜测关联关系。
@@ -320,6 +323,11 @@ AgentsharkX 只在两个来源提供完全相同且非空的 Trace ID 或 Sessio
 审计事件列表和 SSE 使用有界内存窗口，最多保留 1000 条事件，并支持恢复和去重。
 BFF 重启后，事件窗口会清空。Audit 不请求网关日志的原始 Payload 或 Attributes，
 事件详情仅返回白名单字段和脱敏投影。
+
+该 SQLite 文件属于 agentgateway 上游持久化状态，不是 AgentsharkX 新增的数据库。
+agentgateway v1.3.1 会在请求日志库中保留 LLM prompt/completion payload；虽然
+AgentsharkX 不读取或返回这些字段，仍应把整个数据目录视为敏感数据，只允许检出
+用户访问，并按组织的数据保留要求管理。
 
 ### 4.5 System：状态和诊断
 
@@ -382,7 +390,7 @@ export AGENTGUARD_API_KEY='<AgentGuard API Key>'
 1. **System** 中相关来源健康；
 2. **Trust** 中出现 AgentGuard 明确上报的身份和资源；
 3. **Audit → Security events** 中出现来源、阶段、动作和脱敏详情引用；
-4. 已配置请求日志数据库时，**Audit → Traffic** 出现网关记录；
+4. 通过默认请求日志数据库确认 **Audit → Traffic** 出现网关记录；
 5. 只有共享标识完全一致时，跨来源事件才显示为已关联。
 
 ## 6. 日常运维
@@ -416,6 +424,15 @@ docker compose --env-file deploy/versions.env --env-file .env \
 make gateway-standalone-status
 make gateway-standalone-logs
 ```
+
+验证 agentgateway Logs 与 Analytics：
+
+```bash
+make gateway-observability-smoke
+```
+
+该检查只请求 `includeAttributes=false` 的日志列表与聚合数据，不输出 prompt、
+completion、Attributes 或 API Key。
 
 查看 AgentGuard：
 
@@ -612,9 +629,16 @@ AgentGuard server 容器，不要写进 JSON、提交到 Git 或输入 Agentshar
 
 ### 9.6 Audit 没有网关流量
 
-默认网关配置没有业务监听器和请求日志数据库。先在 agentgateway 中配置真实路由、
-Provider 凭据和日志存储，再产生实际流量。不要把“没有配置日志数据库”理解为“成功
-返回空记录”。
+1. 运行 `make gateway-observability-smoke`；默认预览应返回 `ok`；
+2. 确认已在 agentgateway 中配置真实路由和 Provider 凭据；
+3. 通过 agentgateway 业务监听器产生至少一条实际流量；
+4. 再检查 agentgateway 原生 Logs/Analytics 与 AgentsharkX Audit。
+
+正常的零流量状态是 Logs/Analytics HTTP 200 且计数为零。如果再次出现
+`request log database is not configured`，确认 Raw Configuration 中仍存在
+`config.database.url`，然后执行
+`make gateway-standalone-down && make preview-up`。该字段是静态配置，保存后必须
+重启才会生效。
 
 ### 9.7 Trust 没有 Agent
 

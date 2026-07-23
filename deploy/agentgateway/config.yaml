@@ -1,3 +1,6 @@
 # yaml-language-server: $schema=https://agentgateway.dev/schema/config
 # Phase 0 starts the management plane without configuring business traffic.
+config:
+  database:
+    url: sqlite://.cache/agentgateway-standalone/data/request-logs.db
 binds: []
