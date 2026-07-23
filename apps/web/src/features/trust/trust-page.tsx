@@ -12,7 +12,7 @@ import {
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
-import { currentSection, PageFrame, WorkspaceTabs } from "../../components/workspace";
+import { PageFrame, useWorkspaceSection, WorkspaceTabs } from "../../components/workspace";
 import {
   Button,
   Card,
@@ -42,6 +42,7 @@ import type {
 } from "../../generated/api-client";
 import { formatCount, formatTime } from "../../lib/format";
 import { formatError, getScenario, mutateOperation, requestOperation } from "../../lib/api";
+import { synchronizeAgentGuardData } from "../../lib/query-sync";
 
 const tabs = [
   { id: "agents", label: "Agents" },
@@ -57,7 +58,7 @@ interface ScanRequest {
 }
 
 export function TrustPage() {
-  const section = currentSection("trust", "agents");
+  const section = useWorkspaceSection("trust", "agents");
   const queryClient = useQueryClient();
   const [activeJobId, setActiveJobId] = useState<string>();
   const [lastScanRequest, setLastScanRequest] = useState<ScanRequest>();
@@ -76,7 +77,7 @@ export function TrustPage() {
     onSuccess: (response, request) => {
       setLastScanRequest(request);
       setActiveJobId(response.data.id);
-      void queryClient.invalidateQueries({ queryKey: ["trust-scans"] });
+      void synchronizeAgentGuardData(queryClient);
     },
   });
   const activeJob = useQuery({
@@ -105,8 +106,7 @@ export function TrustPage() {
 
   useEffect(() => {
     if (currentJob?.status !== "succeeded") return;
-    void queryClient.invalidateQueries({ queryKey: ["trust-resources"] });
-    void queryClient.invalidateQueries({ queryKey: ["trust-scans"] });
+    void synchronizeAgentGuardData(queryClient);
   }, [currentJob?.status, queryClient]);
 
   return (
@@ -415,7 +415,10 @@ function ResourcesView({
       );
       setSelectedTool(undefined);
     },
-    onSettled: () => setPendingLabelId(undefined),
+    onSettled: () => {
+      setPendingLabelId(undefined);
+      void synchronizeAgentGuardData(queryClient);
+    },
   });
 
   if (query.isLoading) return <PageSkeleton label="Loading AgentGuard resources" />;

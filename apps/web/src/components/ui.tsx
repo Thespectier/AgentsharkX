@@ -375,19 +375,26 @@ export function DetailDrawer({
 }) {
   const titleId = useId();
   const closeRef = useRef<HTMLButtonElement>(null);
+  const onCloseRef = useRef(onClose);
   const reduced = useReducedMotion();
   useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
+  useEffect(() => {
     if (!open) return;
+    const returnTarget = returnFocusRef?.current;
     closeRef.current?.focus();
     const keydown = (event: globalThis.KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
+      if (event.key === "Escape") onCloseRef.current();
     };
     document.addEventListener("keydown", keydown);
     return () => {
       document.removeEventListener("keydown", keydown);
-      returnFocusRef?.current?.focus();
+      requestAnimationFrame(() => {
+        if (returnTarget?.isConnected) returnTarget.focus();
+      });
     };
-  }, [onClose, open, returnFocusRef]);
+  }, [open, returnFocusRef]);
   return (
     <AnimatePresence>
       {open ? (

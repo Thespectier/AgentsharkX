@@ -1,5 +1,5 @@
-import { Link, Outlet, useRouterState } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
+import { Link, Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Activity,
   Bell,
@@ -18,6 +18,8 @@ import {
 import { useEffect, useState } from "react";
 
 import { isMockMode, requestOperation } from "../lib/api";
+import { synchronizeLiveEvent } from "../lib/query-sync";
+import { LiveEventsContext, useLiveEvents } from "../lib/use-live-events";
 import type { Scenario } from "../types";
 import { CommandPalette } from "../components/command-palette";
 import { Button, SourceBadge, StatusOrb, cn } from "../components/ui";
@@ -39,6 +41,8 @@ const scenarios: Array<{ value: Scenario; label: string }> = [
 
 export function AppShell() {
   const mocksEnabled = isMockMode();
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const location = useRouterState({ select: (state) => state.location });
   const [collapsed, setCollapsed] = useState(
     () => localStorage.getItem("agentshark.sidebar") === "collapsed",
@@ -53,11 +57,16 @@ export function AppShell() {
     staleTime: 15_000,
     retry: false,
   });
+  const live = useLiveEvents(overview.isSuccess && scenario !== "empty");
 
   useEffect(() => {
     localStorage.setItem("agentshark.sidebar", collapsed ? "collapsed" : "expanded");
   }, [collapsed]);
   useEffect(() => setMobileOpen(false), [location.pathname]);
+  useEffect(() => {
+    const event = live.events[0];
+    if (event) void synchronizeLiveEvent(queryClient, event);
+  }, [live.events[0]?.id, queryClient]);
 
   const pending =
     overview.data?.data.metrics.find((metric) => metric.id === "approvals")?.value ?? 0;
@@ -196,10 +205,13 @@ export function AppShell() {
                 <select
                   aria-label="Demo state"
                   onChange={(event) => {
-                    const url = new URL(window.location.href);
-                    if (event.target.value === "normal") url.searchParams.delete("scenario");
-                    else url.searchParams.set("scenario", event.target.value);
-                    window.location.assign(url);
+                    const next = event.target.value as Scenario;
+                    const search = new URLSearchParams(location.searchStr);
+                    if (next === "normal") search.delete("scenario");
+                    else search.set("scenario", next);
+                    search.delete("event");
+                    const query = search.toString();
+                    void navigate({ href: `${location.pathname}${query ? `?${query}` : ""}` });
                   }}
                   value={scenario}
                 >
@@ -233,11 +245,10 @@ export function AppShell() {
                 </span>
               )}
             </div>
-            <button className="time-range">
+            <div aria-label="Data window: last 60 minutes" className="time-range">
               <Clock3 size={15} />
               <span>Last 60m</span>
-              <ChevronRight size={13} />
-            </button>
+            </div>
             <Link
               aria-label={`${pending} pending approvals`}
               className="topbar-icon"
@@ -248,13 +259,20 @@ export function AppShell() {
               <Bell size={17} />
               {pending ? <span>{pending}</span> : null}
             </Link>
-            <button aria-label="AS, open user menu" className="avatar">
+            <Link
+              aria-label="Open system settings"
+              className="avatar"
+              search={{ scenario: scenario === "normal" ? undefined : scenario }}
+              to="/system"
+            >
               AS
-            </button>
+            </Link>
           </div>
         </header>
         <main className="main-content" id="main-content" tabIndex={-1}>
-          <Outlet />
+          <LiveEventsContext.Provider value={live}>
+            <Outlet />
+          </LiveEventsContext.Provider>
         </main>
       </div>
       <CommandPalette onOpenChange={setCommandOpen} open={commandOpen} />

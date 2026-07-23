@@ -1,9 +1,17 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { createRef } from "react";
 import { describe, expect, it, vi } from "vitest";
 
-import { Button, DataTable, EmptyState, ErrorState, SourceBadge, StatusOrb } from "./ui";
+import {
+  Button,
+  DataTable,
+  DetailDrawer,
+  EmptyState,
+  ErrorState,
+  SourceBadge,
+  StatusOrb,
+} from "./ui";
 
 describe("console primitives", () => {
   it("keeps source and status text available to assistive technology", () => {
@@ -41,6 +49,31 @@ describe("console primitives", () => {
     await user.keyboard("{Enter}");
     fireEvent.keyDown(row as HTMLTableRowElement, { key: " " });
     expect(onOpen).toHaveBeenCalledTimes(2);
+  });
+
+  it("returns drawer focus after the closing navigation settles", async () => {
+    const triggerRef = createRef<HTMLButtonElement>();
+    const onClose = vi.fn();
+    const renderDrawer = (open: boolean) => (
+      <>
+        <button ref={triggerRef}>Selected event</button>
+        <DetailDrawer
+          eyebrow="AgentGuard"
+          onClose={onClose}
+          open={open}
+          returnFocusRef={triggerRef}
+          title="Denied request"
+        >
+          Event detail
+        </DetailDrawer>
+      </>
+    );
+    const { rerender } = render(renderDrawer(true));
+
+    expect(screen.getByRole("button", { name: "Close drawer" })).toHaveFocus();
+    rerender(renderDrawer(false));
+
+    await waitFor(() => expect(triggerRef.current).toHaveFocus());
   });
 
   it("renders actionable empty and failure states", async () => {

@@ -55,6 +55,14 @@ Provider, Model, MCP Server, Listener, Route, Policy, or Guardrail read APIs.
 Adapters must use explicit fields from config/config-dump and treat missing
 sections as unavailable. Advanced workflows remain in the native console.
 
+The pinned native UI writes configuration through `POST /api/config`. Its
+implementation accepts only a file-backed `ConfigSource`, validates the proposed
+configuration, and writes the active YAML file. The preview therefore mounts
+`deploy/agentgateway/config.yaml` read-write so **Configure agentgateway** can
+save through the upstream-owned editor; the admin port remains bound to
+loopback. AgentsharkX still does not accept, inspect, or relay raw configuration
+or provider credentials.
+
 For Phase 3, the populated config shape and UI routes were also checked against
 the exact pinned source revision. The sanitized
 `config-populated.response.json` freezes providers, direct and virtual models,
@@ -141,6 +149,11 @@ BFF. agentgateway and AgentGuard remain separate Compose services and SPDX
 packages connected over HTTP. The AgentGuard quickstart client is installed
 from the exact pinned Git revision in a disposable virtual environment; it is
 not copied into or linked with the AgentsharkX image.
+
+The post-preview usability pass exposes the validated AgentGuard native-console
+URL beside the verified AgentsharkX rule, label, scan, and approval mutations.
+This is a link-out only: no unverified AgentGuard configuration endpoint or
+field was added to the adapter.
 
 The release E2E fixtures implement only already-frozen contract shapes and run
 outside default Compose. They prove BFF/browser orchestration, including a hard

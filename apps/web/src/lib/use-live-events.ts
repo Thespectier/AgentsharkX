@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { createContext, useContext, useEffect, useRef, useState } from "react";
 
 import type { UnifiedEvent } from "../types";
 import { getScenario, withScenario } from "./api";
@@ -51,6 +51,16 @@ export function useLiveEvents(enabled = true) {
   }, [enabled]);
 
   return { events, status };
+}
+
+export type LiveEventsState = ReturnType<typeof useLiveEvents>;
+
+export const LiveEventsContext = createContext<LiveEventsState | undefined>(undefined);
+
+export function useSharedLiveEvents(): LiveEventsState {
+  const value = useContext(LiveEventsContext);
+  if (!value) throw new Error("useSharedLiveEvents must be used inside the application shell");
+  return value;
 }
 
 export function mergeLiveEvents(

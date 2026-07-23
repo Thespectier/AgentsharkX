@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 import { useMemo, useState } from "react";
 
-import { currentSection, PageFrame, WorkspaceTabs } from "../../components/workspace";
+import { PageFrame, useWorkspaceSection, WorkspaceTabs } from "../../components/workspace";
 import {
   Button,
   Card,
@@ -22,6 +22,7 @@ import {
   Dialog,
   EmptyState,
   ErrorState,
+  ExternalButton,
   PageHeader,
   PageSkeleton,
   PartialBanner,
@@ -46,6 +47,7 @@ import {
   mutateOperation,
   requestOperation,
 } from "../../lib/api";
+import { synchronizeAgentGuardData } from "../../lib/query-sync";
 import type { Severity } from "../../types";
 
 const tabs = [
@@ -93,7 +95,7 @@ const policyColumns: Column<PolicyRow>[] = [
 ];
 
 export function ProtectPage() {
-  const section = currentSection("protect", "policies");
+  const section = useWorkspaceSection("protect", "policies");
   const scenario = getScenario();
   const query = useQuery({
     queryKey: ["protect", scenario],
@@ -125,6 +127,18 @@ export function ProtectPage() {
   return (
     <PageFrame>
       <PageHeader
+        actions={
+          <>
+            {data.links.rawConfig ? (
+              <ExternalButton href={data.links.rawConfig}>Configure agentgateway</ExternalButton>
+            ) : null}
+            {data.links.agentguardConsole ? (
+              <ExternalButton href={data.links.agentguardConsole}>
+                Configure AgentGuard
+              </ExternalButton>
+            ) : null}
+          </>
+        }
         description="Source, scope, phase, and action stay explicit; gateway and runtime policy models are never merged into a synthetic DSL."
         eyebrow="Protect / Policies & intervention"
         title="Enforce every critical boundary"
@@ -310,7 +324,7 @@ function RuntimeRulesView({ data }: { data: ProtectSnapshot }) {
       setCheckResult(undefined);
       setNote("");
       setConfirmed(false);
-      void queryClient.invalidateQueries({ queryKey: ["protect"] });
+      void synchronizeAgentGuardData(queryClient);
     },
   });
   const remove = useMutation({
@@ -325,7 +339,7 @@ function RuntimeRulesView({ data }: { data: ProtectSnapshot }) {
       setDeleteRule(undefined);
       setDeleteNote("");
       setDeleteConfirmed(false);
-      void queryClient.invalidateQueries({ queryKey: ["protect"] });
+      void synchronizeAgentGuardData(queryClient);
     },
   });
   const rows = data.runtimeRules.map(runtimeRow);
@@ -591,11 +605,11 @@ function ApprovalsView({
       setSelected(undefined);
       setNote("");
       setConfirmed(false);
-      void queryClient.invalidateQueries({ queryKey: ["protect-approvals"] });
+      void synchronizeAgentGuardData(queryClient);
     },
     onError: (mutationError) => {
       if (mutationError instanceof ApiError && mutationError.status === 404) {
-        void queryClient.invalidateQueries({ queryKey: ["protect-approvals"] });
+        void synchronizeAgentGuardData(queryClient);
       }
     },
   });
@@ -604,7 +618,7 @@ function ApprovalsView({
     return (
       <ErrorState
         description={formatError(error)}
-        onRetry={() => void queryClient.invalidateQueries({ queryKey: ["protect-approvals"] })}
+        onRetry={() => void synchronizeAgentGuardData(queryClient)}
       />
     );
   const approvals = envelope.data.items;

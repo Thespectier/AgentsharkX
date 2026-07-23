@@ -250,6 +250,13 @@ const mockScanPolls = new Map<string, number>();
 const mockScanAttempts = new Map<string, number>();
 let nextScan = 300;
 
+function currentOverview(): OverviewData {
+  const current = structuredClone(overviewData);
+  const approvals = current.metrics.find((metric) => metric.id === "approvals");
+  if (approvals) approvals.value = mockProtectApprovals.length;
+  return current;
+}
+
 function trustJobEnvelope(job: TrustScanJob) {
   return { data: job, meta: meta("agentguard", job.status === "failed") };
 }
@@ -289,7 +296,7 @@ export const handlers = [
     "/api/v1/auth/session",
     () => new HttpResponse(null, { status: 204, headers: { "X-CSRF-Token": "mock-csrf" } }),
   ),
-  http.get("/api/v1/overview", ({ request }) => respond(request, overviewData, emptyOverview)),
+  http.get("/api/v1/overview", ({ request }) => respond(request, currentOverview(), emptyOverview)),
   http.get("/api/v1/system/health", ({ request }) => {
     const health =
       scenarioFrom(request) === "partial"
@@ -700,6 +707,7 @@ export const handlers = [
           index += 1;
         };
         controller.enqueue(encoder.encode(": mock heartbeat\n\n"));
+        emit();
         timer = setInterval(emit, 2_000);
         request.signal.addEventListener("abort", () => {
           if (timer) clearInterval(timer);

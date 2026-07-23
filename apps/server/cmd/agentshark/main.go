@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -69,7 +70,9 @@ func main() {
 	aggregator := aggregate.New(cfg.Environment, gatewayClient, guardClient)
 	connectService := connect.New(gatewayClient, cfg.Gateway.ConsoleURL)
 	trustService := trust.New(rootContext, guardClient, cfg.ScanTimeout)
-	protectService := protect.New(gatewayClient, protectGuardClient, connectService.Links())
+	consoleLinks := connectService.Links()
+	consoleLinks.AgentGuardConsole = strings.TrimRight(cfg.Guard.ConsoleURL, "/")
+	protectService := protect.New(gatewayClient, protectGuardClient, consoleLinks)
 	hub := stream.NewHub()
 	auditService := audit.New(gatewayClient, guardClient, hub)
 	aggregator.SetOperational(auditService)

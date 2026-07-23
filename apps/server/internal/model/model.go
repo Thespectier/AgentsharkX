@@ -222,11 +222,12 @@ type ConnectCount struct {
 }
 
 type ConsoleLinks struct {
-	Console       string `json:"console,omitempty"`
-	RawConfig     string `json:"rawConfig,omitempty"`
-	CEL           string `json:"cel,omitempty"`
-	LLMPlayground string `json:"llmPlayground,omitempty"`
-	MCPPlayground string `json:"mcpPlayground,omitempty"`
+	Console           string `json:"console,omitempty"`
+	RawConfig         string `json:"rawConfig,omitempty"`
+	CEL               string `json:"cel,omitempty"`
+	LLMPlayground     string `json:"llmPlayground,omitempty"`
+	MCPPlayground     string `json:"mcpPlayground,omitempty"`
+	AgentGuardConsole string `json:"agentguardConsole,omitempty"`
 }
 
 type ConnectSummary struct {

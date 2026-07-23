@@ -49,7 +49,9 @@ services:
       - "${AGENTGATEWAY_METRICS_BIND}:${AGENTGATEWAY_METRICS_PORT}:15020"
       - "${AGENTGATEWAY_READINESS_BIND}:${AGENTGATEWAY_READINESS_PORT}:15021"
     volumes:
-      - ./agentgateway/config.yaml:/etc/agentgateway/config.yaml:ro
+      # The pinned native console saves POST /api/config back to this file.
+      # Keep the host path explicit and management ports loopback-only.
+      - ./agentgateway/config.yaml:/etc/agentgateway/config.yaml
 
   agentguard:
     image: ${AGENTGUARD_IMAGE}:${AGENTGUARD_VERSION}

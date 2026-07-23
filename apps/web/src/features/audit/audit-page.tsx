@@ -10,10 +10,10 @@ import {
   Radio,
   ShieldAlert,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 
 import { RequestTrendChart } from "../../motion/dashboard-motion";
-import { currentSection, PageFrame, WorkspaceTabs } from "../../components/workspace";
+import { PageFrame, useWorkspaceSection, WorkspaceTabs } from "../../components/workspace";
 import {
   Button,
   Card,
@@ -34,8 +34,8 @@ import {
 } from "../../components/ui";
 import { formatCount, formatTime } from "../../lib/format";
 import { formatError, getScenario, requestOperation } from "../../lib/api";
-import { mergeLiveEvents, useLiveEvents } from "../../lib/use-live-events";
-import type { AuditData, UnifiedEvent } from "../../types";
+import { mergeLiveEvents, useSharedLiveEvents } from "../../lib/use-live-events";
+import type { AuditData, Severity, Source, UnifiedEvent } from "../../types";
 
 const tabs = [
   { id: "analytics", label: "Analytics" },
@@ -44,21 +44,28 @@ const tabs = [
   { id: "sessions", label: "Sessions" },
 ];
 
+type AuditFilters = {
+  source: Source | "all";
+  severity: Severity | "all";
+  query: string;
+};
+
+const defaultFilters: AuditFilters = { source: "all", severity: "all", query: "" };
+
 export function AuditPage() {
-  const section = currentSection("audit", "analytics");
+  const section = useWorkspaceSection("audit", "analytics");
   const scenario = getScenario();
   const location = useRouterState({ select: (state) => state.location });
   const navigate = useNavigate();
   const triggerRef = useRef<HTMLElement | null>(null);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [filters, setFilters] = useState<AuditFilters>(defaultFilters);
   const query = useQuery({
     queryKey: ["audit", scenario],
     queryFn: ({ signal }) => requestOperation("getAuditAnalytics", signal),
     retry: false,
   });
-  const live = useLiveEvents(query.isSuccess && scenario !== "empty");
-  useEffect(() => {
-    if (live.events[0]) void query.refetch();
-  }, [live.events[0]?.id]);
+  const live = useSharedLiveEvents();
   const data = useMemo<AuditData | undefined>(() => {
     if (!query.data) return undefined;
     return {
@@ -70,6 +77,10 @@ export function AuditPage() {
   const selected = useMemo(
     () => data?.events.find((event) => event.id === selectedId),
     [data, selectedId],
+  );
+  const filteredData = useMemo<AuditData | undefined>(
+    () => (data ? { ...data, events: filterAuditEvents(data.events, filters) } : undefined),
+    [data, filters],
   );
   const detailQuery = useQuery({
     queryKey: ["audit-event", selected?.source, selected?.id, scenario],
@@ -99,7 +110,7 @@ export function AuditPage() {
   );
   const closeEvent = useCallback(() => setEvent(), [setEvent]);
   if (query.isLoading) return <PageSkeleton label="Loading audit data" />;
-  if (query.isError || !query.data || !data)
+  if (query.isError || !query.data || !data || !filteredData)
     return (
       <PageFrame>
         <PageHeader
@@ -115,8 +126,14 @@ export function AuditPage() {
     <PageFrame>
       <PageHeader
         actions={
-          <Button variant="secondary">
+          <Button
+            aria-controls="audit-filters"
+            aria-expanded={filtersOpen}
+            onClick={() => setFiltersOpen((open) => !open)}
+            variant="secondary"
+          >
             <Filter size={14} /> Filter
+            {activeFilterCount(filters) ? ` (${activeFilterCount(filters)})` : ""}
           </Button>
         }
         description="Analyze gateway traffic and runtime security evidence without inventing task-level correlation."
@@ -126,24 +143,28 @@ export function AuditPage() {
         <WorkspaceTabs area="audit" items={tabs} />
       </PageHeader>
       <PartialBanner meta={meta} />
+      {filtersOpen ? <AuditFilterPanel filters={filters} onChange={setFilters} /> : null}
       {section === "analytics" ? (
-        <AnalyticsView data={data} onOpen={(event, trigger) => setEvent(event.id, trigger)} />
+        <AnalyticsView
+          data={filteredData}
+          onOpen={(event, trigger) => setEvent(event.id, trigger)}
+        />
       ) : null}
       {section === "traffic" ? (
         <EventsView
-          events={data.events.filter((event) => event.source === "agentgateway")}
+          events={filteredData.events.filter((event) => event.source === "agentgateway")}
           onOpen={(event, trigger) => setEvent(event.id, trigger)}
           title="Gateway traffic"
         />
       ) : null}
       {section === "security-events" ? (
         <EventsView
-          events={data.events.filter((event) => event.source === "agentguard")}
+          events={filteredData.events.filter((event) => event.source === "agentguard")}
           onOpen={(event, trigger) => setEvent(event.id, trigger)}
           title="Security events"
         />
       ) : null}
-      {section === "sessions" ? <SessionsView data={data} /> : null}
+      {section === "sessions" ? <SessionsView data={filteredData} /> : null}
       <DetailDrawer
         eyebrow={selectedDetail?.source ?? "Event detail"}
         onClose={closeEvent}
@@ -154,6 +175,99 @@ export function AuditPage() {
         {selectedDetail ? <EventDetail event={selectedDetail} /> : null}
       </DetailDrawer>
     </PageFrame>
+  );
+}
+
+function AuditFilterPanel({
+  filters,
+  onChange,
+}: {
+  filters: AuditFilters;
+  onChange: (filters: AuditFilters) => void;
+}) {
+  return (
+    <Card className="audit-filters">
+      <div id="audit-filters">
+        <label>
+          <span>Search events</span>
+          <input
+            onChange={(event) => onChange({ ...filters, query: event.target.value })}
+            placeholder="Summary, agent, model, or resource"
+            value={filters.query}
+          />
+        </label>
+        <label>
+          <span>Source</span>
+          <select
+            onChange={(event) =>
+              onChange({ ...filters, source: event.target.value as AuditFilters["source"] })
+            }
+            value={filters.source}
+          >
+            <option value="all">All sources</option>
+            <option value="agentgateway">agentgateway</option>
+            <option value="agentguard">AgentGuard</option>
+          </select>
+        </label>
+        <label>
+          <span>Severity</span>
+          <select
+            onChange={(event) =>
+              onChange({ ...filters, severity: event.target.value as AuditFilters["severity"] })
+            }
+            value={filters.severity}
+          >
+            <option value="all">All severities</option>
+            {(["info", "low", "medium", "high", "critical"] as const).map((severity) => (
+              <option key={severity} value={severity}>
+                {severity}
+              </option>
+            ))}
+          </select>
+        </label>
+        <Button
+          disabled={!activeFilterCount(filters)}
+          onClick={() => onChange(defaultFilters)}
+          size="sm"
+          variant="ghost"
+        >
+          Reset filters
+        </Button>
+      </div>
+    </Card>
+  );
+}
+
+export function filterAuditEvents(events: UnifiedEvent[], filters: AuditFilters): UnifiedEvent[] {
+  const query = filters.query.trim().toLowerCase();
+  return events.filter((event) => {
+    if (filters.source !== "all" && event.source !== filters.source) return false;
+    if (filters.severity !== "all" && event.severity !== filters.severity) return false;
+    if (!query) return true;
+    const searchable = [
+      event.summary,
+      event.subject?.agentId,
+      event.subject?.principalId,
+      event.subject?.sessionId,
+      event.target?.provider,
+      event.target?.model,
+      event.target?.tool,
+      event.target?.resource,
+      event.action,
+      event.decision,
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+    return searchable.includes(query);
+  });
+}
+
+function activeFilterCount(filters: AuditFilters): number {
+  return (
+    Number(Boolean(filters.query.trim())) +
+    Number(filters.source !== "all") +
+    Number(filters.severity !== "all")
   );
 }
 

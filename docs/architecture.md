@@ -1,6 +1,6 @@
 # Architecture
 
-Status: Phase 6 Audit and live-data integration, verified 2026-07-22.
+Status: Phase 7 post-preview usability and live-data consistency, verified 2026-07-23.
 
 ## Context
 
@@ -76,6 +76,12 @@ strict session and keeps the CSRF token only in module memory; after a hard
 reload, `GET /api/v1/auth/session` validates the HttpOnly cookie and reissues
 that session's CSRF value without persisting the administrator token. No frontend
 module imports upstream code or receives an upstream credential.
+
+The application shell owns one SSE connection and invalidates source-scoped
+query families when a verified event arrives. Active queries also refresh on a
+bounded interval, on navigation, and when the window regains focus. Successful
+AgentGuard mutations invalidate Trust, Protect, Audit, and Overview together so
+cross-page counts and rows converge without a hard browser reload.
 
 The five primary views are Home, Connect, Trust, Protect, and Audit. System is
 a supporting diagnostics page, not another product capability. URL search

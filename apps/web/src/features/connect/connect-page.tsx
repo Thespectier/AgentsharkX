@@ -11,7 +11,7 @@ import {
 } from "lucide-react";
 import { useRef, useState } from "react";
 
-import { currentSection, PageFrame, WorkspaceTabs } from "../../components/workspace";
+import { PageFrame, useWorkspaceSection, WorkspaceTabs } from "../../components/workspace";
 import {
   Button,
   Card,
@@ -55,7 +55,7 @@ type Selection =
   | { kind: "route"; id: string };
 
 export function ConnectPage() {
-  const section = currentSection("connect", "overview");
+  const section = useWorkspaceSection("connect", "overview");
   const scenario = getScenario();
   const [selection, setSelection] = useState<Selection>();
   const triggerRef = useRef<HTMLElement | null>(null);
@@ -88,8 +88,10 @@ export function ConnectPage() {
     <PageFrame>
       <PageHeader
         actions={
-          data.links.console ? (
-            <ExternalButton href={data.links.console}>Open in agentgateway</ExternalButton>
+          data.links.rawConfig || data.links.console ? (
+            <ExternalButton href={data.links.rawConfig ?? data.links.console!}>
+              Configure agentgateway
+            </ExternalButton>
           ) : undefined
         }
         description="Verified agentgateway configuration and traffic surfaces. Advanced editing stays in the native console."

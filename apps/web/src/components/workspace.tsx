@@ -1,5 +1,4 @@
 import { Link, useRouterState } from "@tanstack/react-router";
-import { motion, useReducedMotion } from "motion/react";
 import type { ReactNode } from "react";
 
 import { cn } from "./ui";
@@ -69,20 +68,11 @@ function WorkspaceTab({
 }
 
 export function PageFrame({ children }: { children: ReactNode }) {
-  const reduced = useReducedMotion();
-  return (
-    <motion.div
-      className="page-frame"
-      initial={reduced ? false : { opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.32, ease: [0.22, 1, 0.36, 1] }}
-    >
-      {children}
-    </motion.div>
-  );
+  return <div className="page-frame">{children}</div>;
 }
 
-export function currentSection(area: string, fallback: string): string {
-  const segments = window.location.pathname.split("/").filter(Boolean);
+export function useWorkspaceSection(area: string, fallback: string): string {
+  const pathname = useRouterState({ select: (state) => state.location.pathname });
+  const segments = pathname.split("/").filter(Boolean);
   return segments[0] === area && segments[1] ? segments[1] : fallback;
 }

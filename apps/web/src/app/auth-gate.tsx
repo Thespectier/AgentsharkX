@@ -28,8 +28,10 @@ export function AuthGate({
       return true;
     },
     enabled,
+    refetchInterval: false,
+    refetchOnWindowFocus: false,
     retry: false,
-    staleTime: 10_000,
+    staleTime: Infinity,
   });
   const login = useMutation({
     mutationFn: createAdminSession,

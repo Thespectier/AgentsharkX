@@ -603,8 +603,9 @@ export const protectSnapshot: ProtectSnapshot = {
   ],
   links: {
     console: "http://localhost:15000/ui",
-    rawConfig: "http://localhost:15000/ui/config",
-    cel: "http://localhost:15000/ui/policies",
+    rawConfig: "http://localhost:15000/ui/raw-config",
+    cel: "http://localhost:15000/ui/cel",
+    agentguardConsole: "http://localhost:38008",
   },
 };
 

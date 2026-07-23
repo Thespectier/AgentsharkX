@@ -16,6 +16,67 @@ test("all five primary pages render from labelled mock data", async ({ page }) =
   }
 });
 
+test("workspace tabs render immediately without a hard refresh", async ({ page }) => {
+  await page.goto("/connect/overview");
+  await page.getByRole("link", { name: "LLM", exact: true }).click();
+  await expect(page).toHaveURL(/\/connect\/llm$/);
+  await expect(page.getByRole("heading", { name: "Providers" })).toBeVisible();
+
+  await page.goto("/trust/agents");
+  await page.getByRole("link", { name: "Resources", exact: true }).click();
+  await expect(page).toHaveURL(/\/trust\/resources$/);
+  await expect(page.getByRole("heading", { name: "Runtime resources" })).toBeVisible();
+
+  await page.goto("/protect/policies");
+  await page.getByRole("link", { name: "Guardrails", exact: true }).click();
+  await expect(page).toHaveURL(/\/protect\/guardrails$/);
+  await expect(page.getByRole("heading", { name: "Content guardrails" })).toBeVisible();
+
+  await page.goto("/audit/analytics");
+  await page.getByRole("link", { name: "Security events", exact: true }).click();
+  await expect(page).toHaveURL(/\/audit\/security-events$/);
+  await expect(page.getByRole("heading", { name: "Security events" })).toBeVisible();
+});
+
+test("interactive controls have observable behavior", async ({ page }) => {
+  await page.goto("/audit/analytics");
+  await page.getByRole("button", { name: "Filter" }).click();
+  await page.getByPlaceholder("Summary, agent, model, or resource").fill("shell invocation");
+  await page.getByLabel("Source").selectOption("agentguard");
+  await page.getByLabel("Severity").selectOption("critical");
+  await expect(page.locator("tbody tr")).toHaveCount(1);
+  await expect(page.locator("tbody tr")).toContainText("shell invocation");
+
+  await page.getByRole("link", { name: "Open system settings" }).click();
+  await expect(page).toHaveURL(/\/system$/);
+  await expect(
+    page.getByRole("heading", { name: "Sources, versions & capabilities" }),
+  ).toBeVisible();
+});
+
+test("configuration entry points target both native control planes", async ({ page }) => {
+  await page.goto("/connect/overview");
+  await expect(page.getByRole("link", { name: "Configure agentgateway" })).toHaveAttribute(
+    "href",
+    "http://localhost:15000/ui/raw-config",
+  );
+
+  await page.goto("/protect/policies");
+  await expect(page.getByRole("link", { name: "Configure AgentGuard" })).toHaveAttribute(
+    "href",
+    "http://localhost:38008",
+  );
+});
+
+test("console text uses the enlarged readable scale", async ({ page }) => {
+  await page.goto("/connect/llm");
+  await expect(page.locator(".data-table").first()).toHaveCSS("font-size", "12px");
+  await expect(page.getByRole("link", { name: "Configure agentgateway" })).toHaveCSS(
+    "font-size",
+    "13px",
+  );
+});
+
 test("Connect filters explicit resources, opens details, and reruns setup verification", async ({
   page,
 }) => {
@@ -120,6 +181,7 @@ test("Protect requires a current syntax check and returns rule mutation receipts
 
 test("Protect approval success and upstream 404 are explicit and recoverable", async ({ page }) => {
   await page.goto("/protect/approvals");
+  await expect(page.getByRole("link", { name: "3 pending approvals" })).toBeVisible();
   await page.getByRole("button", { name: /send_email_to/ }).click();
   let dialog = page.getByRole("dialog", { name: "Review send_email_to" });
   await dialog.getByLabel("Operator note").fill("Validated destination and change owner.");
@@ -132,6 +194,7 @@ test("Protect approval success and upstream 404 are explicit and recoverable", a
   await expect(
     page.getByRole("status").filter({ hasText: "Approval ticket approved" }),
   ).toContainText("Request ID");
+  await expect(page.getByRole("link", { name: "2 pending approvals" })).toBeVisible();
 
   await page.getByRole("button", { name: /deploy.restart/ }).click();
   dialog = page.getByRole("dialog", { name: "Review deploy.restart" });
@@ -198,8 +261,12 @@ test("an audit detail drawer is recoverable from its URL", async ({ page }) => {
 
   await page.keyboard.press("Escape");
   await expect(dialog).toBeHidden();
-  await expect(row).toBeFocused();
-  await row.click();
+  const selectedRow = page
+    .locator("tbody tr")
+    .filter({ has: page.getByText(title ?? "", { exact: true }) })
+    .first();
+  await expect(selectedRow).toBeFocused();
+  await selectedRow.click();
 
   await page.reload();
   await expect(page.getByRole("dialog").getByRole("heading", { level: 2 })).toHaveText(title ?? "");

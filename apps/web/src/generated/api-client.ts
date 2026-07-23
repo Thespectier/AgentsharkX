@@ -182,6 +182,7 @@ export type ConsoleLinks = {
   cel?: string;
   llmPlayground?: string;
   mcpPlayground?: string;
+  agentguardConsole?: string;
 };
 
 export type ConnectSummary = {

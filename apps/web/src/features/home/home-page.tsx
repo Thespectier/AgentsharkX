@@ -1,11 +1,9 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { ArrowRight, CheckCircle2, ShieldCheck, Sparkles, TerminalSquare } from "lucide-react";
-import { useEffect } from "react";
-
 import { ActivityRail, LiveFlow, RequestTrendChart } from "../../motion/dashboard-motion";
 import { formatError, getScenario, isMockMode, requestOperation } from "../../lib/api";
-import { mergeLiveEvents, useLiveEvents } from "../../lib/use-live-events";
+import { mergeLiveEvents, useSharedLiveEvents } from "../../lib/use-live-events";
 import {
   Button,
   Card,
@@ -28,11 +26,7 @@ export function HomePage() {
     queryFn: ({ signal }) => requestOperation("getOverview", signal),
     retry: false,
   });
-  const live = useLiveEvents(query.isSuccess && scenario !== "empty");
-
-  useEffect(() => {
-    if (live.events[0]) void query.refetch();
-  }, [live.events[0]?.id]);
+  const live = useSharedLiveEvents();
 
   if (query.isLoading) return <PageSkeleton label="Loading runtime posture" />;
   if (query.isError || !query.data) {
@@ -209,7 +203,7 @@ export function HomePage() {
             </div>
           ))}
           <span className="health-strip__sync">
-            <CheckCircle2 size={14} /> Refreshed 8s ago
+            <CheckCircle2 size={14} /> Fetched {new Date(meta.fetchedAt).toLocaleTimeString()}
           </span>
         </div>
       </PageHeader>

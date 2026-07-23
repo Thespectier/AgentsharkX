@@ -98,6 +98,26 @@ func TestSnapshotPreservesIndependentSourceFailure(t *testing.T) {
 	}
 }
 
+func TestSnapshotPreservesValidatedNativeConsoleLinks(t *testing.T) {
+	t.Parallel()
+	links := model.ConsoleLinks{
+		RawConfig:         "http://localhost:15000/ui/raw-config",
+		AgentGuardConsole: "http://localhost:38008",
+	}
+	service := New(
+		fakeGateway{snapshot: model.GatewaySnapshot{FetchedAt: time.Now().UTC()}},
+		&fakeGuard{plugins: model.ProtectPluginSnapshot{FetchedAt: time.Now().UTC()}},
+		links,
+	)
+	snapshot, err := service.Snapshot(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snapshot.Data.Links != links {
+		t.Fatalf("native console links changed: %#v", snapshot.Data.Links)
+	}
+}
+
 func TestRulePublishRequiresCurrentSuccessfulOneTimeCheck(t *testing.T) {
 	t.Parallel()
 	const source = "RULE safe\nACTION ALLOW"

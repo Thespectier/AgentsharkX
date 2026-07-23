@@ -1557,6 +1557,7 @@ components:
         cel: { type: string, format: uri }
         llmPlayground: { type: string, format: uri }
         mcpPlayground: { type: string, format: uri }
+        agentguardConsole: { type: string, format: uri }
     ConnectSummary:
       type: object
       additionalProperties: false

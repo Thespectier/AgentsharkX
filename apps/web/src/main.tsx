@@ -20,9 +20,12 @@ async function enableMocks() {
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      refetchOnWindowFocus: false,
+      refetchInterval: 10_000,
+      refetchIntervalInBackground: false,
+      refetchOnMount: "always",
+      refetchOnWindowFocus: "always",
       retry: 1,
-      staleTime: 10_000,
+      staleTime: 0,
     },
   },
 });

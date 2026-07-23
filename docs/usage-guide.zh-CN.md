@@ -185,6 +185,11 @@ Connect 汇总 agentgateway 中显式配置的：
 
 agentgateway 管理控制台默认地址为 <http://127.0.0.1:15000/ui>。
 
+页面右上角的 **Configure agentgateway** 会直接打开固定版本原生 Raw Configuration
+编辑器。预览环境将明确的 `deploy/agentgateway/config.yaml` 以可写方式挂载，因此可以
+通过原生编辑器校验并保存；管理端口仍只绑定回环地址。保存后返回 AgentsharkX，页面
+会在重新获得焦点时刷新，也会按固定间隔同步。
+
 默认预览配置没有业务监听器、Provider 凭据、真实业务路由和请求日志数据库，因此
 Connect 或网关审计显示 `partial` 是预期行为。Provider API Key 应配置在
 agentgateway 中，不能放入 AgentsharkX。
@@ -233,6 +238,10 @@ agentgateway 控制台负责。
 
 AgentGuard 写操作不会自动重试。如果发布、删除或审批操作超时，应先检查上游的
 规则或工单状态，确认操作没有成功后再手动重试。
+
+Protect 页面的 **Configure AgentGuard** 会打开配置的 AgentGuard 原生控制台。标签、
+扫描、运行时规则和审批继续使用 AgentsharkX 已验证的写接口；其他未验证的配置不会
+在 BFF 中伪造编辑能力。
 
 ### 4.4 Audit：流量和安全审计
 

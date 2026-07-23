@@ -35,7 +35,7 @@ generated OpenAPI but a mutating request was intentionally not executed.
 | Request logs | agentgateway | partial | runtime `POST /api/logs/search`; 500 without request-log DB | Capability probe must surface `request log database is not configured`. |
 | Analytics | agentgateway | partial | Phase 3 bounded `POST /api/logs/analytics/summary` with `bucketCount=12`; same DB dependency | Sum non-overlapping returned buckets; return explicit `unavailable` and null metrics when storage is missing. |
 | Metrics | agentgateway | supported | runtime `GET :15020/metrics` | Metrics are diagnostics, not a substitute for request-log records. |
-| Raw config editor | agentgateway | link-out | pinned UI `/raw-config` below its configured base path | Do not reproduce the editor in Phase 3. |
+| Raw config editor/save | agentgateway | link-out | pinned UI `/raw-config`; pinned `POST /api/config` validates then writes the active file | Keep editing upstream-owned; the preview mounts its explicit config file read-write while the management port remains loopback-only. |
 | CEL editor/evaluator | agentgateway | link-out | pinned UI `/cel`; evaluation API remains upstream-owned | BFF creates a validated deep link only. |
 | Playground | agentgateway | link-out | pinned UI `/llm/playground`, `/mcp/playground` | Never send provider keys through AgentsharkX frontend. |
 | Admin API authentication | agentgateway | unavailable | pinned admin routes have no native auth middleware | Keep the admin listener private; BFF supplies browser authentication isolation. |
@@ -63,6 +63,7 @@ traffic claim.
 | Skill detection | AgentGuard | supported | Phase 4 disposable runtime and adapter tests for `POST .../skills/detect` | BFF wraps the synchronous call in a bounded job; poll actual state without synthetic percentage progress. |
 | MCP detection | AgentGuard | supported | Phase 4 adapter tests for `POST .../mcps/detect` | Same bounded job contract; expose safe result fields and recoverable errors only. |
 | Remote attestation | AgentGuard | unavailable | no verified route or field | Do not use cryptographic or remote-attestation claims in UI copy. |
+| Native configuration console | AgentGuard | link-out | configured `AGENTGUARD_CONSOLE_URL`; no new upstream mutation contract | Expose the validated native-console URL from Protect for settings not covered by verified AgentsharkX writes. |
 
 The AgentGuard registry probes the verified global routes independently and
 publishes `guard.health`, `guard.sessions`, `guard.tools`, `guard.skills`,
