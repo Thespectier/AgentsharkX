@@ -446,12 +446,14 @@ export function Dialog({
   title,
   description,
   children,
+  size = "default",
 }: {
   open: boolean;
   onClose: () => void;
   title: string;
   description: string;
   children: ReactNode;
+  size?: "default" | "wide";
 }) {
   const titleId = useId();
   const descriptionId = useId();
@@ -471,7 +473,7 @@ export function Dialog({
             aria-describedby={descriptionId}
             aria-labelledby={titleId}
             aria-modal="true"
-            className="dialog"
+            className={cn("dialog", size === "wide" && "dialog--wide")}
             initial={reduced ? false : { opacity: 0, scale: 0.96, y: 8 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.98 }}
@@ -486,7 +488,7 @@ export function Dialog({
                 <X size={18} />
               </Button>
             </header>
-            {children}
+            <div className="dialog__body">{children}</div>
           </motion.div>
         </div>
       ) : null}

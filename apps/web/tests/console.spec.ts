@@ -204,6 +204,63 @@ test("Protect requires a current syntax check and returns rule mutation receipts
   );
 });
 
+test("runtime rule composer stays contained and clears stale publication state", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 800, height: 700 });
+  await page.goto("/protect/runtime-rules");
+  await page.getByRole("button", { name: "New rule" }).click();
+  const dialog = page.getByRole("dialog", { name: "Publish runtime rule" });
+  const layout = await dialog.evaluate((element) => {
+    const bounds = element.getBoundingClientRect();
+    const footerBounds = element.querySelector("footer")?.getBoundingClientRect();
+    const confirmationBounds = element.querySelector(".confirm-field")?.getBoundingClientRect();
+    return {
+      actionsContained: Boolean(
+        footerBounds &&
+        footerBounds.left >= bounds.left &&
+        footerBounds.right <= bounds.right &&
+        footerBounds.top >= bounds.top &&
+        footerBounds.bottom <= bounds.bottom,
+      ),
+      confirmationVisible: Boolean(
+        confirmationBounds &&
+        footerBounds &&
+        confirmationBounds.top >= bounds.top &&
+        confirmationBounds.bottom <= footerBounds.top,
+      ),
+      contained:
+        bounds.left >= 0 &&
+        bounds.right <= window.innerWidth &&
+        bounds.top >= 0 &&
+        bounds.bottom <= window.innerHeight,
+      horizontallyScrollable: element.scrollWidth > element.clientWidth,
+    };
+  });
+  expect(layout).toEqual({
+    actionsContained: true,
+    confirmationVisible: true,
+    contained: true,
+    horizontallyScrollable: false,
+  });
+
+  await dialog.getByRole("button", { name: "Check syntax" }).click();
+  await expect(dialog.getByRole("status")).toContainText("Checked and publishable");
+  await dialog.getByLabel("Operator note").fill("Draft note that must not survive cancellation.");
+  await dialog
+    .getByLabel("I confirm this checked rule should be published to the selected agent.")
+    .check();
+  await dialog.getByRole("button", { name: "Cancel" }).click();
+
+  await page.getByRole("button", { name: "New rule" }).click();
+  await expect(dialog.getByText("Check required before publish")).toBeVisible();
+  await expect(dialog.getByLabel("Operator note")).toHaveValue("");
+  await expect(
+    dialog.getByLabel("I confirm this checked rule should be published to the selected agent."),
+  ).not.toBeChecked();
+  await expect(dialog.getByRole("button", { name: "Publish checked rule" })).toBeDisabled();
+});
+
 test("Protect approval success and upstream 404 are explicit and recoverable", async ({ page }) => {
   await page.goto("/protect/approvals");
   await expect(page.getByRole("link", { name: "3 pending approvals" })).toBeVisible();

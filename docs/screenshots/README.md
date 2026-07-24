@@ -12,6 +12,8 @@ Phase 7 stores deterministic Playwright release baselines here:
   nested section navigation.
 - [`protect-1280.png`](protect-1280.png): 1280 × 900 source-separated Protect
   policies and the pending-approval sidebar badge.
+- [`runtime-rule-dialog-800.png`](runtime-rule-dialog-800.png): 800 × 700
+  bounded runtime-rule composer with its validation and confirmation workflow.
 - [`system-degraded-1440.png`](system-degraded-1440.png): full-page 1440 px
   System view with AgentGuard disconnected and actionable recovery checks.
 - [`lighthouse-accessibility.json`](lighthouse-accessibility.json): Lighthouse

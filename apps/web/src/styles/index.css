@@ -2221,14 +2221,22 @@ kbd {
 .dialog {
   position: relative;
   z-index: 1;
+  display: flex;
   width: min(520px, calc(100vw - 28px));
+  max-height: calc(100dvh - 28px);
+  flex-direction: column;
   border: 1px solid var(--border-strong);
   border-radius: 16px;
   background: #0c1420;
   box-shadow: 0 30px 100px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+}
+.dialog--wide {
+  width: min(680px, calc(100vw - 28px));
 }
 .dialog > header {
   display: flex;
+  flex: 0 0 auto;
   padding: 18px 20px;
   align-items: flex-start;
   justify-content: space-between;
@@ -2236,12 +2244,19 @@ kbd {
 }
 .dialog h2 {
   margin: 0;
-  font-size: 14px;
+  font-size: 16px;
 }
 .dialog header p {
   margin: 6px 0 0;
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.dialog__body {
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 .dialog-form {
   padding: 18px;
@@ -2261,12 +2276,19 @@ kbd {
 }
 .dialog-form .field {
   margin-inline: 0;
+  margin-block: 12px;
+  font-size: 13px;
 }
 .dialog-form footer {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
   display: flex;
-  margin-top: 16px;
+  margin: 16px -18px -18px;
+  padding: 14px 18px 18px;
   justify-content: flex-end;
   gap: 8px;
+  background: linear-gradient(180deg, rgba(12, 20, 32, 0), #0c1420 14px);
 }
 .mock-result {
   display: flex;
@@ -2279,9 +2301,6 @@ kbd {
   color: #74d3b1;
   font-size: 11px;
 }
-.protect-form {
-  min-width: min(620px, 80vw);
-}
 .protect-check-row {
   display: flex;
   margin: 0 18px 14px;
@@ -2289,7 +2308,7 @@ kbd {
   gap: 12px;
 }
 .protect-check {
-  font-size: 11px;
+  font-size: 13px;
 }
 .protect-check--ok {
   color: var(--status-success);
@@ -2303,7 +2322,7 @@ kbd {
   align-items: flex-start;
   gap: 8px;
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: 13px;
   line-height: 1.5;
 }
 .confirm-field input {

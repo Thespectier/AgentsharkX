@@ -41,6 +41,14 @@ test("laptop Protect visual baseline", async ({ page }) => {
   await expect(page).toHaveScreenshot("protect-1280.png");
 });
 
+test("runtime rule composer visual baseline", async ({ page }) => {
+  await page.setViewportSize({ width: 800, height: 700 });
+  await page.goto("/protect/runtime-rules");
+  await page.getByRole("button", { name: "New rule" }).click();
+  await expect(page.getByRole("dialog", { name: "Publish runtime rule" })).toBeVisible();
+  await expect(page).toHaveScreenshot("runtime-rule-dialog-800.png");
+});
+
 test("degraded System diagnostic visual baseline", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 1200 });
   await page.goto("/system?scenario=partial");

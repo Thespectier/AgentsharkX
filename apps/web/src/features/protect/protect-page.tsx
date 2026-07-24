@@ -11,7 +11,7 @@ import {
   Sparkles,
   Trash2,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 
 import { PageFrame, useWorkspaceSection } from "../../components/workspace";
 import {
@@ -60,6 +60,8 @@ type PolicyRow = {
   action: string;
   status: string;
 };
+
+const defaultRuntimeRuleSource = "RULE: review_external_delivery\nPOLICY: HUMAN_CHECK";
 
 const policyColumns: Column<PolicyRow>[] = [
   {
@@ -284,7 +286,8 @@ function RuntimeRulesView({ data }: { data: ProtectSnapshot }) {
     return [...values.entries()];
   }, [data.plugins, data.runtimeRules]);
   const [composerOpen, setComposerOpen] = useState(false);
-  const [source, setSource] = useState("RULE: review_external_delivery\nPOLICY: HUMAN_CHECK");
+  const [source, setSource] = useState(defaultRuntimeRuleSource);
+  const sourceRef = useRef(defaultRuntimeRuleSource);
   const [agentId, setAgentId] = useState(agents[0]?.[0] ?? "");
   const [note, setNote] = useState("");
   const [confirmed, setConfirmed] = useState(false);
@@ -295,8 +298,11 @@ function RuntimeRulesView({ data }: { data: ProtectSnapshot }) {
   const [receipt, setReceipt] = useState<ProtectMutationReceipt>();
 
   const check = useMutation({
-    mutationFn: () => mutateOperation("checkRuntimeRule", { source }),
-    onSuccess: (response) => setCheckResult(response.data),
+    mutationFn: (candidateSource: string) =>
+      mutateOperation("checkRuntimeRule", { source: candidateSource }),
+    onSuccess: (response, checkedSource) => {
+      if (sourceRef.current === checkedSource) setCheckResult(response.data);
+    },
   });
   const publish = useMutation({
     mutationFn: () =>
@@ -309,6 +315,8 @@ function RuntimeRulesView({ data }: { data: ProtectSnapshot }) {
       setReceipt(response.data);
       setComposerOpen(false);
       setCheckResult(undefined);
+      setSource(defaultRuntimeRuleSource);
+      sourceRef.current = defaultRuntimeRuleSource;
       setNote("");
       setConfirmed(false);
       void synchronizeAgentGuardData(queryClient);
@@ -355,16 +363,27 @@ function RuntimeRulesView({ data }: { data: ProtectSnapshot }) {
   const publishReady = Boolean(
     checkResult?.publishable && checkResult.checkToken && agentId && note.trim() && confirmed,
   );
+  const resetComposer = () => {
+    setComposerOpen(false);
+    setSource(defaultRuntimeRuleSource);
+    sourceRef.current = defaultRuntimeRuleSource;
+    setAgentId(agents[0]?.[0] ?? "");
+    setNote("");
+    setConfirmed(false);
+    setCheckResult(undefined);
+    check.reset();
+    publish.reset();
+  };
+  const openComposer = () => {
+    resetComposer();
+    setComposerOpen(true);
+  };
   return (
     <>
       <Card>
         <CardHeader
           action={
-            <Button
-              disabled={!agents.length}
-              onClick={() => setComposerOpen(true)}
-              variant="primary"
-            >
+            <Button disabled={!agents.length} onClick={openComposer} variant="primary">
               New rule <Sparkles aria-hidden="true" size={14} />
             </Button>
           }
@@ -383,8 +402,9 @@ function RuntimeRulesView({ data }: { data: ProtectSnapshot }) {
       </Card>
       <Dialog
         description="Check exactly one rule, add an operator note, then explicitly confirm publication. Rule source is never written to audit logs."
-        onClose={() => !publish.isPending && setComposerOpen(false)}
+        onClose={() => !publish.isPending && resetComposer()}
         open={composerOpen}
+        size="wide"
         title="Publish runtime rule"
       >
         <div className="dialog-form protect-form">
@@ -407,15 +427,22 @@ function RuntimeRulesView({ data }: { data: ProtectSnapshot }) {
             <textarea
               aria-label="Rule source"
               onChange={(event) => {
-                setSource(event.target.value);
+                const nextSource = event.target.value;
+                sourceRef.current = nextSource;
+                setSource(nextSource);
                 setCheckResult(undefined);
+                check.reset();
+                publish.reset();
               }}
-              rows={7}
+              rows={5}
               value={source}
             />
           </label>
           <div className="protect-check-row">
-            <Button disabled={check.isPending || !source.trim()} onClick={() => check.mutate()}>
+            <Button
+              disabled={check.isPending || !source.trim()}
+              onClick={() => check.mutate(source)}
+            >
               {check.isPending ? (
                 <LoaderCircle className="spin" size={14} />
               ) : (
@@ -446,7 +473,7 @@ function RuntimeRulesView({ data }: { data: ProtectSnapshot }) {
             <textarea
               aria-label="Operator note"
               onChange={(event) => setNote(event.target.value)}
-              rows={3}
+              rows={2}
               value={note}
             />
           </label>
@@ -460,11 +487,7 @@ function RuntimeRulesView({ data }: { data: ProtectSnapshot }) {
           </label>
           {publish.isError ? <MutationError error={publish.error} /> : null}
           <footer>
-            <Button
-              disabled={publish.isPending}
-              onClick={() => setComposerOpen(false)}
-              variant="ghost"
-            >
+            <Button disabled={publish.isPending} onClick={resetComposer} variant="ghost">
               Cancel
             </Button>
             <Button
