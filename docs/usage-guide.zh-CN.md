@@ -393,6 +393,24 @@ export AGENTGUARD_API_KEY='<AgentGuard API Key>'
 4. 通过默认请求日志数据库确认 **Audit → Traffic** 出现网关记录；
 5. 只有共享标识完全一致时，跨来源事件才显示为已关联。
 
+### 5.4 正确理解 Home 和 Audit 趋势图
+
+Home 的 **Traffic & decisions** 与 Audit 的 **Traffic trend**、**Latency
+trend** 使用同一份 BFF 快照，范围为精确的滚动最近 60 分钟，并拆分为 12 个
+5 分钟桶。
+
+- Requests 来自 agentgateway Analytics 的对应时间桶；Analytics 不可用时才退化为同一
+  时间范围内的脱敏请求日志计数。
+- Denied 只统计 AgentGuard Traffic 中显式的 `DENY`，不根据错误、风险分数或时间接近
+  关系推断。
+- Traffic 图为 Requests 和 Denied 使用独立纵轴，悬停提示显示精确桶起始时间与原始
+  计数，不能直接按两条线的视觉高度比较数量。
+- Latency 图基于 agentgateway 最近最多 500 条脱敏请求日志计算每个桶的
+  nearest-rank P95，单位为毫秒；悬停提示会显示该桶的样本数。没有请求样本的桶显示
+  为缺口，不会伪造为 `0 ms`。高流量环境中它是有明确样本上限的观测值，不应误读为
+  全量延迟直方图。
+- 横轴和悬停时间均明确使用 UTC；页面顶部的 **Last 60m** 与实际查询范围一致。
+
 ## 6. 日常运维
 
 ### 6.1 默认本地端点

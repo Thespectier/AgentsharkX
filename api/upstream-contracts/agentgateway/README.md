@@ -28,5 +28,7 @@ The populated shape and native console routes were cross-checked against
 agentgateway tag `v1.3.1`, commit
 `dbaaf7ed73671e7aec9195e35e7f726c0b14b84a`. Sensitive `params`, policy bodies,
 and API-key fixture values are intentionally excluded from the frozen sample.
-The Phase 6 log adapter always sends `includeAttributes=false`, does not call
-`/api/logs/get`, and rejects unexpected attributes or payload fields.
+The Phase 6 log and Analytics adapters send the same exact rolling 60-minute
+`timeRange`. Search always sends `includeAttributes=false`; Analytics requests
+`bucketSeconds=300`. The BFF does not call `/api/logs/get` and rejects
+unexpected attributes or payload fields.

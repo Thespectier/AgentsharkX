@@ -9,7 +9,7 @@ test("desktop home visual baseline", async ({ page }) => {
 
 test("laptop audit visual baseline", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
-  await page.goto("/audit/security-events");
+  await page.goto("/audit/analytics");
   await expect(page.getByRole("heading", { name: "See every verified signal" })).toBeVisible();
   await expect(page).toHaveScreenshot("audit-1280.png");
 });

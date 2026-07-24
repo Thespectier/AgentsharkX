@@ -13,6 +13,14 @@ import (
 	"github.com/Thespectier/AgentsharkX/apps/server/internal/model"
 )
 
+func testTrendWindow() model.TrendWindow {
+	return model.TrendWindow{
+		From:           time.Date(2026, 7, 22, 8, 0, 0, 0, time.UTC),
+		To:             time.Date(2026, 7, 22, 9, 0, 0, 0, time.UTC),
+		BucketDuration: model.TrendBucketDuration,
+	}
+}
+
 const populatedConfig = `{
   "llm": {
     "providers": [{"name":"openai-shared","provider":"openai","params":{"apiKey":"never-leak-me"}}],
@@ -191,9 +199,19 @@ func TestAnalyticsUsesVerifiedReadOnlyPostAndNormalizesMissingDatabase(t *testin
 		if request.Method != http.MethodPost || request.URL.Path != "/api/logs/analytics/summary" {
 			t.Fatalf("unexpected request %s %s", request.Method, request.URL.Path)
 		}
-		body, _ := io.ReadAll(request.Body)
-		if string(body) != `{"bucketCount":12}` {
-			t.Fatalf("unexpected analytics body: %s", body)
+		var body struct {
+			TimeRange struct {
+				From time.Time `json:"from"`
+				To   time.Time `json:"to"`
+			} `json:"timeRange"`
+			BucketSeconds int64 `json:"bucketSeconds"`
+		}
+		if err := json.NewDecoder(request.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		window := testTrendWindow()
+		if !body.TimeRange.From.Equal(window.From) || !body.TimeRange.To.Equal(window.To) || body.BucketSeconds != 300 {
+			t.Fatalf("unexpected analytics body: %#v", body)
 		}
 		writer.WriteHeader(http.StatusInternalServerError)
 		_, _ = io.WriteString(writer, `{"error":"request log database is not configured"}`)
@@ -203,7 +221,7 @@ func TestAnalyticsUsesVerifiedReadOnlyPostAndNormalizesMissingDatabase(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	analytics, err := client.Analytics(t.Context())
+	analytics, err := client.AnalyticsWindow(t.Context(), testTrendWindow())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -223,7 +241,7 @@ func TestAnalyticsFailsClearlyWhenBucketContractChanges(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = client.Analytics(t.Context())
+	_, err = client.AnalyticsWindow(t.Context(), testTrendWindow())
 	var contractError *ContractError
 	if !errors.As(err, &contractError) || !strings.Contains(contractError.Field, "requests") {
 		t.Fatalf("expected analytics field-scoped contract error, got %v", err)
@@ -241,7 +259,7 @@ func TestAnalyticsSumsVerifiedBuckets(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	analytics, err := client.Analytics(t.Context())
+	analytics, err := client.AnalyticsWindow(t.Context(), testTrendWindow())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -259,7 +277,7 @@ func TestAnalyticsMissingRouteIsExplicitlyUnavailable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	analytics, err := client.Analytics(t.Context())
+	analytics, err := client.AnalyticsWindow(t.Context(), testTrendWindow())
 	if err != nil || analytics.Status != "unavailable" || analytics.Requests != nil {
 		t.Fatalf("unexpected missing capability state: analytics=%#v err=%v", analytics, err)
 	}
@@ -272,9 +290,20 @@ func TestTrafficUsesRedactedSearchAndPreservesVerifiedIDs(t *testing.T) {
 		if request.Method != http.MethodPost || request.URL.Path != "/api/logs/search" {
 			t.Fatalf("unexpected request %s %s", request.Method, request.URL.Path)
 		}
-		body, _ := io.ReadAll(request.Body)
-		if string(body) != `{"limit":500,"includeAttributes":false}` {
-			t.Fatalf("unsafe search body: %s", body)
+		var body struct {
+			Limit     int `json:"limit"`
+			TimeRange struct {
+				From time.Time `json:"from"`
+				To   time.Time `json:"to"`
+			} `json:"timeRange"`
+			IncludeAttributes bool `json:"includeAttributes"`
+		}
+		if err := json.NewDecoder(request.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		window := testTrendWindow()
+		if body.Limit != 500 || body.IncludeAttributes || !body.TimeRange.From.Equal(window.From) || !body.TimeRange.To.Equal(window.To) {
+			t.Fatalf("unsafe search body: %#v", body)
 		}
 		_, _ = io.WriteString(writer, `{"logs":[{"id":"log-1","startedAt":"2026-07-22T08:00:00Z","completedAt":"2026-07-22T08:00:00.120Z","durationMs":120,"traceId":"trace-1","spanId":"span-1","httpStatus":503,"error":"never-return-provider-error","genAi":{"operationName":"chat","providerName":"openai","requestModel":"gpt-5","responseModel":"gpt-5"},"usage":{"inputTokens":2,"outputTokens":3,"totalTokens":5},"cost":0.01,"hasPayload":true}],"nextCursor":null}`)
 	}))
@@ -283,7 +312,7 @@ func TestTrafficUsesRedactedSearchAndPreservesVerifiedIDs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	feed, err := client.Traffic(t.Context(), 1000)
+	feed, err := client.TrafficWindow(t.Context(), 1000, testTrendWindow())
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -112,12 +112,33 @@ type Metric struct {
 	Context string  `json:"context"`
 }
 
+const (
+	TrendBucketCount    = 12
+	TrendBucketDuration = 5 * time.Minute
+)
+
+type TrendWindow struct {
+	From           time.Time
+	To             time.Time
+	BucketDuration time.Duration
+}
+
+func CurrentTrendWindow(now time.Time) TrendWindow {
+	end := now.UTC().Truncate(time.Second)
+	return TrendWindow{
+		From:           end.Add(-TrendBucketCount * TrendBucketDuration),
+		To:             end,
+		BucketDuration: TrendBucketDuration,
+	}
+}
+
 type TrendPoint struct {
-	Time     string  `json:"time"`
-	Requests float64 `json:"requests"`
-	Latency  float64 `json:"latency"`
-	Errors   float64 `json:"errors"`
-	Denied   float64 `json:"denied"`
+	Time           string   `json:"time"`
+	Requests       float64  `json:"requests"`
+	Latency        *float64 `json:"latency"`
+	LatencySamples int      `json:"latencySamples"`
+	Errors         float64  `json:"errors"`
+	Denied         float64  `json:"denied"`
 }
 
 type OverviewData struct {

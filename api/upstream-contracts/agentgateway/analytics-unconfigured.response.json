@@ -3,7 +3,11 @@
     "method": "POST",
     "path": "/api/logs/analytics/summary",
     "body": {
-      "bucketCount": 12
+      "timeRange": {
+        "from": "2026-07-24T08:00:00Z",
+        "to": "2026-07-24T09:00:00Z"
+      },
+      "bucketSeconds": 300
     }
   },
   "response": {

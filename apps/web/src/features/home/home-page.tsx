@@ -233,7 +233,7 @@ export function HomePage() {
                 </span>
               </div>
             }
-            description="Gateway requests with AgentGuard decisions shown independently."
+            description="Exact rolling 60 minutes in 5-minute UTC buckets; requests and explicit denies use independent axes."
             title="Traffic & decisions"
           />
           <RequestTrendChart data={data.trend} />

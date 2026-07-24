@@ -162,7 +162,7 @@ function ConnectOverview({ summary, fetchedAt }: { summary: ConnectSummary; fetc
         <Card>
           <CardHeader
             action={<StatusBadge status={analytics.status} />}
-            description="Derived only from the verified request-log analytics contract."
+            description="Last 60 minutes, derived only from the verified request-log analytics contract."
             title="Analytics summary"
           />
           {analytics.status === "available" ? (

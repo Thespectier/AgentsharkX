@@ -24,8 +24,8 @@ const (
 var ErrInvalidCursor = errors.New("invalid audit cursor")
 
 type Gateway interface {
-	Traffic(context.Context, int) (model.AuditFeed, error)
-	Analytics(context.Context) (model.GatewayAnalytics, error)
+	TrafficWindow(context.Context, int, model.TrendWindow) (model.AuditFeed, error)
+	AnalyticsWindow(context.Context, model.TrendWindow) (model.GatewayAnalytics, error)
 }
 
 type Guard interface {
@@ -55,6 +55,7 @@ func New(gateway Gateway, guard Guard, hub *stream.Hub) *Service {
 }
 
 func (service *Service) Refresh(ctx context.Context) model.AuditEnvelope {
+	window := model.CurrentTrendWindow(time.Now())
 	type gatewayResult struct {
 		traffic      model.AuditFeed
 		analytics    model.GatewayAnalytics
@@ -75,11 +76,11 @@ func (service *Service) Refresh(ctx context.Context) model.AuditEnvelope {
 	wait.Add(5)
 	go func() {
 		defer wait.Done()
-		gatewayResultValue.traffic, gatewayResultValue.trafficErr = service.gateway.Traffic(ctx, fetchLimit)
+		gatewayResultValue.traffic, gatewayResultValue.trafficErr = service.gateway.TrafficWindow(ctx, fetchLimit, window)
 	}()
 	go func() {
 		defer wait.Done()
-		gatewayResultValue.analytics, gatewayResultValue.analyticsErr = service.gateway.Analytics(ctx)
+		gatewayResultValue.analytics, gatewayResultValue.analyticsErr = service.gateway.AnalyticsWindow(ctx, window)
 	}()
 	go func() {
 		defer wait.Done()
@@ -126,9 +127,9 @@ func (service *Service) Refresh(ctx context.Context) model.AuditEnvelope {
 	merged, fresh := mergeEvents(previous.Events, incoming, eventCapacity)
 	sessions := append([]model.AuditSession{}, guardResultValue.sessions...)
 	applySessionCounts(sessions, merged)
-	metrics := buildMetrics(gatewayResultValue, guardResultValue)
+	metrics := buildMetrics(window, gatewayResultValue, guardResultValue)
 	applyMetricDeltas(previous.Metrics, metrics)
-	trend := buildTrend(time.Now().UTC(), gatewayResultValue, guardResultValue)
+	trend := buildTrend(window, gatewayResultValue, guardResultValue)
 	meta := model.Meta{
 		FetchedAt: time.Now().UTC(), Partial: len(failures) > 0, SourceFailures: failures,
 	}
@@ -284,7 +285,7 @@ func applySessionCounts(sessions []model.AuditSession, events []model.UnifiedEve
 	}
 }
 
-func buildMetrics(gatewayResult struct {
+func buildMetrics(window model.TrendWindow, gatewayResult struct {
 	traffic      model.AuditFeed
 	analytics    model.GatewayAnalytics
 	trafficErr   error
@@ -297,40 +298,37 @@ func buildMetrics(gatewayResult struct {
 	auditErr    error
 	sessionsErr error
 }) []model.Metric {
-	requests := float64(len(gatewayResult.traffic.Traffic))
-	requestContext := "Recent verified request-log records"
-	if gatewayResult.analytics.Requests != nil {
+	gatewayTraffic := recordsInWindow(gatewayResult.traffic.Traffic, window)
+	guardTraffic := recordsInWindow(guardResult.traffic.Traffic, window)
+	requests := float64(len(gatewayTraffic))
+	requestContext := "Last 60 minutes · verified request logs"
+	if gatewayResult.analytics.Status == "available" && gatewayResult.analytics.Requests != nil {
 		requests = float64(*gatewayResult.analytics.Requests)
-		requestContext = "Gateway analytics window"
+		requestContext = "Last 60 minutes · gateway analytics"
 	}
-	latencies := make([]float64, 0, len(gatewayResult.traffic.Traffic))
-	for _, record := range gatewayResult.traffic.Traffic {
+	latencies := make([]float64, 0, len(gatewayTraffic))
+	for _, record := range gatewayTraffic {
 		latencies = append(latencies, record.LatencyMS)
 	}
-	sort.Float64s(latencies)
 	p95 := 0.0
-	if len(latencies) > 0 {
-		index := (95*len(latencies)+99)/100 - 1
-		if index < 0 {
-			index = 0
-		}
-		p95 = latencies[index]
+	if value := nearestRankP95(latencies); value != nil {
+		p95 = *value
 	}
 	denies := 0
-	for _, record := range guardResult.traffic.Traffic {
+	for _, record := range guardTraffic {
 		if strings.EqualFold(record.Action, "deny") {
 			denies++
 		}
 	}
 	denyRate := 0.0
-	if len(guardResult.traffic.Traffic) > 0 {
-		denyRate = float64(denies) * 100 / float64(len(guardResult.traffic.Traffic))
+	if len(guardTraffic) > 0 {
+		denyRate = float64(denies) * 100 / float64(len(guardTraffic))
 	}
 	return []model.Metric{
 		{ID: "gateway-requests", Label: "Gateway requests", Source: model.SourceAgentGateway, Value: requests, Format: "integer", Trend: "flat", Tone: "default", Context: requestContext},
-		{ID: "gateway-p95", Label: "P95 latency", Source: model.SourceAgentGateway, Value: p95, Format: "duration", Trend: "flat", Tone: "default", Context: "Recent request-log records"},
-		{ID: "guard-decisions", Label: "Guard decisions", Source: model.SourceAgentGuard, Value: float64(len(guardResult.traffic.Traffic)), Format: "integer", Trend: "flat", Tone: "default", Context: "Recent AgentGuard traffic"},
-		{ID: "guard-deny-rate", Label: "Deny rate", Source: model.SourceAgentGuard, Value: denyRate, Format: "percent", Trend: "flat", Tone: metricTone(denyRate), Context: "Explicit DENY decisions only"},
+		{ID: "gateway-p95", Label: "P95 latency", Source: model.SourceAgentGateway, Value: p95, Format: "duration", Trend: "flat", Tone: "default", Context: "Last 60 minutes · nearest-rank P95"},
+		{ID: "guard-decisions", Label: "Guard decisions", Source: model.SourceAgentGuard, Value: float64(len(guardTraffic)), Format: "integer", Trend: "flat", Tone: "default", Context: "Last 60 minutes · AgentGuard traffic"},
+		{ID: "guard-deny-rate", Label: "Deny rate", Source: model.SourceAgentGuard, Value: denyRate, Format: "percent", Trend: "flat", Tone: metricTone(denyRate), Context: "Last 60 minutes · explicit DENY only"},
 	}
 }
 
@@ -368,7 +366,7 @@ func metricTone(denyRate float64) string {
 	return "success"
 }
 
-func buildTrend(now time.Time, gatewayResult struct {
+func buildTrend(window model.TrendWindow, gatewayResult struct {
 	traffic      model.AuditFeed
 	analytics    model.GatewayAnalytics
 	trafficErr   error
@@ -381,45 +379,30 @@ func buildTrend(now time.Time, gatewayResult struct {
 	auditErr    error
 	sessionsErr error
 }) []model.TrendPoint {
-	const count = 12
-	duration := 5 * time.Minute
-	if gatewayResult.analytics.BucketSeconds != nil && *gatewayResult.analytics.BucketSeconds > 0 {
-		duration = time.Duration(*gatewayResult.analytics.BucketSeconds) * time.Second
+	duration := window.BucketDuration
+	starts := make([]time.Time, model.TrendBucketCount)
+	requests := make([]float64, model.TrendBucketCount)
+	for index := range starts {
+		starts[index] = window.From.UTC().Add(time.Duration(index) * duration)
 	}
-	starts := make([]time.Time, count)
-	requests := make([]float64, count)
-	usesAnalyticsBuckets := len(gatewayResult.analytics.Buckets) > 0
-	if len(gatewayResult.analytics.Buckets) > 0 {
-		buckets := gatewayResult.analytics.Buckets
-		if len(buckets) > count {
-			buckets = buckets[len(buckets)-count:]
-		}
-		padding := count - len(buckets)
-		for index, bucket := range buckets {
-			starts[padding+index] = bucket.Start.UTC()
-			requests[padding+index] = float64(bucket.Requests)
-		}
-		for index := padding - 1; index >= 0; index-- {
-			starts[index] = starts[index+1].Add(-duration)
-		}
-	} else {
-		end := now.Truncate(duration)
-		for index := range starts {
-			starts[index] = end.Add(-time.Duration(count-1-index) * duration)
+	usesAnalytics := gatewayResult.analyticsErr == nil && gatewayResult.analytics.Status == "available"
+	if usesAnalytics {
+		for _, bucket := range gatewayResult.analytics.Buckets {
+			if index := bucketIndex(starts, duration, bucket.Start); index >= 0 {
+				requests[index] = float64(bucket.Requests)
+			}
 		}
 	}
-	latencySums := make([]float64, count)
-	latencyCounts := make([]int, count)
-	errors := make([]float64, count)
-	denied := make([]float64, count)
+	latencies := make([][]float64, model.TrendBucketCount)
+	errors := make([]float64, model.TrendBucketCount)
+	denied := make([]float64, model.TrendBucketCount)
 	for _, record := range gatewayResult.traffic.Traffic {
 		if index := bucketIndex(starts, duration, record.Timestamp); index >= 0 {
-			if !usesAnalyticsBuckets {
+			if !usesAnalytics {
 				requests[index]++
 			}
-			latencySums[index] += record.LatencyMS
-			latencyCounts[index]++
-			if record.Action == "ERROR" {
+			latencies[index] = append(latencies[index], record.LatencyMS)
+			if strings.EqualFold(record.Action, "error") {
 				errors[index]++
 			}
 		}
@@ -431,15 +414,36 @@ func buildTrend(now time.Time, gatewayResult struct {
 			}
 		}
 	}
-	result := make([]model.TrendPoint, count)
+	result := make([]model.TrendPoint, model.TrendBucketCount)
 	for index := range result {
-		latency := 0.0
-		if latencyCounts[index] > 0 {
-			latency = latencySums[index] / float64(latencyCounts[index])
+		result[index] = model.TrendPoint{
+			Time: starts[index].Format(time.RFC3339), Requests: requests[index],
+			Latency: nearestRankP95(latencies[index]), LatencySamples: len(latencies[index]),
+			Errors: errors[index], Denied: denied[index],
 		}
-		result[index] = model.TrendPoint{Time: starts[index].Format("15:04"), Requests: requests[index], Latency: latency, Errors: errors[index], Denied: denied[index]}
 	}
 	return result
+}
+
+func recordsInWindow(records []model.AuditTrafficRecord, window model.TrendWindow) []model.AuditTrafficRecord {
+	filtered := make([]model.AuditTrafficRecord, 0, len(records))
+	for _, record := range records {
+		if !record.Timestamp.Before(window.From) && record.Timestamp.Before(window.To) {
+			filtered = append(filtered, record)
+		}
+	}
+	return filtered
+}
+
+func nearestRankP95(values []float64) *float64 {
+	if len(values) == 0 {
+		return nil
+	}
+	sorted := append([]float64(nil), values...)
+	sort.Float64s(sorted)
+	index := (95*len(sorted)+99)/100 - 1
+	value := sorted[index]
+	return &value
 }
 
 func bucketIndex(starts []time.Time, duration time.Duration, timestamp time.Time) int {

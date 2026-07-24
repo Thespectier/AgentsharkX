@@ -4,6 +4,10 @@
     "path": "/api/logs/search",
     "body": {
       "limit": 5,
+      "timeRange": {
+        "from": "2026-07-24T08:00:00Z",
+        "to": "2026-07-24T09:00:00Z"
+      },
       "includeAttributes": false
     }
   },

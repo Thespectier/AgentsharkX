@@ -75,7 +75,10 @@ launcher and fallback container run from the repository root and keep that
 directory persistent and owner-only. This store is owned by agentgateway, not
 AgentsharkX. The pinned upstream retains LLM prompt/completion payload rows when
 available; AgentsharkX searches with `includeAttributes=false` and never calls
-payload detail, so those fields do not cross the BFF contract.
+payload detail, so those fields do not cross the BFF contract. The pinned
+v1.3.1 request types also verify explicit `timeRange` on log search and
+`timeRange` plus `bucketSeconds` on Analytics; AgentsharkX uses one exact
+rolling 60-minute range and 300-second buckets for both Home and Audit.
 
 Native Linux Docker connects the BFF through host networking. Docker Desktop
 was separately verified to reach the same loopback-only readiness listener
@@ -182,13 +185,14 @@ port-38008 root-page check. This is why an unmodified upstream image can appear
 
 For Phase 6, request-log search, Analytics, AgentGuard Traffic/Audit/Sessions,
 and their exact populated shapes were cross-checked against the pinned source.
-The gateway request always sets `includeAttributes=false` and never calls
-payload detail. The AgentGuard audit projection does not decode runtime state,
-arguments/results, plugin results, or free-form reasons. Contract tests include
-sentinel secrets in those omitted fields and fail if they reach normalized
-JSON. AgentGuard Traffic supplies aggregate scalars only because its records do
-not contain a stable upstream event ID; normalized security events come from
-Audit's explicit `event_id` instead.
+The gateway requests share an explicit 60-minute `timeRange`; search always
+sets `includeAttributes=false`, Analytics sets `bucketSeconds=300`, and the BFF
+never calls payload detail. The AgentGuard audit projection does not decode
+runtime state, arguments/results, plugin results, or free-form reasons.
+Contract tests include sentinel secrets in those omitted fields and fail if
+they reach normalized JSON. AgentGuard Traffic supplies aggregate scalars only
+because its records do not contain a stable upstream event ID; normalized
+security events come from Audit's explicit `event_id` instead.
 
 The BFF polls every two seconds by default, keeps at most 1000 normalized events
 in memory, and uses independent source failures. SSE sequence IDs are owned by

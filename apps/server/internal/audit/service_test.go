@@ -17,10 +17,10 @@ type fakeGateway struct {
 	err       error
 }
 
-func (fake fakeGateway) Traffic(context.Context, int) (model.AuditFeed, error) {
+func (fake fakeGateway) TrafficWindow(context.Context, int, model.TrendWindow) (model.AuditFeed, error) {
 	return fake.feed, fake.err
 }
-func (fake fakeGateway) Analytics(context.Context) (model.GatewayAnalytics, error) {
+func (fake fakeGateway) AnalyticsWindow(context.Context, model.TrendWindow) (model.GatewayAnalytics, error) {
 	return fake.analytics, nil
 }
 
@@ -109,6 +109,101 @@ func TestRefreshPreservesEmptyArrayContract(t *testing.T) {
 	snapshot := service.Refresh(t.Context())
 	if snapshot.Data.Metrics == nil || snapshot.Data.Trend == nil || snapshot.Data.Events == nil || snapshot.Data.Sessions == nil {
 		t.Fatalf("empty audit collections must serialize as arrays: %#v", snapshot.Data)
+	}
+}
+
+func TestTrendUsesExactFiveMinuteBucketsAndNearestRankP95(t *testing.T) {
+	t.Parallel()
+	window := model.TrendWindow{
+		From:           time.Date(2026, 7, 24, 8, 0, 0, 0, time.UTC),
+		To:             time.Date(2026, 7, 24, 9, 0, 0, 0, time.UTC),
+		BucketDuration: model.TrendBucketDuration,
+	}
+	latencies := make([]model.AuditTrafficRecord, 0, 22)
+	for value := 1; value <= 20; value++ {
+		latencies = append(latencies, model.AuditTrafficRecord{
+			Timestamp: window.From.Add(time.Minute), LatencyMS: float64(value),
+		})
+	}
+	latencies = append(latencies,
+		model.AuditTrafficRecord{Timestamp: window.From.Add(-time.Second), LatencyMS: 9999},
+		model.AuditTrafficRecord{Timestamp: window.To, LatencyMS: 9999},
+	)
+	requests := int64(7)
+	bucketSeconds := int64(model.TrendBucketDuration / time.Second)
+	trend := buildTrend(window, struct {
+		traffic      model.AuditFeed
+		analytics    model.GatewayAnalytics
+		trafficErr   error
+		analyticsErr error
+	}{
+		traffic: model.AuditFeed{Traffic: latencies},
+		analytics: model.GatewayAnalytics{
+			Status: "available", Requests: &requests, BucketSeconds: &bucketSeconds,
+			Buckets: []model.AnalyticsBucket{{Start: window.From, Requests: requests}},
+		},
+	}, struct {
+		traffic     model.AuditFeed
+		audit       model.AuditFeed
+		sessions    []model.AuditSession
+		trafficErr  error
+		auditErr    error
+		sessionsErr error
+	}{
+		traffic: model.AuditFeed{Traffic: []model.AuditTrafficRecord{
+			{Timestamp: window.From.Add(2 * time.Minute), Action: "DENY"},
+			{Timestamp: window.From.Add(-time.Second), Action: "DENY"},
+		}},
+	})
+
+	if len(trend) != model.TrendBucketCount {
+		t.Fatalf("expected %d points, got %d", model.TrendBucketCount, len(trend))
+	}
+	if trend[0].Time != "2026-07-24T08:00:00Z" || trend[0].Requests != 7 || trend[0].Denied != 1 {
+		t.Fatalf("unexpected first bucket: %#v", trend[0])
+	}
+	if trend[0].Latency == nil || *trend[0].Latency != 19 || trend[0].LatencySamples != 20 {
+		t.Fatalf("expected nearest-rank P95 19ms from 20 samples, got %#v", trend[0])
+	}
+	if trend[1].Time != "2026-07-24T08:05:00Z" || trend[1].Latency != nil || trend[1].LatencySamples != 0 {
+		t.Fatalf("empty buckets must retain an exact timestamp and null latency: %#v", trend[1])
+	}
+}
+
+func TestMetricsExcludeRecordsOutsideTrendWindow(t *testing.T) {
+	t.Parallel()
+	window := model.TrendWindow{
+		From:           time.Date(2026, 7, 24, 8, 0, 0, 0, time.UTC),
+		To:             time.Date(2026, 7, 24, 9, 0, 0, 0, time.UTC),
+		BucketDuration: model.TrendBucketDuration,
+	}
+	metrics := buildMetrics(window, struct {
+		traffic      model.AuditFeed
+		analytics    model.GatewayAnalytics
+		trafficErr   error
+		analyticsErr error
+	}{
+		traffic: model.AuditFeed{Traffic: []model.AuditTrafficRecord{
+			{Timestamp: window.From.Add(time.Minute), LatencyMS: 25},
+			{Timestamp: window.From.Add(-time.Second), LatencyMS: 9000},
+		}},
+	}, struct {
+		traffic     model.AuditFeed
+		audit       model.AuditFeed
+		sessions    []model.AuditSession
+		trafficErr  error
+		auditErr    error
+		sessionsErr error
+	}{
+		traffic: model.AuditFeed{Traffic: []model.AuditTrafficRecord{
+			{Timestamp: window.From.Add(time.Minute), Action: "deny"},
+			{Timestamp: window.From.Add(2 * time.Minute), Action: "allow"},
+			{Timestamp: window.To, Action: "deny"},
+		}},
+	})
+
+	if metrics[0].Value != 1 || metrics[1].Value != 25 || metrics[2].Value != 2 || metrics[3].Value != 50 {
+		t.Fatalf("metrics were not constrained to the shared window: %#v", metrics)
 	}
 }
 

@@ -79,7 +79,8 @@ export type Metric = {
 export type TrendPoint = {
   time: string;
   requests: number;
-  latency: number;
+  latency: number | null;
+  latencySamples: number;
   errors: number;
   denied: number;
 };

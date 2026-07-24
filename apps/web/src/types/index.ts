@@ -55,7 +55,8 @@ export interface Metric {
 export interface TrendPoint {
   time: string;
   requests: number;
-  latency: number;
+  latency: number | null;
+  latencySamples: number;
   errors: number;
   denied: number;
 }

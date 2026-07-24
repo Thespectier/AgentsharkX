@@ -45,6 +45,11 @@ type rawLogEntry struct {
 
 type fieldPresence struct{ Present bool }
 
+type logTimeRange struct {
+	From time.Time `json:"from"`
+	To   time.Time `json:"to"`
+}
+
 func (presence *fieldPresence) UnmarshalJSON(data []byte) error {
 	presence.Present = string(data) != "null"
 	return nil
@@ -54,6 +59,12 @@ func (presence *fieldPresence) UnmarshalJSON(data []byte) error {
 // attributes or payloads. A missing log database is represented as an
 // unavailable feed so the AgentGuard side can remain useful.
 func (client *Client) Traffic(ctx context.Context, limit int) (model.AuditFeed, error) {
+	return client.TrafficWindow(ctx, limit, model.CurrentTrendWindow(time.Now()))
+}
+
+// TrafficWindow constrains the verified request-log search to the same window
+// used by the analytics request and the BFF trend buckets.
+func (client *Client) TrafficWindow(ctx context.Context, limit int, window model.TrendWindow) (model.AuditFeed, error) {
 	if limit < 1 {
 		limit = 1
 	}
@@ -62,9 +73,14 @@ func (client *Client) Traffic(ctx context.Context, limit int) (model.AuditFeed, 
 	}
 	var response rawLogSearch
 	_, err := client.upstream.PostJSON(ctx, "/api/logs/search", struct {
-		Limit             int  `json:"limit"`
-		IncludeAttributes bool `json:"includeAttributes"`
-	}{Limit: limit, IncludeAttributes: false}, &response)
+		Limit             int          `json:"limit"`
+		TimeRange         logTimeRange `json:"timeRange"`
+		IncludeAttributes bool         `json:"includeAttributes"`
+	}{
+		Limit:             limit,
+		TimeRange:         logTimeRange{From: window.From.UTC(), To: window.To.UTC()},
+		IncludeAttributes: false,
+	}, &response)
 	if err != nil {
 		var upstreamError *upstream.Error
 		if errors.As(err, &upstreamError) && (upstreamError.Status == http.StatusNotFound || upstreamError.Status == http.StatusMethodNotAllowed || upstreamError.Status >= 500) {

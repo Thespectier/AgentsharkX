@@ -142,11 +142,17 @@ source digest, expires after five minutes, is consumed once, and is held in a
 and explicit confirmation; approval/rule locks prevent concurrent duplicate
 actions in one BFF process. Upstream mutations are not automatically retried.
 
-The Audit poller requests agentgateway logs with
-`includeAttributes=false` and never requests payload detail. AgentGuard runtime
-state, tool arguments/results, plugin results, and free-form reasons are not
-decoded into the public model. Detail responses are built from an allow-listed
-redacted projection; list, overview, and SSE events omit that projection.
+The Audit poller requests agentgateway logs with `includeAttributes=false` and
+never requests payload detail. Log search and Analytics receive one shared,
+rolling 60-minute window with twelve five-minute buckets. The BFF maps
+explicit AgentGuard decisions into those same buckets and calculates
+nearest-rank P95 latency from the bounded 500-record redacted gateway log
+sample; every point exposes its sample count, and a bucket with no latency
+samples remains null rather than becoming a fabricated zero.
+AgentGuard runtime state, tool arguments/results, plugin results, and free-form
+reasons are not decoded into the public model. Detail responses are built from
+an allow-listed redacted projection; list, overview, and SSE events omit that
+projection.
 
 `/overview` is `mode=operational` when the Audit service is attached. Gateway
 log/Analytics failures and AgentGuard Traffic/Audit/Sessions failures are

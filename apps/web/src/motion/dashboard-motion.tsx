@@ -12,7 +12,13 @@ import {
   YAxis,
 } from "recharts";
 
-import { formatTime } from "../lib/format";
+import {
+  formatCount,
+  formatDuration,
+  formatTime,
+  formatTrendTick,
+  formatTrendTimestamp,
+} from "../lib/format";
 import type { TrendPoint, UnifiedEvent } from "../types";
 import { SeverityBadge, SourceBadge, StatusOrb, cn } from "../components/ui";
 
@@ -223,14 +229,17 @@ export function RequestTrendChart({
   const reduced = useReducedMotion();
   const primaryKey = mode === "latency" ? "latency" : mode === "security" ? "denied" : "requests";
   const color = mode === "security" ? "#ff627d" : mode === "latency" ? "#32d6e8" : "#5c92ff";
+  const primaryAxis = mode === "requests" ? "traffic" : "primary";
+  const primaryName =
+    mode === "latency" ? "P95 latency" : mode === "security" ? "Denied" : "Requests";
   return (
     <div
       className="chart-wrap"
       role="img"
-      aria-label={`${mode} trend chart with ${data.length} time buckets`}
+      aria-label={`${mode} trend chart for the last 60 minutes in ${data.length} five-minute UTC buckets`}
     >
       <ResponsiveContainer height="100%" width="100%">
-        <AreaChart data={data} margin={{ left: -18, right: 8, top: 12, bottom: 0 }}>
+        <AreaChart data={data} margin={{ left: 0, right: 0, top: 12, bottom: 0 }}>
           <defs>
             <linearGradient id={`chart-${mode}`} x1="0" x2="0" y1="0" y2="1">
               <stop offset="0%" stopColor={color} stopOpacity={0.28} />
@@ -244,9 +253,36 @@ export function RequestTrendChart({
             fontSize={11}
             interval={1}
             stroke="#718196"
+            tickFormatter={formatTrendTick}
             tickLine={false}
           />
-          <YAxis axisLine={false} fontSize={11} stroke="#718196" tickLine={false} />
+          <YAxis
+            allowDecimals={false}
+            axisLine={false}
+            domain={[0, "auto"]}
+            fontSize={11}
+            stroke="#718196"
+            tickFormatter={(value: number) =>
+              mode === "latency" ? `${formatCount(value)} ms` : formatCount(value)
+            }
+            tickLine={false}
+            width={mode === "latency" ? 58 : 45}
+            yAxisId={primaryAxis}
+          />
+          {mode === "requests" ? (
+            <YAxis
+              allowDecimals={false}
+              axisLine={false}
+              domain={[0, "auto"]}
+              fontSize={11}
+              orientation="right"
+              stroke="#a56b78"
+              tickFormatter={formatCount}
+              tickLine={false}
+              width={38}
+              yAxisId="decisions"
+            />
+          ) : null}
           <Tooltip
             contentStyle={{
               background: "#101927",
@@ -256,25 +292,44 @@ export function RequestTrendChart({
               fontSize: 12,
             }}
             cursor={{ stroke: "#41536a" }}
+            filterNull={false}
+            formatter={(value, name) => [
+              value == null
+                ? "No request samples"
+                : name === "P95 latency"
+                  ? formatDuration(Number(value))
+                  : formatCount(Number(value)),
+              name,
+            ]}
+            labelFormatter={(value, payload) => {
+              const point = payload[0]?.payload as TrendPoint | undefined;
+              const sampleLabel =
+                mode === "latency" ? ` · ${formatCount(point?.latencySamples ?? 0)} samples` : "";
+              return `${formatTrendTimestamp(String(value))} UTC · 5-minute bucket${sampleLabel}`;
+            }}
           />
           <Area
             animationDuration={reduced ? 0 : 650}
+            connectNulls={false}
             dataKey={primaryKey}
             fill={`url(#chart-${mode})`}
+            name={primaryName}
             stroke={color}
             strokeWidth={2}
             type="monotone"
+            yAxisId={primaryAxis}
           />
           {mode === "requests" ? (
             <Line
               animationDuration={reduced ? 0 : 650}
               dataKey="denied"
               dot={false}
+              name="Denied"
               stroke="#ff627d"
               strokeDasharray="4 4"
               strokeWidth={1.5}
               type="monotone"
-              yAxisId={0}
+              yAxisId="decisions"
             />
           ) : null}
         </AreaChart>

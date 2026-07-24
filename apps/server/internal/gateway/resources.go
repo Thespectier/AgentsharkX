@@ -251,10 +251,19 @@ func (client *Client) Snapshot(ctx context.Context) (model.GatewaySnapshot, erro
 }
 
 func (client *Client) Analytics(ctx context.Context) (model.GatewayAnalytics, error) {
+	return client.AnalyticsWindow(ctx, model.CurrentTrendWindow(time.Now()))
+}
+
+func (client *Client) AnalyticsWindow(ctx context.Context, window model.TrendWindow) (model.GatewayAnalytics, error) {
+	bucketSeconds := int64(window.BucketDuration / time.Second)
 	var payload json.RawMessage
 	_, err := client.upstream.PostJSON(ctx, "/api/logs/analytics/summary", struct {
-		BucketCount int `json:"bucketCount"`
-	}{BucketCount: 12}, &payload)
+		TimeRange     logTimeRange `json:"timeRange"`
+		BucketSeconds int64        `json:"bucketSeconds"`
+	}{
+		TimeRange:     logTimeRange{From: window.From.UTC(), To: window.To.UTC()},
+		BucketSeconds: bucketSeconds,
+	}, &payload)
 	if err != nil {
 		var upstreamError *upstream.Error
 		if errors.As(err, &upstreamError) && (upstreamError.Status == 404 || upstreamError.Status == 405 || upstreamError.Status >= 500) {
@@ -280,19 +289,34 @@ func (client *Client) Analytics(ctx context.Context) (model.GatewayAnalytics, er
 	if response.BucketSeconds <= 0 {
 		return model.GatewayAnalytics{}, &ContractError{Field: "/api/logs/analytics/summary/bucketSeconds", Problem: "required positive field is missing"}
 	}
+	if response.BucketSeconds != bucketSeconds {
+		return model.GatewayAnalytics{}, &ContractError{Field: "/api/logs/analytics/summary/bucketSeconds", Problem: "response does not match the requested bucket size"}
+	}
+	if response.Buckets == nil {
+		return model.GatewayAnalytics{}, &ContractError{Field: "/api/logs/analytics/summary/buckets", Problem: "required array is missing"}
+	}
 	analytics := model.GatewayAnalytics{Status: "available", Buckets: make([]model.AnalyticsBucket, 0, len(response.Buckets))}
 	requests := int64(0)
 	tokens := int64(0)
 	cost := float64(0)
+	seenStarts := make(map[time.Time]struct{}, len(response.Buckets))
 	for index, bucket := range response.Buckets {
 		if bucket.Start.IsZero() {
 			return model.GatewayAnalytics{}, &ContractError{Field: fmt.Sprintf("/api/logs/analytics/summary/buckets/%d/start", index), Problem: "required timestamp is missing"}
 		}
+		start := bucket.Start.UTC()
+		if start.Before(window.From) || !start.Before(window.To) {
+			return model.GatewayAnalytics{}, &ContractError{Field: fmt.Sprintf("/api/logs/analytics/summary/buckets/%d/start", index), Problem: "bucket is outside the requested time range"}
+		}
+		if _, exists := seenStarts[start]; exists {
+			return model.GatewayAnalytics{}, &ContractError{Field: fmt.Sprintf("/api/logs/analytics/summary/buckets/%d/start", index), Problem: "duplicate bucket start"}
+		}
+		seenStarts[start] = struct{}{}
 		requests += bucket.Requests
 		tokens += bucket.TotalTokens
 		cost += bucket.Cost
 		analytics.Buckets = append(analytics.Buckets, model.AnalyticsBucket{
-			Start: bucket.Start, Requests: bucket.Requests, TotalTokens: bucket.TotalTokens, Cost: bucket.Cost,
+			Start: start, Requests: bucket.Requests, TotalTokens: bucket.TotalTokens, Cost: bucket.Cost,
 		})
 	}
 	analytics.Requests = &requests

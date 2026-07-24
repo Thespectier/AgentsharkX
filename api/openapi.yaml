@@ -1391,18 +1391,32 @@ components:
     TrendPoint:
       type: object
       additionalProperties: false
-      required: [time, requests, latency, errors, denied]
+      required: [time, requests, latency, latencySamples, errors, denied]
       properties:
         time:
           type: string
+          format: date-time
+          description: UTC start of a five-minute bucket in the exact shared rolling 60-minute window.
         requests:
-          type: number
+          type: integer
+          minimum: 0
+          description: Verified agentgateway request count in this bucket.
         latency:
-          type: number
+          type: [number, 'null']
+          minimum: 0
+          description: Nearest-rank P95 agentgateway request latency in milliseconds; null when the bucket has no request-log samples.
+        latencySamples:
+          type: integer
+          minimum: 0
+          description: Number of redacted request-log records used for this bucket's P95 value.
         errors:
-          type: number
+          type: integer
+          minimum: 0
+          description: Explicit agentgateway error count in this bucket.
         denied:
-          type: number
+          type: integer
+          minimum: 0
+          description: Explicit AgentGuard DENY decision count in this bucket.
     OverviewData:
       type: object
       additionalProperties: false

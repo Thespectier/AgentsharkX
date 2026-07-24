@@ -4,8 +4,8 @@ Phase 7 stores deterministic Playwright release baselines here:
 
 - [`home-1440.png`](home-1440.png): 1440 × 1000 desktop Home with LiveFlow,
   metrics, chart, and source-distinct activity.
-- [`audit-1280.png`](audit-1280.png): 1280 × 800 laptop Audit security-event
-  table with explicit source and correlation state.
+- [`audit-1280.png`](audit-1280.png): 1280 × 800 laptop Audit analytics with
+  exact rolling-window traffic and latency charts.
 - [`connect-1280.png`](connect-1280.png): 1280 × 900 Connect overview.
 - [`trust-1280.png`](trust-1280.png): 1280 × 900 Trust agent inventory.
 - [`protect-1280.png`](protect-1280.png): 1280 × 900 source-separated Protect

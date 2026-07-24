@@ -31,10 +31,10 @@ type apiAuditGateway struct {
 	analytics model.GatewayAnalytics
 }
 
-func (fake apiAuditGateway) Traffic(context.Context, int) (model.AuditFeed, error) {
+func (fake apiAuditGateway) TrafficWindow(context.Context, int, model.TrendWindow) (model.AuditFeed, error) {
 	return fake.feed, nil
 }
-func (fake apiAuditGateway) Analytics(context.Context) (model.GatewayAnalytics, error) {
+func (fake apiAuditGateway) AnalyticsWindow(context.Context, model.TrendWindow) (model.GatewayAnalytics, error) {
 	return fake.analytics, nil
 }
 

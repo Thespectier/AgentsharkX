@@ -297,16 +297,19 @@ function AnalyticsView({
           <CardHeader
             action={
               <span className="live-caption">
-                <Radio size={13} /> 12 buckets
+                <Radio size={13} /> 12 × 5m · UTC
               </span>
             }
-            description="Request volume and explicit deny counts; axes are not merged semantically."
+            description="Last 60 minutes; verified request volume and explicit denies use independent axes."
             title="Traffic trend"
           />
           <RequestTrendChart data={data.trend} />
         </Card>
         <Card className="chart-card">
-          <CardHeader description="P95 gateway request latency." title="Latency trend" />
+          <CardHeader
+            description="Nearest-rank P95 from the bounded redacted request-log sample; tooltips show sample size and gaps mean no samples."
+            title="Latency trend"
+          />
           <RequestTrendChart data={data.trend} mode="latency" />
         </Card>
       </div>
