@@ -457,6 +457,8 @@ function SessionsView({ data }: { data: AuditData }) {
 
 function EventDetail({ event }: { event: UnifiedEvent }) {
   const { t } = useI18n();
+  const evidence = sourceEvidenceRows(event);
+  const sensitiveBoundary = sensitiveContentRows(event);
   return (
     <div className="event-detail">
       <div className="event-detail__badges">
@@ -469,6 +471,7 @@ function EventDetail({ event }: { event: UnifiedEvent }) {
           { label: "Timestamp", value: formatTimeWithZone(event.timestamp) },
           { label: "Original ID", value: <code>{event.rawRef.id}</code> },
           { label: "Agent", value: event.subject?.agentId ?? "Not provided" },
+          { label: "Principal", value: event.subject?.principalId ?? "Not provided" },
           { label: "Session", value: event.subject?.sessionId ?? "Not provided" },
           {
             label: "Target",
@@ -482,8 +485,28 @@ function EventDetail({ event }: { event: UnifiedEvent }) {
             label: "Correlation",
             value: event.correlation?.verified ? "Verified shared identifier" : "Not correlated",
           },
+          {
+            label: "Trace ID",
+            value: event.correlation?.traceId ? (
+              <code>{event.correlation.traceId}</code>
+            ) : (
+              "Not provided"
+            ),
+          },
         ]}
       />
+      {evidence.length ? (
+        <section className="event-detail__section">
+          <h3>
+            {t(event.source === "agentgateway" ? "Gateway request evidence" : "Guard evidence")}
+          </h3>
+          <DefinitionList items={evidence} />
+        </section>
+      ) : null}
+      <section className="event-detail__section">
+        <h3>{t("Sensitive content boundary")}</h3>
+        <DefinitionList items={sensitiveBoundary} />
+      </section>
       <div className="raw-json">
         <header>
           <Braces size={15} />
@@ -494,9 +517,109 @@ function EventDetail({ event }: { event: UnifiedEvent }) {
         </pre>
       </div>
       <div className="redaction-note">
-        <ShieldAlert size={15} /> Prompt, payload, authorization, and tool arguments are redacted in
-        this detail.
+        <ShieldAlert size={15} />{" "}
+        {t(
+          "Complete prompts, payloads, authorization values, and tool arguments never cross the AgentsharkX BFF. Payload retention is reported only when agentgateway explicitly provides hasPayload.",
+        )}
       </div>
     </div>
   );
+}
+
+type EvidenceRow = { label: string; value: string };
+
+export function sourceEvidenceRows(event: UnifiedEvent): EvidenceRow[] {
+  const raw = objectValue(event.raw);
+  if (event.source === "agentgateway") {
+    const genAI = objectValue(raw.genAi);
+    const usage = objectValue(raw.usage);
+    return compactRows([
+      ["Started at", displayValue(raw.startedAt)],
+      ["Completed at", displayValue(raw.completedAt)],
+      ["Duration", durationValue(raw.durationMs)],
+      ["HTTP status", displayValue(raw.httpStatus)],
+      ["Operation", displayValue(genAI.operationName)],
+      ["Provider", displayValue(genAI.providerName) || event.target?.provider],
+      ["Request model", displayValue(genAI.requestModel)],
+      ["Response model", displayValue(genAI.responseModel) || event.target?.model],
+      ["Input tokens", displayValue(usage.inputTokens)],
+      ["Output tokens", displayValue(usage.outputTokens)],
+      ["Total tokens", displayValue(usage.totalTokens)],
+      ["Estimated cost", currencyValue(raw.cost)],
+      ["Trace ID", displayValue(raw.traceId) || event.correlation?.traceId],
+      ["Span ID", displayValue(raw.spanId)],
+      ["Error present", booleanValue(raw.errorPresent)],
+    ]);
+  }
+  const guardEvent = objectValue(raw.event);
+  const tool = objectValue(guardEvent.tool);
+  const decision = objectValue(raw.decision);
+  const approval = objectValue(raw.approval);
+  return compactRows([
+    ["Guard event ID", displayValue(guardEvent.eventId) || displayValue(approval.eventId)],
+    ["Guard event type", displayValue(guardEvent.eventType) || displayValue(approval.eventType)],
+    ["Tool", displayValue(tool.name) || event.target?.tool],
+    ["Framework source", displayValue(tool.source)],
+    ["MCP server", displayValue(tool.mcpName)],
+    ["MCP tool", displayValue(tool.mcpToolName)],
+    ["MCP transport", displayValue(tool.mcpTransport)],
+    ["Risk score", displayValue(decision.riskScore)],
+    ["Matched rules", listValue(decision.matchedRules)],
+    ["Policy", displayValue(decision.policyId)],
+    ["Rule version", displayValue(decision.ruleVersion)],
+    ["Resolved at", displayValue(decision.resolvedAt)],
+  ]);
+}
+
+export function sensitiveContentRows(event: UnifiedEvent): EvidenceRow[] {
+  const raw = objectValue(event.raw);
+  const hasPayload = raw.hasPayload === true;
+  return [
+    { label: "Prompt", value: "Not collected by AgentsharkX" },
+    {
+      label: "Payload",
+      value:
+        event.source === "agentgateway" && hasPayload
+          ? "Retained upstream; content not retrieved"
+          : "Not collected by AgentsharkX",
+    },
+    { label: "Authorization", value: "Credential values are never collected" },
+    { label: "Tool arguments", value: "Not collected by AgentsharkX" },
+  ];
+}
+
+function compactRows(rows: Array<[string, string | undefined]>): EvidenceRow[] {
+  return rows
+    .filter((row): row is [string, string] => Boolean(row[1]))
+    .map(([label, value]) => ({ label, value }));
+}
+
+function objectValue(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function displayValue(value: unknown): string | undefined {
+  if (typeof value === "string") return value || undefined;
+  if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  return undefined;
+}
+
+function durationValue(value: unknown): string | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? `${value} ms` : undefined;
+}
+
+function currencyValue(value: unknown): string | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? `$${value.toFixed(6)}` : undefined;
+}
+
+function booleanValue(value: unknown): string | undefined {
+  return typeof value === "boolean" ? (value ? "Yes" : "No") : undefined;
+}
+
+function listValue(value: unknown): string | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const items = value.filter((item): item is string => typeof item === "string" && item !== "");
+  return items.length ? items.join(", ") : undefined;
 }

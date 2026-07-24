@@ -161,10 +161,20 @@ explicit AgentGuard decisions into those same buckets and calculates
 nearest-rank P95 latency from the bounded 500-record redacted gateway log
 sample; every point exposes its sample count, and a bucket with no latency
 samples remains null rather than becoming a fabricated zero.
+AgentGuard records the initial `HUMAN_CHECK` in Traffic/Audit but its approval
+mutation returns only an acknowledgement. After an approve/deny call is
+confirmed, the Protect service therefore passes the already-normalized ticket
+context to Audit, which retains a source-labelled approval-resolution event in
+the same bounded in-memory window. A denied approval contributes to the deny
+rate and deny trend immediately and remains present across later polls; failed
+or timed-out mutations do not create evidence.
 AgentGuard runtime state, tool arguments/results, plugin results, and free-form
 reasons are not decoded into the public model. Detail responses are built from
 an allow-listed redacted projection; list, overview, and SSE events omit that
-projection.
+projection. Gateway detail presents verified scalar request metadata such as
+duration, HTTP status, provider/model, token usage, cost, and trace/span IDs.
+It also reports the upstream `hasPayload` flag, but never retrieves payload
+contents, complete prompts, authorization values, or tool arguments.
 
 `/overview` is `mode=operational` when the Audit service is attached. Gateway
 log/Analytics failures and AgentGuard Traffic/Audit/Sessions failures are

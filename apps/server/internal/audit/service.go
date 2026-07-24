@@ -35,12 +35,23 @@ type Guard interface {
 }
 
 type Service struct {
-	mu      sync.RWMutex
-	gateway Gateway
-	guard   Guard
-	stream  *stream.Hub
-	data    model.AuditData
-	meta    model.Meta
+	mu               sync.RWMutex
+	gateway          Gateway
+	guard            Guard
+	stream           *stream.Hub
+	data             model.AuditData
+	meta             model.Meta
+	resolutions      []approvalResolution
+	resolutionKeys   map[string]struct{}
+	lastWindow       model.TrendWindow
+	lastGuardTraffic []model.AuditTrafficRecord
+	lastGuardAudit   []model.UnifiedEvent
+}
+
+type approvalResolution struct {
+	event           model.UnifiedEvent
+	record          model.AuditTrafficRecord
+	originalEventID string
 }
 
 func New(gateway Gateway, guard Guard, hub *stream.Hub) *Service {
@@ -49,8 +60,9 @@ func New(gateway Gateway, guard Guard, hub *stream.Hub) *Service {
 	}
 	return &Service{
 		gateway: gateway, guard: guard, stream: hub,
-		data: model.AuditData{Metrics: []model.Metric{}, Trend: []model.TrendPoint{}, Events: []model.UnifiedEvent{}, Sessions: []model.AuditSession{}},
-		meta: model.Meta{FetchedAt: time.Now().UTC(), SourceFailures: []model.SourceFailure{}},
+		data:        model.AuditData{Metrics: []model.Metric{}, Trend: []model.TrendPoint{}, Events: []model.UnifiedEvent{}, Sessions: []model.AuditSession{}},
+		meta:        model.Meta{FetchedAt: time.Now().UTC(), SourceFailures: []model.SourceFailure{}},
+		resolutions: []approvalResolution{}, resolutionKeys: make(map[string]struct{}),
 	}
 }
 
@@ -119,24 +131,37 @@ func (service *Service) Refresh(ctx context.Context) model.AuditEnvelope {
 
 	incoming := append([]model.UnifiedEvent{}, gatewayResultValue.traffic.Events...)
 	incoming = append(incoming, guardResultValue.audit.Events...)
-	verifySharedIdentifiers(incoming)
 
-	service.mu.RLock()
+	service.mu.Lock()
 	previous := cloneData(service.data)
-	service.mu.RUnlock()
+	resolutions := append([]approvalResolution(nil), service.resolutions...)
+	for _, resolution := range resolutions {
+		incoming = append(incoming, resolution.event)
+	}
+	verifySharedIdentifiers(incoming)
 	merged, fresh := mergeEvents(previous.Events, incoming, eventCapacity)
 	sessions := append([]model.AuditSession{}, guardResultValue.sessions...)
 	applySessionCounts(sessions, merged)
 	metrics := buildMetrics(window, gatewayResultValue, guardResultValue)
+	applyApprovalResolutionMetrics(
+		metrics,
+		window,
+		guardResultValue.traffic.Traffic,
+		guardResultValue.audit.Events,
+		resolutions,
+	)
 	applyMetricDeltas(previous.Metrics, metrics)
 	trend := buildTrend(window, gatewayResultValue, guardResultValue)
+	applyApprovalResolutionTrend(trend, window, resolutions)
 	meta := model.Meta{
 		FetchedAt: time.Now().UTC(), Partial: len(failures) > 0, SourceFailures: failures,
 	}
 	data := model.AuditData{Metrics: metrics, Trend: trend, Events: merged, Sessions: sessions}
-	service.mu.Lock()
 	service.data = cloneData(data)
 	service.meta = cloneMeta(meta)
+	service.lastWindow = window
+	service.lastGuardTraffic = append([]model.AuditTrafficRecord(nil), guardResultValue.traffic.Traffic...)
+	service.lastGuardAudit = append([]model.UnifiedEvent(nil), guardResultValue.audit.Events...)
 	service.mu.Unlock()
 
 	sort.Slice(fresh, func(i, j int) bool { return fresh[i].Timestamp.Before(fresh[j].Timestamp) })
@@ -144,6 +169,72 @@ func (service *Service) Refresh(ctx context.Context) model.AuditEnvelope {
 		service.stream.Publish(withoutRaw(event))
 	}
 	return service.Snapshot()
+}
+
+// RecordApprovalResolution retains the confirmed management-plane outcome of
+// an AgentGuard approval. AgentGuard's audit feed records the initial
+// HUMAN_CHECK decision but its resolve endpoint returns only an acknowledgement,
+// so this source-labelled evidence closes that otherwise invisible transition.
+func (service *Service) RecordApprovalResolution(approval model.Approval, decision string, completedAt time.Time) {
+	resolution, ok := newApprovalResolution(approval, decision, completedAt)
+	if !ok {
+		return
+	}
+	key := eventKey(resolution.event)
+	service.mu.Lock()
+	if _, exists := service.resolutionKeys[key]; exists {
+		service.mu.Unlock()
+		return
+	}
+	service.resolutionKeys[key] = struct{}{}
+	service.resolutions = append(service.resolutions, resolution)
+	if len(service.resolutions) > eventCapacity {
+		service.resolutions = service.resolutions[len(service.resolutions)-eventCapacity:]
+		service.rebuildResolutionKeys()
+	}
+	merged, fresh := mergeEvents(service.data.Events, []model.UnifiedEvent{resolution.event}, eventCapacity)
+	service.data.Events = merged
+	if approval.SessionID != "" {
+		for index := range service.data.Sessions {
+			if service.data.Sessions[index].UpstreamID != approval.SessionID {
+				continue
+			}
+			service.data.Sessions[index].Events++
+			if strings.EqualFold(decision, "deny") {
+				service.data.Sessions[index].Denies++
+			}
+		}
+	}
+	window := service.lastWindow
+	if window.From.IsZero() {
+		window = model.CurrentTrendWindow(completedAt.Add(time.Second))
+	}
+	if !completedAt.Before(window.To) {
+		window.To = completedAt.Add(time.Nanosecond)
+	}
+	applyApprovalResolutionMetrics(
+		service.data.Metrics,
+		window,
+		service.lastGuardTraffic,
+		service.lastGuardAudit,
+		service.resolutions,
+	)
+	if strings.EqualFold(decision, "deny") {
+		incrementDeniedTrend(service.data.Trend, window, completedAt)
+	}
+	service.meta.FetchedAt = completedAt.UTC()
+	service.mu.Unlock()
+
+	if len(fresh) == 1 {
+		service.stream.Publish(withoutRaw(resolution.event))
+	}
+}
+
+func (service *Service) rebuildResolutionKeys() {
+	service.resolutionKeys = make(map[string]struct{}, len(service.resolutions))
+	for _, resolution := range service.resolutions {
+		service.resolutionKeys[eventKey(resolution.event)] = struct{}{}
+	}
 }
 
 func (service *Service) Snapshot() model.AuditEnvelope {
@@ -364,6 +455,184 @@ func metricTone(denyRate float64) string {
 		return "warning"
 	}
 	return "success"
+}
+
+func applyApprovalResolutionMetrics(
+	metrics []model.Metric,
+	window model.TrendWindow,
+	guardTraffic []model.AuditTrafficRecord,
+	guardAudit []model.UnifiedEvent,
+	resolutions []approvalResolution,
+) {
+	traffic := recordsInWindow(guardTraffic, window)
+	denies := 0
+	for _, record := range traffic {
+		if strings.EqualFold(record.Action, "deny") {
+			denies++
+		}
+	}
+	auditIDs := make(map[string]struct{}, len(guardAudit))
+	for _, event := range guardAudit {
+		if !event.Timestamp.Before(window.From) && event.Timestamp.Before(window.To) {
+			auditIDs[event.RawRef.ID] = struct{}{}
+		}
+	}
+	resolutionOutcomes := make(map[string]string, len(resolutions))
+	for _, resolution := range resolutions {
+		if resolution.record.Timestamp.Before(window.From) || !resolution.record.Timestamp.Before(window.To) {
+			continue
+		}
+		key := resolution.originalEventID
+		if key == "" {
+			key = resolution.event.RawRef.ID
+		}
+		if strings.EqualFold(resolution.record.Action, "deny") ||
+			!strings.EqualFold(resolutionOutcomes[key], "deny") {
+			resolutionOutcomes[key] = resolution.record.Action
+		}
+	}
+	unmatchedResolutions := 0
+	for eventID, action := range resolutionOutcomes {
+		if _, matched := auditIDs[eventID]; !matched {
+			unmatchedResolutions++
+		}
+		if strings.EqualFold(action, "deny") {
+			denies++
+		}
+	}
+	denominator := max(len(traffic)+unmatchedResolutions, denies)
+	denyRate := 0.0
+	if denominator > 0 {
+		denyRate = float64(denies) * 100 / float64(denominator)
+	}
+	for index := range metrics {
+		if metrics[index].ID != "guard-deny-rate" {
+			continue
+		}
+		metrics[index].Value = denyRate
+		metrics[index].Tone = metricTone(denyRate)
+		metrics[index].Context = "Last 60 minutes · direct DENY and denied approvals"
+	}
+}
+
+func applyApprovalResolutionTrend(
+	trend []model.TrendPoint,
+	window model.TrendWindow,
+	resolutions []approvalResolution,
+) {
+	for _, resolution := range resolutions {
+		if strings.EqualFold(resolution.record.Action, "deny") {
+			incrementDeniedTrend(trend, window, resolution.record.Timestamp)
+		}
+	}
+}
+
+func incrementDeniedTrend(trend []model.TrendPoint, window model.TrendWindow, timestamp time.Time) {
+	if len(trend) == 0 || timestamp.Before(window.From) || !timestamp.Before(window.To) {
+		return
+	}
+	index := int(timestamp.Sub(window.From) / window.BucketDuration)
+	if index == len(trend) && timestamp.Before(window.To) {
+		index = len(trend) - 1
+	}
+	if index >= 0 && index < len(trend) {
+		trend[index].Denied++
+	}
+}
+
+func newApprovalResolution(
+	approval model.Approval,
+	decision string,
+	completedAt time.Time,
+) (approvalResolution, bool) {
+	normalized := strings.ToLower(strings.TrimSpace(decision))
+	if normalized != "approve" && normalized != "deny" {
+		return approvalResolution{}, false
+	}
+	if completedAt.IsZero() {
+		completedAt = time.Now().UTC()
+	} else {
+		completedAt = completedAt.UTC()
+	}
+	action := strings.ToUpper(normalized)
+	severity := "info"
+	if normalized == "deny" {
+		severity = "high"
+	}
+	phase := approval.Phase
+	if phase == "" {
+		phase = phaseForApprovalEvent(approval.EventType)
+	}
+	summaryTarget := approval.Tool
+	if summaryTarget == "" {
+		summaryTarget = strings.ReplaceAll(approval.EventType, "_", " ")
+	}
+	if summaryTarget == "" {
+		summaryTarget = "guarded action"
+	}
+	summary := "Approval for " + summaryTarget + " was " + normalized + "d"
+	if normalized == "deny" {
+		summary = "Approval for " + summaryTarget + " was denied"
+	}
+	correlation := (*model.EventCorrelation)(nil)
+	if approval.SessionID != "" {
+		correlation = &model.EventCorrelation{SessionID: approval.SessionID, Verified: false}
+	}
+	event := model.UnifiedEvent{
+		ID:        "guard:approval:" + approval.ID,
+		Timestamp: completedAt,
+		Source:    model.SourceAgentGuard,
+		Kind:      "approval",
+		Severity:  severity,
+		Subject: &model.EventSubject{
+			AgentID: approval.AgentUpstreamID, PrincipalID: approval.UserID, SessionID: approval.SessionID,
+		},
+		Target:      &model.EventTarget{Tool: approval.Tool},
+		Phase:       phase,
+		Action:      action,
+		Decision:    action,
+		Correlation: correlation,
+		Summary:     summary,
+		RawRef:      model.RawRef{Source: model.SourceAgentGuard, ID: approval.UpstreamID},
+		Raw: map[string]any{
+			"approval": map[string]any{
+				"ticketId": approval.UpstreamID, "eventId": approval.EventID,
+				"eventType": approval.EventType, "createdAt": approval.CreatedAt,
+			},
+			"decision": map[string]any{
+				"action": action, "resolvedAt": completedAt, "riskScore": approval.RiskScore,
+				"matchedRules": append([]string(nil), approval.MatchedRules...),
+			},
+			"redacted": []string{
+				"operator note", "prompt", "payload", "authorization",
+				"tool arguments", "tool result", "plugin result", "reason",
+			},
+		},
+	}
+	return approvalResolution{
+		event:           event,
+		originalEventID: approval.EventID,
+		record: model.AuditTrafficRecord{
+			Timestamp: completedAt,
+			Action:    action,
+			Risk:      approval.RiskScore,
+		},
+	}, true
+}
+
+func phaseForApprovalEvent(eventType string) string {
+	switch strings.ToLower(eventType) {
+	case "llm_input":
+		return "llm_before"
+	case "llm_output":
+		return "llm_after"
+	case "tool_invoke":
+		return "tool_before"
+	case "tool_result":
+		return "tool_after"
+	default:
+		return ""
+	}
 }
 
 func buildTrend(window model.TrendWindow, gatewayResult struct {

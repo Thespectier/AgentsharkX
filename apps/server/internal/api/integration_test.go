@@ -123,7 +123,7 @@ func TestFakeUpstreamsRemainIndependentThroughBFF(t *testing.T) {
 func TestProtectRulesAndApprovalsFlowThroughBFF(t *testing.T) {
 	t.Parallel()
 
-	var audit bytes.Buffer
+	var auditLog bytes.Buffer
 	const secretSource = "RULE review_email\nACTION HUMAN_CHECK\nSECRET never-log-rule-source"
 	const secretNote = "reviewed never-log-operator-note"
 	gatewayServer := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
@@ -156,8 +156,10 @@ func TestProtectRulesAndApprovalsFlowThroughBFF(t *testing.T) {
 		case request.URL.Path == "/v1/backend/agents/agent-a/plugins/available":
 			_, _ = io.WriteString(writer, `{"agent_id":"agent-a","local_plugins":[{"name":"tool_invoke","phases":["tool_before"]}],"remote_plugins":[]}`)
 		case request.URL.Path == "/v1/backend/approvals" && request.Method == http.MethodGet:
-			_, _ = io.WriteString(writer, `[{"ticket_id":"ticket-ok","created_ms":1784688000000,"status":"pending","event":{"event_id":"event-ok","event_type":"tool_invoke","principal":{"agent_id":"agent-a"},"tool_call":{"tool_name":"mail.send","args":{"body":"never-log-approval-body"}}},"decision":{"action":"human_check","risk_score":0.8,"matched_rules":["existing"],"reason":"review"}},{"ticket_id":"ticket-gone","created_ms":1784688000001,"status":"pending","event":{"event_id":"event-gone","event_type":"tool_invoke","principal":{"agent_id":"agent-a"},"tool_call":{"tool_name":"shell.exec"}},"decision":{"action":"human_check","risk_score":0.9,"matched_rules":["existing"],"reason":"review"}}]`)
+			_, _ = io.WriteString(writer, `[{"ticket_id":"ticket-ok","created_ms":1784688000000,"status":"pending","event":{"event_id":"event-ok","event_type":"tool_invoke","principal":{"agent_id":"agent-a"},"tool_call":{"tool_name":"mail.send","args":{"body":"never-log-approval-body"}}},"decision":{"action":"human_check","risk_score":0.8,"matched_rules":["existing"],"reason":"review"}},{"ticket_id":"ticket-deny","created_ms":1784688000001,"status":"pending","event":{"event_id":"event-deny","event_type":"tool_invoke","principal":{"agent_id":"agent-a","session_id":"session-a","user_id":"user-a"},"tool_call":{"tool_name":"database.write","args":{"query":"never-log-approval-query"}}},"decision":{"action":"human_check","risk_score":0.9,"matched_rules":["existing"],"reason":"never-log-approval-reason"}},{"ticket_id":"ticket-gone","created_ms":1784688000002,"status":"pending","event":{"event_id":"event-gone","event_type":"tool_invoke","principal":{"agent_id":"agent-a"},"tool_call":{"tool_name":"shell.exec"}},"decision":{"action":"human_check","risk_score":0.9,"matched_rules":["existing"],"reason":"review"}}]`)
 		case request.URL.Path == "/v1/backend/approvals/ticket-ok/approve":
+			_, _ = io.WriteString(writer, `{"ok":true}`)
+		case request.URL.Path == "/v1/backend/approvals/ticket-deny/deny":
 			_, _ = io.WriteString(writer, `{"ok":true}`)
 		case request.URL.Path == "/v1/backend/approvals/ticket-gone/deny":
 			http.NotFound(writer, request)
@@ -175,9 +177,10 @@ func TestProtectRulesAndApprovalsFlowThroughBFF(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	auditService := audit.New(apiAuditGateway{}, apiAuditGuard{}, nil)
 	server := httptest.NewServer(New(ServerConfig{
-		Protect: protect.New(gatewayClient, guardClient, model.ConsoleLinks{RawConfig: "http://gateway.invalid/ui/config"}),
-		Logger:  slog.New(slog.NewTextHandler(&audit, nil)), AuthEnabled: false,
+		Protect: protect.New(gatewayClient, guardClient, model.ConsoleLinks{RawConfig: "http://gateway.invalid/ui/config"}, auditService),
+		Logger:  slog.New(slog.NewTextHandler(&auditLog, nil)), AuthEnabled: false,
 	}))
 	defer server.Close()
 
@@ -208,7 +211,7 @@ func TestProtectRulesAndApprovalsFlowThroughBFF(t *testing.T) {
 
 	var approvals model.ResourcePageEnvelope[model.Approval]
 	protectJSON(t, server.Client(), http.MethodGet, server.URL+"/api/v1/protect/approvals", "", http.StatusOK, &approvals)
-	if approvals.Data.Total != 2 {
+	if approvals.Data.Total != 3 {
 		t.Fatalf("unexpected approvals: %#v", approvals)
 	}
 	byTool := map[string]string{}
@@ -217,14 +220,31 @@ func TestProtectRulesAndApprovalsFlowThroughBFF(t *testing.T) {
 	}
 	var approved model.ProtectMutationEnvelope
 	protectJSON(t, server.Client(), http.MethodPost, server.URL+"/api/v1/protect/approvals/"+byTool["mail.send"]+"/approve", `{"note":"`+secretNote+`","confirmed":true}`, http.StatusOK, &approved)
+	var denied model.ProtectMutationEnvelope
+	protectJSON(t, server.Client(), http.MethodPost, server.URL+"/api/v1/protect/approvals/"+byTool["database.write"]+"/deny", `{"note":"never-log-denial-note","confirmed":true}`, http.StatusOK, &denied)
 	var missing model.ErrorEnvelope
 	protectJSON(t, server.Client(), http.MethodPost, server.URL+"/api/v1/protect/approvals/"+byTool["shell.exec"]+"/deny", `{"note":"reviewed","confirmed":true}`, http.StatusNotFound, &missing)
 	if missing.Error.Code != "NOT_FOUND" || missing.Error.RequestID == "" {
 		t.Fatalf("unexpected missing ticket response: %#v", missing)
 	}
+	auditSnapshot := auditService.Snapshot()
+	if len(auditSnapshot.Data.Events) != 2 || auditSnapshot.Data.Events[0].Decision != "DENY" ||
+		auditSnapshot.Data.Events[0].Target.Tool != "database.write" {
+		t.Fatalf("confirmed approval outcomes were not recorded in Audit: %#v", auditSnapshot.Data.Events)
+	}
+	denialDetail, ok := auditService.Find(model.SourceAgentGuard, auditSnapshot.Data.Events[0].ID)
+	if !ok {
+		t.Fatal("confirmed denial detail was not retained")
+	}
+	denialJSON, _ := json.Marshal(denialDetail)
+	for _, forbidden := range []string{"never-log-approval-query", "never-log-approval-reason", "never-log-denial-note"} {
+		if strings.Contains(string(denialJSON), forbidden) {
+			t.Fatalf("approval audit detail leaked %q: %s", forbidden, denialJSON)
+		}
+	}
 
-	logs := audit.String()
-	for _, forbidden := range []string{secretSource, "never-log-rule-source", secretNote, "never-log-operator-note", "never-log-approval-body", "never-log-policy-body"} {
+	logs := auditLog.String()
+	for _, forbidden := range []string{secretSource, "never-log-rule-source", secretNote, "never-log-operator-note", "never-log-approval-body", "never-log-approval-query", "never-log-approval-reason", "never-log-denial-note", "never-log-policy-body"} {
 		if strings.Contains(logs, forbidden) {
 			t.Fatalf("audit log leaked %q: %s", forbidden, logs)
 		}

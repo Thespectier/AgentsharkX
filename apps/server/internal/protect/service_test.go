@@ -40,6 +40,24 @@ type fakeGuard struct {
 	blockResolve    chan struct{}
 }
 
+type fakeApprovalRecorder struct {
+	approval  model.Approval
+	decision  string
+	timestamp time.Time
+	calls     int
+}
+
+func (recorder *fakeApprovalRecorder) RecordApprovalResolution(
+	approval model.Approval,
+	decision string,
+	timestamp time.Time,
+) {
+	recorder.approval = approval
+	recorder.decision = decision
+	recorder.timestamp = timestamp
+	recorder.calls++
+}
+
 func (guard *fakeGuard) TrustSnapshot(context.Context) (model.TrustSnapshot, error) {
 	return guard.trust, nil
 }
@@ -220,5 +238,38 @@ func TestApprovalRequiresNoteAndPreventsDuplicateInFlightDecision(t *testing.T) 
 	defer guard.mu.Unlock()
 	if guard.resolveCalls != 1 || guard.resolvedTicket != "ticket-a" || guard.resolvedAction != "approve" || guard.resolvedNote != "reviewed" {
 		t.Fatalf("unexpected approval call: %#v", guard)
+	}
+}
+
+func TestSuccessfulApprovalResolutionIsRecordedWithoutOperatorNote(t *testing.T) {
+	t.Parallel()
+	approval := model.Approval{
+		ProtectResourceBase: model.ProtectResourceBase{ID: "ticket-opaque", UpstreamID: "ticket-a"},
+		AgentUpstreamID:     "agent-a",
+		SessionID:           "session-a",
+		EventID:             "event-a",
+		EventType:           "tool_invoke",
+		Tool:                "mail.send",
+	}
+	guard := &fakeGuard{approvals: []model.Approval{approval}}
+	recorder := &fakeApprovalRecorder{}
+	service := New(fakeGateway{}, guard, model.ConsoleLinks{}, recorder)
+
+	receipt, err := service.ResolveApproval(
+		t.Context(),
+		"ticket-opaque",
+		"deny",
+		model.ConfirmedActionRequest{Note: "sensitive operator explanation", Confirmed: true},
+	)
+
+	if err != nil || receipt.Data.Operation != "deny-approval" {
+		t.Fatalf("unexpected denial receipt: %#v err=%v", receipt, err)
+	}
+	if recorder.calls != 1 || recorder.approval.ID != approval.ID ||
+		recorder.approval.UpstreamID != approval.UpstreamID || recorder.decision != "deny" {
+		t.Fatalf("confirmed approval resolution was not recorded: %#v", recorder)
+	}
+	if !recorder.timestamp.Equal(receipt.Data.CompletedAt) {
+		t.Fatalf("recorder timestamp did not use the confirmed receipt time: %#v", recorder)
 	}
 }

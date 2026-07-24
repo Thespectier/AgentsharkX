@@ -11,7 +11,8 @@ info:
     gateway policy summaries, AgentGuard runtime-rule check/publish/delete,
     per-agent plugin phases, and guarded approval decisions. Audit adds bounded
     gateway traffic and AgentGuard audit/session projections, source-scoped
-    analytics, redacted detail, and resumable normalized SSE.
+    analytics, confirmed approval-resolution evidence, redacted detail, and
+    resumable normalized SSE.
 servers:
   - url: /
 security:
@@ -920,7 +921,7 @@ paths:
     get:
       tags: [Audit]
       operationId: getAuditAnalytics
-      summary: Return source-preserving traffic and security trends
+      summary: Return source-preserving traffic, security, and confirmed approval trends
       x-implementation-phase: 6
       x-implementation-status: implemented
       responses:
@@ -2258,7 +2259,7 @@ components:
               type: string
         raw:
           type: object
-          description: Allow-listed redacted projection; never contains prompts, payloads, tool arguments/results, plugin results, or authorization data.
+          description: Allow-listed redacted projection with verified scalar metadata and explicit content-availability markers; never contains complete prompts, payload contents, tool arguments/results, plugin results, operator notes, or authorization values.
           additionalProperties: true
     AuditSession:
       type: object

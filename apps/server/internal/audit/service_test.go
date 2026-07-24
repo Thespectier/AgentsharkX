@@ -2,8 +2,10 @@ package audit
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -205,6 +207,95 @@ func TestMetricsExcludeRecordsOutsideTrendWindow(t *testing.T) {
 	if metrics[0].Value != 1 || metrics[1].Value != 25 || metrics[2].Value != 2 || metrics[3].Value != 50 {
 		t.Fatalf("metrics were not constrained to the shared window: %#v", metrics)
 	}
+}
+
+func TestDeniedApprovalBecomesAuditEvidenceAndUpdatesDenyMetrics(t *testing.T) {
+	t.Parallel()
+	now := time.Now().UTC()
+	resolvedAt := now.Add(-time.Second)
+	initial := auditEvent(model.SourceAgentGuard, "guard:event-a", now.Add(-2*time.Second), "", "session-a")
+	initial.RawRef.ID = "event-a"
+	initial.Action = "HUMAN_CHECK"
+	initial.Decision = "HUMAN_CHECK"
+	service := New(
+		fakeGateway{
+			feed:      model.AuditFeed{Status: "available", Events: []model.UnifiedEvent{}, Traffic: []model.AuditTrafficRecord{}},
+			analytics: model.GatewayAnalytics{Status: "available", Buckets: []model.AnalyticsBucket{}},
+		},
+		fakeGuard{
+			traffic: model.AuditFeed{Status: "available", Traffic: []model.AuditTrafficRecord{{
+				Timestamp: now.Add(-2 * time.Second), Action: "HUMAN_CHECK",
+			}}},
+			audit: model.AuditFeed{Status: "available", Events: []model.UnifiedEvent{initial}},
+			sessions: []model.AuditSession{{
+				ID: "session-resource", UpstreamID: "session-a", Source: model.SourceAgentGuard,
+			}},
+		},
+		nil,
+	)
+	service.Refresh(t.Context())
+	approval := model.Approval{
+		ProtectResourceBase: model.ProtectResourceBase{
+			ID: "approval-opaque", UpstreamID: "ticket-upstream",
+		},
+		AgentUpstreamID: "agent-a",
+		SessionID:       "session-a",
+		UserID:          "user-a",
+		EventID:         "event-a",
+		EventType:       "tool_invoke",
+		Tool:            "mail.send",
+		Phase:           "tool_before",
+		Reason:          "never-return-free-form-reason",
+		RiskScore:       0.9,
+		MatchedRules:    []string{"review-external-send"},
+		CreatedAt:       now.Add(-2 * time.Second),
+	}
+
+	service.RecordApprovalResolution(approval, "deny", resolvedAt)
+
+	snapshot := service.Snapshot()
+	if len(snapshot.Data.Events) != 2 || snapshot.Data.Events[0].Kind != "approval" ||
+		snapshot.Data.Events[0].Decision != "DENY" || snapshot.Data.Events[0].Raw != nil {
+		t.Fatalf("denied approval was not exposed as redacted list evidence: %#v", snapshot.Data.Events)
+	}
+	if len(snapshot.Data.Sessions) != 1 || snapshot.Data.Sessions[0].Events != 2 ||
+		snapshot.Data.Sessions[0].Denies != 1 {
+		t.Fatalf("approval evidence did not update exact session counts: %#v", snapshot.Data.Sessions)
+	}
+	if metricValue(snapshot.Data.Metrics, "guard-deny-rate") != 100 {
+		t.Fatalf("denied approval did not update deny rate: %#v", snapshot.Data.Metrics)
+	}
+	deniedPoints := 0.0
+	for _, point := range snapshot.Data.Trend {
+		deniedPoints += point.Denied
+	}
+	if deniedPoints != 1 {
+		t.Fatalf("denied approval did not update the trend: %#v", snapshot.Data.Trend)
+	}
+	detail, ok := service.Find(model.SourceAgentGuard, "guard:approval:approval-opaque")
+	if !ok || detail.Raw == nil || detail.RawRef.ID != "ticket-upstream" {
+		t.Fatalf("approval detail did not preserve its upstream reference: %#v ok=%t", detail, ok)
+	}
+	encoded, _ := json.Marshal(detail)
+	for _, forbidden := range []string{"never-return-free-form-reason", "operator explanation"} {
+		if strings.Contains(string(encoded), forbidden) {
+			t.Fatalf("approval evidence leaked %q: %s", forbidden, encoded)
+		}
+	}
+
+	refreshed := service.Refresh(t.Context())
+	if len(refreshed.Data.Events) != 2 || metricValue(refreshed.Data.Metrics, "guard-deny-rate") != 100 {
+		t.Fatalf("approval resolution was lost or duplicated after polling: %#v", refreshed.Data)
+	}
+}
+
+func metricValue(metrics []model.Metric, id string) float64 {
+	for _, metric := range metrics {
+		if metric.ID == id {
+			return metric.Value
+		}
+	}
+	return -1
 }
 
 func auditEvent(source model.Source, id string, timestamp time.Time, traceID, sessionID string) model.UnifiedEvent {

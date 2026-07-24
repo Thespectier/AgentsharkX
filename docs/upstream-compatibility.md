@@ -194,6 +194,14 @@ they reach normalized JSON. AgentGuard Traffic supplies aggregate scalars only
 because its records do not contain a stable upstream event ID; normalized
 security events come from Audit's explicit `event_id` instead.
 
+AgentGuard's approval mutation contract returns only `{"ok": true}` and does
+not append the resolved decision to `/traffic` or `/audit/recent`. AgentsharkX
+now retains the confirmed approve/deny transition as bounded, source-labelled
+management evidence after a successful mutation. This uses the verified ticket
+and event IDs captured before resolution; it does not infer an outcome from
+timing, and failures or timeouts are not recorded as decisions. Denied
+approvals are included in Audit deny metrics and trend buckets.
+
 The BFF polls every two seconds by default, keeps at most 1000 normalized events
 in memory, and uses independent source failures. SSE sequence IDs are owned by
 AgentsharkX solely for bounded delivery/resume and are not presented as

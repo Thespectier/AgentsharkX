@@ -342,7 +342,16 @@ AgentsharkX 只在两个来源提供完全相同且非空的 Trace ID 或 Sessio
 
 审计事件列表和 SSE 使用有界内存窗口，最多保留 1000 条事件，并支持恢复和去重。
 BFF 重启后，事件窗口会清空。Audit 不请求网关日志的原始 Payload 或 Attributes，
-事件详情仅返回白名单字段和脱敏投影。
+事件详情仅返回白名单字段和脱敏投影。对于 agentgateway 流量，详情会单独展示请求
+起止时间、延迟、HTTP 状态、操作类型、Provider/Model、Token、成本以及
+Trace/Span ID。`hasPayload=true` 只表示上游日志库保存了载荷；AgentsharkX 不会读取
+载荷内容、完整 Prompt、Authorization 值或工具参数。
+
+AgentGuard 的审批接口成功时只返回确认结果，不会把最终 approve/deny 追加到其
+Traffic 或 Audit 接口。AgentsharkX 会在上游明确确认成功后，将这次审批处理保存为
+一条来源为 AgentGuard 的有界内存审计事件。拒绝审批会立即计入 Audit 的 deny rate、
+Traffic trend 和对应 Session 计数；超时、失败或 404 不会生成成功审计事件。操作备注、
+工具参数和自由文本原因仍不会写入审计详情。
 
 该 SQLite 文件属于 agentgateway 上游持久化状态，不是 AgentsharkX 新增的数据库。
 agentgateway v1.3.1 会在请求日志库中保留 LLM prompt/completion payload；虽然
@@ -421,8 +430,8 @@ trend** 使用同一份 BFF 快照，范围为精确的滚动最近 60 分钟，
 
 - Requests 来自 agentgateway Analytics 的对应时间桶；Analytics 不可用时才退化为同一
   时间范围内的脱敏请求日志计数。
-- Denied 只统计 AgentGuard Traffic 中显式的 `DENY`，不根据错误、风险分数或时间接近
-  关系推断。
+- Denied 统计 AgentGuard Traffic 中显式的 `DENY`，以及由 AgentGuard 明确确认成功的
+  审批拒绝；不根据错误、风险分数或时间接近关系推断。
 - Traffic 图为 Requests 和 Denied 使用独立纵轴，悬停提示显示精确桶起始时间与原始
   计数，不能直接按两条线的视觉高度比较数量。
 - Latency 图基于 agentgateway 最近最多 500 条脱敏请求日志计算每个桶的

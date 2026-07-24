@@ -52,6 +52,10 @@ type Guard interface {
 	ProtectPlugins(context.Context) (model.ProtectPluginSnapshot, error)
 }
 
+type ApprovalRecorder interface {
+	RecordApprovalResolution(model.Approval, string, time.Time)
+}
+
 type checkedSource struct {
 	digest    [sha256.Size]byte
 	expiresAt time.Time
@@ -59,19 +63,24 @@ type checkedSource struct {
 }
 
 type Service struct {
-	gateway Gateway
-	guard   Guard
-	links   model.ConsoleLinks
-	mu      sync.Mutex
-	checks  map[string]checkedSource
-	active  map[string]struct{}
+	gateway  Gateway
+	guard    Guard
+	links    model.ConsoleLinks
+	recorder ApprovalRecorder
+	mu       sync.Mutex
+	checks   map[string]checkedSource
+	active   map[string]struct{}
 }
 
-func New(gatewayClient Gateway, guardClient Guard, links model.ConsoleLinks) *Service {
-	return &Service{
+func New(gatewayClient Gateway, guardClient Guard, links model.ConsoleLinks, recorders ...ApprovalRecorder) *Service {
+	service := &Service{
 		gateway: gatewayClient, guard: guardClient, links: links,
 		checks: make(map[string]checkedSource), active: make(map[string]struct{}),
 	}
+	if len(recorders) > 0 {
+		service.recorder = recorders[0]
+	}
+	return service
 }
 
 func (service *Service) Snapshot(ctx context.Context) (model.ProtectSnapshotEnvelope, error) {
@@ -238,14 +247,14 @@ func (service *Service) ResolveApproval(ctx context.Context, ticketID, decision 
 	if err != nil {
 		return model.ProtectMutationEnvelope{}, err
 	}
-	upstreamID := ""
+	var selected model.Approval
 	for _, approval := range approvals {
 		if approval.ID == ticketID {
-			upstreamID = approval.UpstreamID
+			selected = approval
 			break
 		}
 	}
-	if upstreamID == "" {
+	if selected.UpstreamID == "" {
 		return model.ProtectMutationEnvelope{}, ErrNotFound
 	}
 	key := "approval:" + ticketID
@@ -253,14 +262,18 @@ func (service *Service) ResolveApproval(ctx context.Context, ticketID, decision 
 		return model.ProtectMutationEnvelope{}, ErrMutationInFlight
 	}
 	defer service.endMutation(key)
-	if err := service.guard.ResolveApproval(ctx, upstreamID, decision, strings.TrimSpace(request.Note)); err != nil {
+	if err := service.guard.ResolveApproval(ctx, selected.UpstreamID, decision, strings.TrimSpace(request.Note)); err != nil {
 		return model.ProtectMutationEnvelope{}, err
 	}
 	message := "Approval ticket approved"
 	if decision == "deny" {
 		message = "Approval ticket denied"
 	}
-	return mutationEnvelope(decision+"-approval", ticketID, message), nil
+	envelope := mutationEnvelope(decision+"-approval", ticketID, message)
+	if service.recorder != nil {
+		service.recorder.RecordApprovalResolution(selected, decision, envelope.Data.CompletedAt)
+	}
+	return envelope, nil
 }
 
 func (service *Service) resolveAgent(ctx context.Context, agentID string) (string, error) {

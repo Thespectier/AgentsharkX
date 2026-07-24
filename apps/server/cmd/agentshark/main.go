@@ -72,9 +72,9 @@ func main() {
 	trustService := trust.New(rootContext, guardClient, cfg.ScanTimeout)
 	consoleLinks := connectService.Links()
 	consoleLinks.AgentGuardConsole = strings.TrimRight(cfg.Guard.ConsoleURL, "/")
-	protectService := protect.New(gatewayClient, protectGuardClient, consoleLinks)
 	hub := stream.NewHub()
 	auditService := audit.New(gatewayClient, guardClient, hub)
+	protectService := protect.New(gatewayClient, protectGuardClient, consoleLinks, auditService)
 	aggregator.SetOperational(auditService)
 	sessions := auth.New(cfg.AdminToken.Value(), auth.Options{CookieSecure: cfg.CookieSecure, TTL: 8 * time.Hour})
 	apiHandler := api.New(api.ServerConfig{
