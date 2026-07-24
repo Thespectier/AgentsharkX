@@ -12,7 +12,7 @@ import {
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
-import { PageFrame, useWorkspaceSection, WorkspaceTabs } from "../../components/workspace";
+import { PageFrame, useWorkspaceSection } from "../../components/workspace";
 import {
   Button,
   Card,
@@ -43,12 +43,6 @@ import type {
 import { formatCount, formatTime } from "../../lib/format";
 import { formatError, getScenario, mutateOperation, requestOperation } from "../../lib/api";
 import { synchronizeAgentGuardData } from "../../lib/query-sync";
-
-const tabs = [
-  { id: "agents", label: "Agents" },
-  { id: "resources", label: "Resources" },
-  { id: "scans", label: "Scans" },
-];
 
 interface ScanRequest {
   agentId: string;
@@ -115,9 +109,7 @@ export function TrustPage() {
         description="Inspect only identities and resources reported explicitly by AgentGuard. Missing identity facts remain unknown."
         eyebrow="Trust / AgentGuard context"
         title="Know what every agent can reach"
-      >
-        <WorkspaceTabs area="trust" items={tabs} />
-      </PageHeader>
+      />
       {activeJobId ? (
         <ScanActivity
           error={activeJob.isError ? formatError(activeJob.error) : undefined}

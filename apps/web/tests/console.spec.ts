@@ -16,26 +16,51 @@ test("all five primary pages render from labelled mock data", async ({ page }) =
   }
 });
 
-test("workspace tabs render immediately without a hard refresh", async ({ page }) => {
+test("sidebar subnavigation renders immediately without a hard refresh", async ({ page }) => {
   await page.goto("/connect/overview");
-  await page.getByRole("link", { name: "LLM", exact: true }).click();
+  const connectNavigation = page.getByRole("group", { name: "Connect sections" });
+  await expect(connectNavigation).toBeVisible();
+  for (const name of ["Overview", "LLM", "MCP", "Traffic", "Setup"]) {
+    await expect(connectNavigation.getByRole("link", { name, exact: true })).toBeVisible();
+  }
+  await expect(connectNavigation.getByRole("link", { name: "Overview" })).toHaveAttribute(
+    "aria-current",
+    "page",
+  );
+  await expect(page.locator(".workspace-tabs")).toHaveCount(0);
+  await connectNavigation.getByRole("link", { name: "LLM", exact: true }).click();
   await expect(page).toHaveURL(/\/connect\/llm$/);
   await expect(page.getByRole("heading", { name: "Providers" })).toBeVisible();
 
   await page.goto("/trust/agents");
-  await page.getByRole("link", { name: "Resources", exact: true }).click();
+  const trustNavigation = page.getByRole("group", { name: "Trust sections" });
+  await trustNavigation.getByRole("link", { name: "Resources", exact: true }).click();
   await expect(page).toHaveURL(/\/trust\/resources$/);
   await expect(page.getByRole("heading", { name: "Runtime resources" })).toBeVisible();
 
   await page.goto("/protect/policies");
-  await page.getByRole("link", { name: "Guardrails", exact: true }).click();
+  const protectNavigation = page.getByRole("group", { name: "Protect sections" });
+  await protectNavigation.getByRole("link", { name: "Guardrails", exact: true }).click();
   await expect(page).toHaveURL(/\/protect\/guardrails$/);
   await expect(page.getByRole("heading", { name: "Content guardrails" })).toBeVisible();
 
   await page.goto("/audit/analytics");
-  await page.getByRole("link", { name: "Security events", exact: true }).click();
+  const auditNavigation = page.getByRole("group", { name: "Audit sections" });
+  await auditNavigation.getByRole("link", { name: "Security events", exact: true }).click();
   await expect(page).toHaveURL(/\/audit\/security-events$/);
   await expect(page.getByRole("heading", { name: "Security events" })).toBeVisible();
+});
+
+test("mobile navigation exposes subpages even after desktop sidebar was collapsed", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.addInitScript(() => localStorage.setItem("agentshark.sidebar", "collapsed"));
+  await page.goto("/connect/overview");
+  await page.getByRole("button", { name: "Open navigation" }).click();
+  const connectNavigation = page.getByRole("group", { name: "Connect sections" });
+  await expect(connectNavigation).toBeVisible();
+  await expect(connectNavigation.getByRole("link", { name: "Setup" })).toBeVisible();
 });
 
 test("interactive controls have observable behavior", async ({ page }) => {

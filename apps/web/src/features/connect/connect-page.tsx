@@ -11,7 +11,7 @@ import {
 } from "lucide-react";
 import { useRef, useState } from "react";
 
-import { PageFrame, useWorkspaceSection, WorkspaceTabs } from "../../components/workspace";
+import { PageFrame, useWorkspaceSection } from "../../components/workspace";
 import {
   Button,
   Card,
@@ -39,14 +39,6 @@ import type {
 } from "../../generated/api-client";
 import { formatCount, formatTime } from "../../lib/format";
 import { formatError, getScenario, requestOperation } from "../../lib/api";
-
-const tabs = [
-  { id: "overview", label: "Overview" },
-  { id: "llm", label: "LLM" },
-  { id: "mcp", label: "MCP" },
-  { id: "traffic", label: "Traffic" },
-  { id: "setup", label: "Setup" },
-];
 
 type Selection =
   | { kind: "provider"; id: string }
@@ -97,9 +89,7 @@ export function ConnectPage() {
         description="Verified agentgateway configuration and traffic surfaces. Advanced editing stays in the native console."
         eyebrow="Connect / agentgateway"
         title="Connect agents to every destination"
-      >
-        <WorkspaceTabs area="connect" items={tabs} />
-      </PageHeader>
+      />
       <PartialBanner meta={meta} />
       {section === "overview" ? (
         <ConnectOverview summary={data} fetchedAt={meta.fetchedAt} />

@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 import { useMemo, useState } from "react";
 
-import { PageFrame, useWorkspaceSection, WorkspaceTabs } from "../../components/workspace";
+import { PageFrame, useWorkspaceSection } from "../../components/workspace";
 import {
   Button,
   Card,
@@ -49,14 +49,6 @@ import {
 } from "../../lib/api";
 import { synchronizeAgentGuardData } from "../../lib/query-sync";
 import type { Severity } from "../../types";
-
-const tabs = [
-  { id: "policies", label: "Policies" },
-  { id: "guardrails", label: "Guardrails" },
-  { id: "runtime-rules", label: "Runtime rules" },
-  { id: "plugins", label: "Plugins" },
-  { id: "approvals", label: "Approvals" },
-];
 
 type PolicyRow = {
   id: string;
@@ -121,9 +113,6 @@ export function ProtectPage() {
     );
   }
   const { data, meta } = query.data;
-  const dynamicTabs = tabs.map((item) =>
-    item.id === "approvals" ? { ...item, badge: approvals.data?.data.total ?? 0 } : item,
-  );
   return (
     <PageFrame>
       <PageHeader
@@ -142,9 +131,7 @@ export function ProtectPage() {
         description="Source, scope, phase, and action stay explicit; gateway and runtime policy models are never merged into a synthetic DSL."
         eyebrow="Protect / Policies & intervention"
         title="Enforce every critical boundary"
-      >
-        <WorkspaceTabs area="protect" items={dynamicTabs} />
-      </PageHeader>
+      />
       <PartialBanner meta={meta} />
       {section === "policies" ? <PolicyView data={data} /> : null}
       {section === "guardrails" ? <GuardrailView data={data} /> : null}

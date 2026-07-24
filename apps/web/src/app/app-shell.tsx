@@ -25,10 +25,59 @@ import { CommandPalette } from "../components/command-palette";
 import { Button, SourceBadge, StatusOrb, cn } from "../components/ui";
 
 const navItems = [
-  { label: "Connect", route: "/connect/$section", section: "overview", icon: Cable },
-  { label: "Trust", route: "/trust/$section", section: "agents", icon: UserRoundCheck },
-  { label: "Protect", route: "/protect/$section", section: "policies", icon: ShieldCheck },
-  { label: "Audit", route: "/audit/$section", section: "analytics", icon: Activity },
+  {
+    label: "Connect",
+    area: "connect",
+    route: "/connect/$section",
+    section: "overview",
+    icon: Cable,
+    sections: [
+      { id: "overview", label: "Overview" },
+      { id: "llm", label: "LLM" },
+      { id: "mcp", label: "MCP" },
+      { id: "traffic", label: "Traffic" },
+      { id: "setup", label: "Setup" },
+    ],
+  },
+  {
+    label: "Trust",
+    area: "trust",
+    route: "/trust/$section",
+    section: "agents",
+    icon: UserRoundCheck,
+    sections: [
+      { id: "agents", label: "Agents" },
+      { id: "resources", label: "Resources" },
+      { id: "scans", label: "Scans" },
+    ],
+  },
+  {
+    label: "Protect",
+    area: "protect",
+    route: "/protect/$section",
+    section: "policies",
+    icon: ShieldCheck,
+    sections: [
+      { id: "policies", label: "Policies" },
+      { id: "guardrails", label: "Guardrails" },
+      { id: "runtime-rules", label: "Runtime rules" },
+      { id: "plugins", label: "Plugins" },
+      { id: "approvals", label: "Approvals" },
+    ],
+  },
+  {
+    label: "Audit",
+    area: "audit",
+    route: "/audit/$section",
+    section: "analytics",
+    icon: Activity,
+    sections: [
+      { id: "analytics", label: "Analytics" },
+      { id: "traffic", label: "Traffic" },
+      { id: "security-events", label: "Security events" },
+      { id: "sessions", label: "Sessions" },
+    ],
+  },
 ] as const;
 
 const scenarios: Array<{ value: Scenario; label: string }> = [
@@ -121,20 +170,45 @@ export function AppShell() {
           </Link>
           {navItems.map((item) => {
             const Icon = item.icon;
-            const active = location.pathname.startsWith(`/${item.label.toLowerCase()}`);
+            const active =
+              location.pathname === `/${item.area}` ||
+              location.pathname.startsWith(`/${item.area}/`);
+            const currentSection = location.pathname.split("/")[2] || item.section;
             return (
-              <Link
-                aria-current={active ? "page" : undefined}
-                className={cn("nav-item", active && "nav-item--active")}
-                key={item.label}
-                params={{ section: item.section }}
-                search={{ scenario: scenario === "normal" ? undefined : scenario }}
-                to={item.route}
-              >
-                <Icon aria-hidden="true" size={18} />
-                <span>{item.label}</span>
-                {item.label === "Protect" && pending > 0 ? <em>{pending}</em> : null}
-              </Link>
+              <div className="nav-workspace" key={item.label}>
+                <Link
+                  className={cn("nav-item", active && "nav-item--active")}
+                  params={{ section: item.section }}
+                  search={{ scenario: scenario === "normal" ? undefined : scenario }}
+                  to={item.route}
+                >
+                  <Icon aria-hidden="true" size={18} />
+                  <span>{item.label}</span>
+                  {item.area === "protect" && pending > 0 ? <em>{pending}</em> : null}
+                </Link>
+                {active ? (
+                  <div aria-label={`${item.label} sections`} className="nav-subnav" role="group">
+                    {item.sections.map((section) => (
+                      <Link
+                        aria-current={currentSection === section.id ? "page" : undefined}
+                        className={cn(
+                          "nav-subitem",
+                          currentSection === section.id && "nav-subitem--active",
+                        )}
+                        key={section.id}
+                        params={{ section: section.id }}
+                        search={{ scenario: scenario === "normal" ? undefined : scenario }}
+                        to={item.route}
+                      >
+                        <span>{section.label}</span>
+                        {item.area === "protect" && section.id === "approvals" && pending > 0 ? (
+                          <em>{pending}</em>
+                        ) : null}
+                      </Link>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
             );
           })}
         </nav>

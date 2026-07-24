@@ -86,7 +86,10 @@ cross-page counts and rows converge without a hard browser reload.
 The five primary views are Home, Connect, Trust, Protect, and Audit. System is
 a supporting diagnostics page, not another product capability. URL search
 state preserves demo failure scenarios and Audit event selection so a detail
-drawer can be restored after refresh.
+drawer can be restored after refresh. The application shell renders the active
+workspace's section routes as nested sidebar links; page headers do not duplicate
+that navigation. The URL remains the source of truth for the selected section,
+including after reload and while the desktop sidebar is collapsed.
 
 ## Availability model
 

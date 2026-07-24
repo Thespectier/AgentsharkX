@@ -13,7 +13,7 @@ import {
 import { useCallback, useMemo, useRef, useState } from "react";
 
 import { RequestTrendChart } from "../../motion/dashboard-motion";
-import { PageFrame, useWorkspaceSection, WorkspaceTabs } from "../../components/workspace";
+import { PageFrame, useWorkspaceSection } from "../../components/workspace";
 import {
   Button,
   Card,
@@ -36,13 +36,6 @@ import { formatCount, formatTime } from "../../lib/format";
 import { formatError, getScenario, requestOperation } from "../../lib/api";
 import { mergeLiveEvents, useSharedLiveEvents } from "../../lib/use-live-events";
 import type { AuditData, Severity, Source, UnifiedEvent } from "../../types";
-
-const tabs = [
-  { id: "analytics", label: "Analytics" },
-  { id: "traffic", label: "Traffic" },
-  { id: "security-events", label: "Security events" },
-  { id: "sessions", label: "Sessions" },
-];
 
 type AuditFilters = {
   source: Source | "all";
@@ -139,9 +132,7 @@ export function AuditPage() {
         description="Analyze gateway traffic and runtime security evidence without inventing task-level correlation."
         eyebrow="Audit / Traffic & security"
         title="See every verified signal"
-      >
-        <WorkspaceTabs area="audit" items={tabs} />
-      </PageHeader>
+      />
       <PartialBanner meta={meta} />
       {filtersOpen ? <AuditFilterPanel filters={filters} onChange={setFilters} /> : null}
       {section === "analytics" ? (
