@@ -27,6 +27,7 @@ import {
 } from "react";
 
 import { formatMetric, sourceLabel } from "../lib/format";
+import { localizeChildren, useI18n } from "../lib/i18n";
 import type { HealthStatus, Metric, ResponseMeta, Severity, Source } from "../types";
 
 export function cn(...values: Array<string | false | null | undefined>) {
@@ -61,11 +62,12 @@ export function CardHeader({
   description?: string;
   action?: ReactNode;
 }) {
+  const { t } = useI18n();
   return (
     <header className="card-header">
       <div>
-        <h2>{title}</h2>
-        {description ? <p>{description}</p> : null}
+        <h2>{t(title)}</h2>
+        {description ? <p>{t(description)}</p> : null}
       </div>
       {action ? <div className="card-header__action">{action}</div> : null}
     </header>
@@ -85,12 +87,13 @@ export function PageHeader({
   actions?: ReactNode;
   children?: ReactNode;
 }) {
+  const { t } = useI18n();
   return (
     <header className="page-header">
       <div className="page-header__copy">
-        <p className="eyebrow">{eyebrow}</p>
-        <h1>{title}</h1>
-        <p className="page-header__description">{description}</p>
+        <p className="eyebrow">{t(eyebrow)}</p>
+        <h1>{t(title)}</h1>
+        <p className="page-header__description">{t(description)}</p>
       </div>
       {actions ? <div className="page-header__actions">{actions}</div> : null}
       {children ? <div className="page-header__footer">{children}</div> : null}
@@ -107,31 +110,35 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
   { children, variant = "secondary", size = "md", className, ...props },
   ref,
 ) {
+  const { t } = useI18n();
   return (
     <button
       className={cn("button", `button--${variant}`, `button--${size}`, className)}
       ref={ref}
       {...props}
     >
-      {children}
+      {localizeChildren(children, t)}
     </button>
   );
 });
 
 export function ExternalButton({ href, children }: { href: string; children: ReactNode }) {
+  const { t } = useI18n();
   return (
     <a className="button button--secondary button--md" href={href} rel="noreferrer" target="_blank">
-      {children}
+      {localizeChildren(children, t)}
       <ExternalLink aria-hidden="true" size={14} />
     </a>
   );
 }
 
 export function StatusOrb({ status, label }: { status: HealthStatus; label?: string }) {
+  const { t } = useI18n();
+  const localizedLabel = t(label ?? status);
   return (
-    <span className="status-orb-wrap" title={label ?? status}>
+    <span className="status-orb-wrap" title={localizedLabel}>
       <span aria-hidden="true" className={cn("status-orb", `status-orb--${status}`)} />
-      <span className="sr-only">{label ?? status}</span>
+      <span className="sr-only">{localizedLabel}</span>
     </span>
   );
 }
@@ -146,15 +153,17 @@ export function SourceBadge({ source }: { source: Source }) {
 }
 
 export function StatusBadge({ status }: { status: string }) {
+  const { t } = useI18n();
   const normalized = status.toLowerCase().replaceAll(" ", "-");
-  return <span className={cn("status-badge", `status-badge--${normalized}`)}>{status}</span>;
+  return <span className={cn("status-badge", `status-badge--${normalized}`)}>{t(status)}</span>;
 }
 
 export function SeverityBadge({ severity }: { severity: Severity }) {
+  const { t } = useI18n();
   return (
     <span className={cn("severity-badge", `severity-badge--${severity}`)}>
       <ShieldAlert aria-hidden="true" size={12} />
-      {severity}
+      {t(severity)}
     </span>
   );
 }
@@ -180,33 +189,35 @@ export function MetricTicker({ metric }: { metric: Pick<Metric, "value" | "forma
 }
 
 export function MetricCard({ metric }: { metric: Metric }) {
+  const { t } = useI18n();
   const TrendIcon =
     metric.trend === "up" ? ArrowUpRight : metric.trend === "down" ? ArrowDownRight : Minus;
   return (
     <Card className={cn("metric-card", `metric-card--${metric.tone}`)} as="article">
       <div className="metric-card__topline">
         <span className="metric-card__label">
-          {metric.label}
+          {t(metric.label)}
           <SourceBadge source={metric.source} />
         </span>
         <span className={cn("metric-delta", `metric-delta--${metric.trend}`)}>
           <TrendIcon aria-hidden="true" size={13} />
-          {metric.delta === 0 ? "steady" : `${Math.abs(metric.delta).toFixed(1)}%`}
+          {metric.delta === 0 ? t("steady") : `${Math.abs(metric.delta).toFixed(1)}%`}
         </span>
       </div>
       <MetricTicker metric={metric} />
-      <p>{metric.context}</p>
+      <p>{t(metric.context)}</p>
     </Card>
   );
 }
 
 export function PartialBanner({ meta }: { meta?: ResponseMeta }) {
+  const { t } = useI18n();
   if (!meta?.partial || !meta.sourceFailures?.length) return null;
   return (
     <div className="partial-banner" role="status">
       <DatabaseZap aria-hidden="true" size={18} />
       <div>
-        <strong>Partial data</strong>
+        <strong>{t("Partial data")}</strong>
         <span>
           {meta.sourceFailures
             .map((failure) => `${sourceLabel(failure.source)}: ${failure.message}`)
@@ -222,8 +233,9 @@ export function Skeleton({ className }: { className?: string }) {
 }
 
 export function PageSkeleton({ label = "Loading console data" }: { label?: string }) {
+  const { t } = useI18n();
   return (
-    <div aria-busy="true" aria-label={label} className="page-skeleton" role="status">
+    <div aria-busy="true" aria-label={t(label)} className="page-skeleton" role="status">
       <div className="skeleton-heading">
         <Skeleton className="skeleton--eyebrow" />
         <Skeleton className="skeleton--title" />
@@ -261,13 +273,14 @@ export function EmptyState({
   action?: ReactNode;
   compact?: boolean;
 }) {
+  const { t } = useI18n();
   return (
     <div className={cn("state-card", compact && "state-card--compact")}>
       <span className="state-card__icon">
         <Inbox aria-hidden="true" size={22} />
       </span>
-      <h2>{title}</h2>
-      <p>{description}</p>
+      <h2>{t(title)}</h2>
+      <p>{t(description)}</p>
       {action ? <div className="state-card__action">{action}</div> : null}
     </div>
   );
@@ -282,13 +295,14 @@ export function ErrorState({
   description: string;
   onRetry?: () => void;
 }) {
+  const { t } = useI18n();
   return (
     <div className="state-card state-card--error" role="alert">
       <span className="state-card__icon">
         <AlertCircle aria-hidden="true" size={22} />
       </span>
-      <h2>{title}</h2>
-      <p>{description}</p>
+      <h2>{t(title)}</h2>
+      <p>{t(description)}</p>
       {onRetry ? (
         <Button onClick={onRetry} variant="secondary">
           <RefreshCw aria-hidden="true" size={14} /> Retry
@@ -316,6 +330,7 @@ export function DataTable<T extends { id: string }>({
   label: string;
   onRowClick?: (item: T, trigger: HTMLTableRowElement) => void;
 }) {
+  const { t } = useI18n();
   const handleKey = (event: KeyboardEvent<HTMLTableRowElement>, item: T) => {
     if (!onRowClick) return;
     if (event.key === "Enter" || event.key === " ") {
@@ -324,14 +339,19 @@ export function DataTable<T extends { id: string }>({
     }
   };
   return (
-    <div aria-label={`${label} scroll region`} className="table-scroll" role="region" tabIndex={0}>
+    <div
+      aria-label={`${t(label)} ${t("scroll region")}`}
+      className="table-scroll"
+      role="region"
+      tabIndex={0}
+    >
       <table className="data-table">
-        <caption className="sr-only">{label}</caption>
+        <caption className="sr-only">{t(label)}</caption>
         <thead>
           <tr>
             {columns.map((column) => (
               <th className={column.className} key={column.key} scope="col">
-                {column.header}
+                {t(column.header)}
               </th>
             ))}
           </tr>
@@ -373,6 +393,7 @@ export function DetailDrawer({
   children: ReactNode;
   returnFocusRef?: RefObject<HTMLElement | null>;
 }) {
+  const { t } = useI18n();
   const titleId = useId();
   const closeRef = useRef<HTMLButtonElement>(null);
   const onCloseRef = useRef(onClose);
@@ -400,7 +421,7 @@ export function DetailDrawer({
       {open ? (
         <div className="drawer-layer">
           <motion.button
-            aria-label="Close detail drawer"
+            aria-label={t("Close detail drawer")}
             className="drawer-backdrop"
             initial={reduced ? false : { opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -419,11 +440,11 @@ export function DetailDrawer({
           >
             <header className="detail-drawer__header">
               <div>
-                <p className="eyebrow">{eyebrow}</p>
-                <h2 id={titleId}>{title}</h2>
+                <p className="eyebrow">{t(eyebrow)}</p>
+                <h2 id={titleId}>{t(title)}</h2>
               </div>
               <Button
-                aria-label="Close drawer"
+                aria-label={t("Close drawer")}
                 onClick={onClose}
                 ref={closeRef}
                 size="sm"
@@ -455,6 +476,7 @@ export function Dialog({
   children: ReactNode;
   size?: "default" | "wide";
 }) {
+  const { t } = useI18n();
   const titleId = useId();
   const descriptionId = useId();
   const reduced = useReducedMotion();
@@ -468,7 +490,11 @@ export function Dialog({
     <AnimatePresence>
       {open ? (
         <div className="dialog-layer">
-          <motion.button aria-label="Close dialog" className="dialog-backdrop" onClick={onClose} />
+          <motion.button
+            aria-label={t("Close dialog")}
+            className="dialog-backdrop"
+            onClick={onClose}
+          />
           <motion.div
             aria-describedby={descriptionId}
             aria-labelledby={titleId}
@@ -481,10 +507,10 @@ export function Dialog({
           >
             <header>
               <div>
-                <h2 id={titleId}>{title}</h2>
-                <p id={descriptionId}>{description}</p>
+                <h2 id={titleId}>{t(title)}</h2>
+                <p id={descriptionId}>{t(description)}</p>
               </div>
-              <Button aria-label="Close dialog" onClick={onClose} size="sm" variant="ghost">
+              <Button aria-label={t("Close dialog")} onClick={onClose} size="sm" variant="ghost">
                 <X size={18} />
               </Button>
             </header>
@@ -497,12 +523,13 @@ export function Dialog({
 }
 
 export function DefinitionList({ items }: { items: Array<{ label: string; value: ReactNode }> }) {
+  const { t } = useI18n();
   return (
     <dl className="definition-list">
       {items.map((item) => (
         <div key={item.label}>
-          <dt>{item.label}</dt>
-          <dd>{item.value}</dd>
+          <dt>{t(item.label)}</dt>
+          <dd>{typeof item.value === "string" ? t(item.value) : item.value}</dd>
         </div>
       ))}
     </dl>
@@ -520,6 +547,7 @@ export function TimelineStep({
   description?: string;
   last?: boolean;
 }) {
+  const { t } = useI18n();
   return (
     <div className="timeline-step">
       <div className="timeline-step__rail">
@@ -529,18 +557,19 @@ export function TimelineStep({
         {!last ? <span className="timeline-step__line" /> : null}
       </div>
       <div>
-        <strong>{label}</strong>
-        {description ? <p>{description}</p> : null}
+        <strong>{t(label)}</strong>
+        {description ? <p>{t(description)}</p> : null}
       </div>
     </div>
   );
 }
 
 export function UnavailableNotice({ children }: { children: ReactNode }) {
+  const { t } = useI18n();
   return (
     <div className="unavailable-notice">
       <CircleSlash aria-hidden="true" size={17} />
-      <span>{children}</span>
+      <span>{localizeChildren(children, t)}</span>
     </div>
   );
 }
@@ -550,10 +579,11 @@ export function RowChevron() {
 }
 
 export function InlineLoading({ label }: { label: string }) {
+  const { t } = useI18n();
   return (
     <span className="inline-loading">
       <LoaderCircle aria-hidden="true" size={14} />
-      {label}
+      {t(label)}
     </span>
   );
 }

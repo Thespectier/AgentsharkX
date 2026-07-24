@@ -3,6 +3,8 @@ import { Link } from "@tanstack/react-router";
 import { ArrowRight, CheckCircle2, ShieldCheck, Sparkles, TerminalSquare } from "lucide-react";
 import { ActivityRail, LiveFlow, RequestTrendChart } from "../../motion/dashboard-motion";
 import { formatError, getScenario, isMockMode, requestOperation } from "../../lib/api";
+import { formatTimeWithZone } from "../../lib/format";
+import { useBeijingGreeting, useI18n } from "../../lib/i18n";
 import { mergeLiveEvents, useSharedLiveEvents } from "../../lib/use-live-events";
 import {
   Button,
@@ -20,6 +22,8 @@ import {
 import { PageFrame } from "../../components/workspace";
 
 export function HomePage() {
+  const { t } = useI18n();
+  const greeting = useBeijingGreeting();
   const scenario = getScenario();
   const query = useQuery({
     queryKey: ["overview", scenario],
@@ -58,11 +62,12 @@ export function HomePage() {
               <Sparkles size={28} />
             </span>
             <div>
-              <p className="eyebrow">Three-step setup</p>
-              <h2>From zero to the first verified event</h2>
+              <p className="eyebrow">{t("Three-step setup")}</p>
+              <h2>{t("From zero to the first verified event")}</h2>
               <p>
-                No empty charts and no invented traffic. The console activates each surface only
-                after its source responds.
+                {t(
+                  "No empty charts and no invented traffic. The console activates each surface only after its source responds.",
+                )}
               </p>
             </div>
           </div>
@@ -84,10 +89,10 @@ export function HomePage() {
               search={true}
               to="/connect/$section"
             >
-              Open setup <ArrowRight size={15} />
+              {t("Open setup")} <ArrowRight size={15} />
             </Link>
             <span>
-              <ShieldCheck size={15} /> Credentials stay in the BFF
+              <ShieldCheck size={15} /> {t("Credentials stay in the BFF")}
             </span>
           </div>
         </Card>
@@ -110,7 +115,7 @@ export function HomePage() {
                 <div>
                   <SourceBadge source={item.source} />
                   <span>
-                    {item.version ?? "version unavailable"} · {item.latencyMs ?? "—"} ms
+                    {item.version ?? t("Version unavailable")} · {item.latencyMs ?? "—"} ms
                   </span>
                 </div>
               </div>
@@ -126,8 +131,8 @@ export function HomePage() {
             />
             <div className="foundation-status">
               <StatusOrb status={live.status === "live" ? "healthy" : "connecting"} />
-              <strong>{live.status === "live" ? "SSE connected" : "Connecting to SSE"}</strong>
-              <span>Heartbeat and source health changes only</span>
+              <strong>{t(live.status === "live" ? "SSE connected" : "Connecting to SSE")}</strong>
+              <span>{t("Heartbeat and source health changes only")}</span>
             </div>
           </Card>
           <Card elevated>
@@ -137,16 +142,18 @@ export function HomePage() {
             />
             <div className="foundation-status">
               <ShieldCheck size={20} />
-              <strong>BFF boundary active</strong>
-              <span>Use System to inspect live capability probes</span>
+              <strong>{t("BFF boundary active")}</strong>
+              <span>{t("Use System to inspect live capability probes")}</span>
             </div>
           </Card>
         </div>
         <div className="mock-footnote">
           <TerminalSquare size={14} />
-          {isMockMode()
-            ? "This view is driven by the labelled Phase 1 fixture."
-            : "This view is driven by authenticated Phase 2 BFF responses."}
+          {t(
+            isMockMode()
+              ? "This view is driven by the labelled Phase 1 fixture."
+              : "This view is driven by authenticated Phase 2 BFF responses.",
+          )}
         </div>
       </PageFrame>
     );
@@ -167,7 +174,7 @@ export function HomePage() {
               search={true}
               to="/audit/$section"
             >
-              View security events
+              {t("View security events")}
             </Link>
             <Link
               className="button button--primary button--md"
@@ -175,13 +182,13 @@ export function HomePage() {
               search={true}
               to="/protect/$section"
             >
-              Review approvals <ArrowRight size={15} />
+              {t("Review approvals")} <ArrowRight size={15} />
             </Link>
           </>
         }
         description="Source-scoped health, live gateway traffic, runtime decisions, and actions requiring human attention."
         eyebrow="Home / Runtime posture"
-        title="Good afternoon. Your agents are in control."
+        title={greeting}
       >
         <div className="health-strip">
           {data.health.map((item) => (
@@ -196,14 +203,14 @@ export function HomePage() {
                 <SourceBadge source={item.source} />
                 <span>
                   {scenario === "partial" && item.source === "agentguard"
-                    ? "Probe timed out · cached view"
+                    ? t("Probe timed out · cached view")
                     : `${item.version} · ${item.latencyMs} ms`}
                 </span>
               </div>
             </div>
           ))}
           <span className="health-strip__sync">
-            <CheckCircle2 size={14} /> Fetched {new Date(meta.fetchedAt).toLocaleTimeString()}
+            <CheckCircle2 size={14} /> {t("Fetched")} {formatTimeWithZone(meta.fetchedAt)}
           </span>
         </div>
       </PageHeader>
@@ -225,15 +232,15 @@ export function HomePage() {
               <div className="chart-legend">
                 <span>
                   <i className="legend-dot legend-dot--blue" />
-                  Requests
+                  {t("Requests")}
                 </span>
                 <span>
                   <i className="legend-dot legend-dot--danger" />
-                  Denied
+                  {t("Denied")}
                 </span>
               </div>
             }
-            description="Exact rolling 60 minutes in 5-minute UTC buckets; requests and explicit denies use independent axes."
+            description="Exact rolling 60 minutes in 5-minute Beijing-time buckets; requests and explicit denies use independent axes."
             title="Traffic & decisions"
           />
           <RequestTrendChart data={data.trend} />
@@ -247,7 +254,7 @@ export function HomePage() {
                 search={true}
                 to="/protect/$section"
               >
-                Open queue <ArrowRight size={13} />
+                {t("Open queue")} <ArrowRight size={13} />
               </Link>
             }
             description="Latest deny, human-check, and audit findings."
@@ -258,7 +265,7 @@ export function HomePage() {
           ) : (
             <div className="mini-empty">
               <ShieldCheck size={24} />
-              <p>No security events in this range.</p>
+              <p>{t("No security events in this range.")}</p>
             </div>
           )}
         </Card>
@@ -270,8 +277,8 @@ export function HomePage() {
             <span className="live-caption">
               <StatusOrb status={live.status === "live" ? "healthy" : "connecting"} />
               {live.status === "live"
-                ? `${isMockMode() ? "Mock" : "Live"} SSE connected`
-                : "Connecting"}
+                ? t(isMockMode() ? "Mock SSE connected" : "Live SSE connected")
+                : t("Connecting")}
             </span>
           }
           description="Unified presentation only. No task or time-window correlation is implied."
@@ -281,9 +288,11 @@ export function HomePage() {
       </Card>
       <div className="mock-footnote">
         <TerminalSquare size={14} />
-        {isMockMode()
-          ? "Dynamic elements on this page are driven by clearly labelled MSW REST and SSE fixtures."
-          : "Dynamic elements on this page are driven by authenticated BFF REST and SSE responses."}
+        {t(
+          isMockMode()
+            ? "Dynamic elements on this page are driven by clearly labelled MSW REST and SSE fixtures."
+            : "Dynamic elements on this page are driven by authenticated BFF REST and SSE responses.",
+        )}
       </div>
     </PageFrame>
   );

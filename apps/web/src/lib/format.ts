@@ -1,4 +1,8 @@
 import type { Metric, Source } from "../types";
+import type { Locale } from "./i18n";
+
+export const displayTimeZone = "Asia/Shanghai";
+export const displayTimeZoneLabel = "UTC+8";
 
 const integer = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
 const decimal = new Intl.NumberFormat("en-US", { maximumFractionDigits: 1 });
@@ -36,21 +40,21 @@ export function formatTrendTick(value: string): string {
     hour: "2-digit",
     minute: "2-digit",
     hour12: false,
-    timeZone: "UTC",
+    timeZone: displayTimeZone,
   }).format(date);
 }
 
-export function formatTrendTimestamp(value: string): string {
+export function formatTrendTimestamp(value: string, locale: Locale = "en"): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
-  return new Intl.DateTimeFormat("en-US", {
+  return new Intl.DateTimeFormat(locale === "zh-CN" ? "zh-CN" : "en-GB", {
     month: "short",
     day: "2-digit",
     hour: "2-digit",
     minute: "2-digit",
     second: "2-digit",
     hour12: false,
-    timeZone: "UTC",
+    timeZone: displayTimeZone,
   }).format(date);
 }
 
@@ -62,8 +66,13 @@ export function formatTime(value: string): string {
     minute: "2-digit",
     second: "2-digit",
     hour12: false,
-    timeZone: "UTC",
+    timeZone: displayTimeZone,
   }).format(date);
+}
+
+export function formatTimeWithZone(value: string): string {
+  const formatted = formatTime(value);
+  return formatted === value ? value : `${formatted} ${displayTimeZoneLabel}`;
 }
 
 export function sourceLabel(source: Source): string {

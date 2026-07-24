@@ -1,7 +1,6 @@
 import { expect, test } from "@playwright/test";
 
 const workspaces = [
-  ["/", "Good afternoon. Your agents are in control."],
   ["/connect/overview", "Connect agents to every destination"],
   ["/trust/agents", "Know what every agent can reach"],
   ["/protect/policies", "Enforce every critical boundary"],
@@ -9,11 +8,42 @@ const workspaces = [
 ] as const;
 
 test("all five primary pages render from labelled mock data", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.getByRole("heading", { level: 1, name: /Your agents/ })).toBeVisible();
+  await expect(page.getByText("MOCK DATA")).toBeVisible();
   for (const [path, heading] of workspaces) {
     await page.goto(path);
     await expect(page.getByRole("heading", { level: 1, name: heading })).toBeVisible();
     await expect(page.getByText("MOCK DATA")).toBeVisible();
   }
+});
+
+test("Home greeting follows Beijing time and the persisted language switch localizes the shell", async ({
+  page,
+}) => {
+  await page.clock.setFixedTime(new Date("2026-07-21T00:00:00Z"));
+  await page.goto("/");
+  await expect(
+    page.getByRole("heading", {
+      level: 1,
+      name: "Good morning. Your agents are in control.",
+    }),
+  ).toBeVisible();
+  await expect(page.getByText(/UTC\+8/).first()).toBeVisible();
+
+  await page.getByRole("button", { name: "Switch to Chinese" }).click();
+  await expect(page.locator("html")).toHaveAttribute("lang", "zh-CN");
+  await expect(
+    page.getByRole("heading", { level: 1, name: "早上好。您的智能体均在掌控之中。" }),
+  ).toBeVisible();
+  await expect(page.getByRole("link", { name: "连接", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "切换到英文" })).toBeVisible();
+
+  await page.reload();
+  await expect(page.locator("html")).toHaveAttribute("lang", "zh-CN");
+  await expect(page.getByRole("link", { name: "系统", exact: true })).toBeVisible();
+  await page.getByRole("link", { name: "系统", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "数据源、版本与能力" })).toBeVisible();
 });
 
 test("sidebar subnavigation renders immediately without a hard refresh", async ({ page }) => {

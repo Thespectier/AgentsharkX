@@ -577,6 +577,18 @@ kbd {
   gap: 6px;
   cursor: default;
 }
+.language-toggle {
+  height: 34px;
+  padding-inline: 9px;
+  gap: 6px;
+  border-color: var(--border-subtle);
+  color: var(--text-secondary);
+}
+.language-toggle span {
+  min-width: 22px;
+  font-size: 12px;
+  font-weight: 650;
+}
 .source-health {
   display: flex;
   height: 34px;
@@ -2855,6 +2867,13 @@ kbd {
   .mock-indicator,
   .time-range,
   .scenario-select {
+    display: none;
+  }
+  .language-toggle {
+    width: 34px;
+    padding: 0;
+  }
+  .language-toggle span {
     display: none;
   }
   .topbar {

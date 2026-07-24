@@ -3,7 +3,8 @@
 Phase 7 stores deterministic Playwright release baselines here:
 
 - [`home-1440.png`](home-1440.png): 1440 × 1000 desktop Home with LiveFlow,
-  metrics, chart, and source-distinct activity.
+  Beijing-time greeting, locale switch, metrics, chart, and source-distinct
+  activity.
 - [`audit-1280.png`](audit-1280.png): 1280 × 800 laptop Audit analytics with
   exact rolling-window traffic and latency charts plus nested Audit navigation.
 - [`connect-1280.png`](connect-1280.png): 1280 × 900 Connect overview with all
@@ -21,9 +22,11 @@ Phase 7 stores deterministic Playwright release baselines here:
 
 `apps/web/tests/console.spec.ts` covers Home plus all four workspaces, immediate
 sidebar section navigation, mobile behavior after a stored desktop collapse,
-the four required empty/loading/partial/error states, URL-restored detail,
-keyboard command navigation, and reduced motion. `accessibility.spec.ts` runs
-Axe across the five primary pages. Regenerate and compare baselines with:
+the persisted English/Chinese switch, Beijing-time greeting and timestamp
+presentation, the four required empty/loading/partial/error states, URL-restored
+detail, keyboard command navigation, and reduced motion.
+`accessibility.spec.ts` runs Axe across the five primary pages. Regenerate and
+compare baselines with:
 
 ```bash
 npm --prefix apps/web run test:visual:update

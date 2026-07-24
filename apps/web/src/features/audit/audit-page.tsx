@@ -32,8 +32,9 @@ import {
   StatusBadge,
   type Column,
 } from "../../components/ui";
-import { formatCount, formatTime } from "../../lib/format";
+import { displayTimeZoneLabel, formatCount, formatTimeWithZone } from "../../lib/format";
 import { formatError, getScenario, requestOperation } from "../../lib/api";
+import { useI18n } from "../../lib/i18n";
 import { mergeLiveEvents, useSharedLiveEvents } from "../../lib/use-live-events";
 import type { AuditData, Severity, Source, UnifiedEvent } from "../../types";
 
@@ -46,6 +47,7 @@ type AuditFilters = {
 const defaultFilters: AuditFilters = { source: "all", severity: "all", query: "" };
 
 export function AuditPage() {
+  const { t } = useI18n();
   const section = useWorkspaceSection("audit", "analytics");
   const scenario = getScenario();
   const location = useRouterState({ select: (state) => state.location });
@@ -125,7 +127,7 @@ export function AuditPage() {
             onClick={() => setFiltersOpen((open) => !open)}
             variant="secondary"
           >
-            <Filter size={14} /> Filter
+            <Filter size={14} /> {t("Filter")}
             {activeFilterCount(filters) ? ` (${activeFilterCount(filters)})` : ""}
           </Button>
         }
@@ -176,42 +178,43 @@ function AuditFilterPanel({
   filters: AuditFilters;
   onChange: (filters: AuditFilters) => void;
 }) {
+  const { t } = useI18n();
   return (
     <Card className="audit-filters">
       <div id="audit-filters">
         <label>
-          <span>Search events</span>
+          <span>{t("Search events")}</span>
           <input
             onChange={(event) => onChange({ ...filters, query: event.target.value })}
-            placeholder="Summary, agent, model, or resource"
+            placeholder={t("Summary, agent, model, or resource")}
             value={filters.query}
           />
         </label>
         <label>
-          <span>Source</span>
+          <span>{t("Source")}</span>
           <select
             onChange={(event) =>
               onChange({ ...filters, source: event.target.value as AuditFilters["source"] })
             }
             value={filters.source}
           >
-            <option value="all">All sources</option>
+            <option value="all">{t("All sources")}</option>
             <option value="agentgateway">agentgateway</option>
             <option value="agentguard">AgentGuard</option>
           </select>
         </label>
         <label>
-          <span>Severity</span>
+          <span>{t("Severity")}</span>
           <select
             onChange={(event) =>
               onChange({ ...filters, severity: event.target.value as AuditFilters["severity"] })
             }
             value={filters.severity}
           >
-            <option value="all">All severities</option>
+            <option value="all">{t("All severities")}</option>
             {(["info", "low", "medium", "high", "critical"] as const).map((severity) => (
               <option key={severity} value={severity}>
-                {severity}
+                {t(severity)}
               </option>
             ))}
           </select>
@@ -288,7 +291,7 @@ function AnalyticsView({
           <CardHeader
             action={
               <span className="live-caption">
-                <Radio size={13} /> 12 × 5m · UTC
+                <Radio size={13} /> 12 × 5m · {displayTimeZoneLabel}
               </span>
             }
             description="Last 60 minutes; verified request volume and explicit denies use independent axes."
@@ -310,7 +313,11 @@ function AnalyticsView({
 }
 
 const eventColumns: Column<UnifiedEvent>[] = [
-  { key: "time", header: "Timestamp", render: (item) => <time>{formatTime(item.timestamp)}</time> },
+  {
+    key: "time",
+    header: "Timestamp",
+    render: (item) => <time>{formatTimeWithZone(item.timestamp)}</time>,
+  },
   { key: "source", header: "Source", render: (item) => <SourceBadge source={item.source} /> },
   { key: "type", header: "Event type", render: (item) => <StatusBadge status={item.kind} /> },
   {
@@ -362,12 +369,13 @@ function EventsView({
   onOpen: (event: UnifiedEvent, trigger: HTMLTableRowElement) => void;
   title: string;
 }) {
+  const { t } = useI18n();
   return events.length ? (
     <Card>
       <CardHeader
         action={
           <span className="fetched-at">
-            <ListFilter size={13} /> {events.length} records
+            <ListFilter size={13} /> {events.length} {t("records")}
           </span>
         }
         description="Select a record for redacted detail. Source IDs remain intact."
@@ -384,6 +392,7 @@ function EventsView({
 }
 
 function SessionsView({ data }: { data: AuditData }) {
+  const { t } = useI18n();
   const columns = [
     {
       key: "session",
@@ -417,7 +426,7 @@ function SessionsView({ data }: { data: AuditData }) {
       key: "last-seen",
       header: "Last seen",
       render: (item: AuditData["sessions"][number]) =>
-        item.lastSeen ? formatTime(item.lastSeen) : "Not reported",
+        item.lastSeen ? formatTimeWithZone(item.lastSeen) : t("Not reported"),
     },
     {
       key: "status",
@@ -447,6 +456,7 @@ function SessionsView({ data }: { data: AuditData }) {
 }
 
 function EventDetail({ event }: { event: UnifiedEvent }) {
+  const { t } = useI18n();
   return (
     <div className="event-detail">
       <div className="event-detail__badges">
@@ -456,7 +466,7 @@ function EventDetail({ event }: { event: UnifiedEvent }) {
       </div>
       <DefinitionList
         items={[
-          { label: "Timestamp", value: event.timestamp },
+          { label: "Timestamp", value: formatTimeWithZone(event.timestamp) },
           { label: "Original ID", value: <code>{event.rawRef.id}</code> },
           { label: "Agent", value: event.subject?.agentId ?? "Not provided" },
           { label: "Session", value: event.subject?.sessionId ?? "Not provided" },
@@ -477,7 +487,7 @@ function EventDetail({ event }: { event: UnifiedEvent }) {
       <div className="raw-json">
         <header>
           <Braces size={15} />
-          <strong>Redacted raw JSON</strong>
+          <strong>{t("Redacted raw JSON")}</strong>
         </header>
         <pre>
           <code>{JSON.stringify(event.raw ?? { redacted: true }, null, 2)}</code>

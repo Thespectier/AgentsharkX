@@ -47,6 +47,8 @@ import {
   mutateOperation,
   requestOperation,
 } from "../../lib/api";
+import { formatTimeWithZone } from "../../lib/format";
+import { useI18n } from "../../lib/i18n";
 import { synchronizeAgentGuardData } from "../../lib/query-sync";
 import type { Severity } from "../../types";
 
@@ -208,6 +210,7 @@ function PolicyView({ data }: { data: ProtectSnapshot }) {
 }
 
 function GuardrailView({ data }: { data: ProtectSnapshot }) {
+  const { t } = useI18n();
   const guardrails = data.gatewayPolicies.filter((policy) => policy.type === "Content Guardrail");
   return (
     <div className="content-grid">
@@ -252,10 +255,11 @@ function GuardrailView({ data }: { data: ProtectSnapshot }) {
         />
         <div className="linkout-card">
           <FileCode2 aria-hidden="true" size={25} />
-          <h2>Use the native policy editor</h2>
+          <h2>{t("Use the native policy editor")}</h2>
           <p>
-            Raw config, CEL, credentials, and vendor-specific bodies are intentionally not
-            duplicated.
+            {t(
+              "Raw config, CEL, credentials, and vendor-specific bodies are intentionally not duplicated.",
+            )}
           </p>
           {data.links.rawConfig ? (
             <a
@@ -264,7 +268,7 @@ function GuardrailView({ data }: { data: ProtectSnapshot }) {
               rel="noreferrer"
               target="_blank"
             >
-              Open agentgateway <ExternalLink aria-hidden="true" size={14} />
+              {t("Open agentgateway")} <ExternalLink aria-hidden="true" size={14} />
             </a>
           ) : (
             <StatusBadge status="link unavailable" />
@@ -276,6 +280,7 @@ function GuardrailView({ data }: { data: ProtectSnapshot }) {
 }
 
 function RuntimeRulesView({ data }: { data: ProtectSnapshot }) {
+  const { t } = useI18n();
   const queryClient = useQueryClient();
   const agents = useMemo(() => {
     const values = new Map<string, string>();
@@ -347,7 +352,7 @@ function RuntimeRulesView({ data }: { data: ProtectSnapshot }) {
         const rule = data.runtimeRules.find((candidate) => candidate.id === item.id)!;
         return rule.userManaged && rule.agentId ? (
           <Button
-            aria-label={`Delete ${rule.name}`}
+            aria-label={`${t("Delete")} ${rule.name}`}
             onClick={() => setDeleteRule(rule)}
             size="sm"
             variant="ghost"
@@ -355,7 +360,7 @@ function RuntimeRulesView({ data }: { data: ProtectSnapshot }) {
             <Trash2 aria-hidden="true" size={13} /> Delete
           </Button>
         ) : (
-          <span className="resource-note">Read-only</span>
+          <span className="resource-note">{t("Read-only")}</span>
         );
       },
     },
@@ -409,9 +414,9 @@ function RuntimeRulesView({ data }: { data: ProtectSnapshot }) {
       >
         <div className="dialog-form protect-form">
           <label className="field">
-            <span>Explicit AgentGuard agent</span>
+            <span>{t("Explicit AgentGuard agent")}</span>
             <select
-              aria-label="Explicit AgentGuard agent"
+              aria-label={t("Explicit AgentGuard agent")}
               onChange={(event) => setAgentId(event.target.value)}
               value={agentId}
             >
@@ -423,9 +428,9 @@ function RuntimeRulesView({ data }: { data: ProtectSnapshot }) {
             </select>
           </label>
           <label className="field">
-            <span>Rule source</span>
+            <span>{t("Rule source")}</span>
             <textarea
-              aria-label="Rule source"
+              aria-label={t("Rule source")}
               onChange={(event) => {
                 const nextSource = event.target.value;
                 sourceRef.current = nextSource;
@@ -460,18 +465,18 @@ function RuntimeRulesView({ data }: { data: ProtectSnapshot }) {
                 role="status"
               >
                 {checkResult.publishable
-                  ? "Checked and publishable"
-                  : (checkResult.errors[0]?.message ?? "Not publishable")}
+                  ? t("Checked and publishable")
+                  : (checkResult.errors[0]?.message ?? t("Not publishable"))}
               </span>
             ) : (
-              <span className="resource-note">Check required before publish</span>
+              <span className="resource-note">{t("Check required before publish")}</span>
             )}
           </div>
           {check.isError ? <MutationError error={check.error} /> : null}
           <label className="field">
-            <span>Operator note</span>
+            <span>{t("Operator note")}</span>
             <textarea
-              aria-label="Operator note"
+              aria-label={t("Operator note")}
               onChange={(event) => setNote(event.target.value)}
               rows={2}
               value={note}
@@ -483,7 +488,7 @@ function RuntimeRulesView({ data }: { data: ProtectSnapshot }) {
               onChange={(event) => setConfirmed(event.target.checked)}
               type="checkbox"
             />
-            I confirm this checked rule should be published to the selected agent.
+            {t("I confirm this checked rule should be published to the selected agent.")}
           </label>
           {publish.isError ? <MutationError error={publish.error} /> : null}
           <footer>
@@ -509,9 +514,9 @@ function RuntimeRulesView({ data }: { data: ProtectSnapshot }) {
       >
         <div className="dialog-form">
           <label className="field">
-            <span>Operator note</span>
+            <span>{t("Operator note")}</span>
             <textarea
-              aria-label="Deletion note"
+              aria-label={t("Deletion note")}
               onChange={(event) => setDeleteNote(event.target.value)}
               rows={3}
               value={deleteNote}
@@ -523,7 +528,7 @@ function RuntimeRulesView({ data }: { data: ProtectSnapshot }) {
               onChange={(event) => setDeleteConfirmed(event.target.checked)}
               type="checkbox"
             />
-            I confirm this runtime rule should be deleted.
+            {t("I confirm this runtime rule should be deleted.")}
           </label>
           {remove.isError ? <MutationError error={remove.error} /> : null}
           <footer>
@@ -597,6 +602,7 @@ function ApprovalsView({
   error: Error | null;
   loading: boolean;
 }) {
+  const { t } = useI18n();
   const queryClient = useQueryClient();
   const [selected, setSelected] = useState<Approval>();
   const [note, setNote] = useState("");
@@ -676,7 +682,7 @@ function ApprovalsView({
                 <footer>
                   <code>{approval.agentUpstreamId || "unknown agent"}</code>
                   <span>{approval.phase}</span>
-                  <time>{new Date(approval.createdAt).toLocaleTimeString()}</time>
+                  <time>{formatTimeWithZone(approval.createdAt)}</time>
                 </footer>
               </div>
               <ArrowRight aria-hidden="true" size={16} />
@@ -687,15 +693,15 @@ function ApprovalsView({
           <span className="approval-context__icon">
             <CheckCircle2 aria-hidden="true" size={25} />
           </span>
-          <h2>Operator decisions stay explicit</h2>
+          <h2>{t("Operator decisions stay explicit")}</h2>
           <p>
             Every decision requires a note and confirmation. A mutation is sent once; timeout
             recovery is always a deliberate manual retry.
           </p>
           <ul>
-            <li>Source, runtime phase, rule matches, and risk remain visible.</li>
-            <li>Duplicate clicks are disabled while a decision is pending.</li>
-            <li>Receipts include the BFF request ID for audit lookup.</li>
+            <li>{t("Source, runtime phase, rule matches, and risk remain visible.")}</li>
+            <li>{t("Duplicate clicks are disabled while a decision is pending.")}</li>
+            <li>{t("Receipts include the BFF request ID for audit lookup.")}</li>
           </ul>
         </Card>
       </div>
@@ -718,9 +724,9 @@ function ApprovalsView({
               </p>
             </div>
             <label className="field">
-              <span>Operator note</span>
+              <span>{t("Operator note")}</span>
               <textarea
-                aria-label="Operator note"
+                aria-label={t("Operator note")}
                 onChange={(event) => setNote(event.target.value)}
                 rows={3}
                 value={note}

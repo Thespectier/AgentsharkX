@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 
 test("desktop home visual baseline", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.clock.setFixedTime(new Date("2026-07-21T06:00:00Z"));
   await page.goto("/");
   await expect(page.getByRole("heading", { name: /agents are in control/i })).toBeVisible();
   await expect(page).toHaveScreenshot("home-1440.png");

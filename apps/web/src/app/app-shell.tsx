@@ -10,6 +10,7 @@ import {
   Clock3,
   Command,
   Home,
+  Languages,
   Menu,
   Settings,
   ShieldCheck,
@@ -19,6 +20,7 @@ import { useEffect, useState } from "react";
 
 import { isMockMode, requestOperation } from "../lib/api";
 import { synchronizeLiveEvent } from "../lib/query-sync";
+import { useI18n } from "../lib/i18n";
 import { LiveEventsContext, useLiveEvents } from "../lib/use-live-events";
 import type { Scenario } from "../types";
 import { CommandPalette } from "../components/command-palette";
@@ -89,6 +91,7 @@ const scenarios: Array<{ value: Scenario; label: string }> = [
 ];
 
 export function AppShell() {
+  const { locale, t, toggleLocale } = useI18n();
   const mocksEnabled = isMockMode();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -124,7 +127,7 @@ export function AppShell() {
   return (
     <div className={cn("app-shell", collapsed && "app-shell--collapsed")}>
       <button
-        aria-label="Close navigation"
+        aria-label={t("Close navigation")}
         className={cn("mobile-scrim", mobileOpen && "mobile-scrim--visible")}
         onClick={() => setMobileOpen(false)}
       />
@@ -137,17 +140,17 @@ export function AppShell() {
           </span>
           <span className="brand__copy">
             <strong>Agentshark</strong>
-            <small>CONTROL PLANE</small>
+            <small>{t("CONTROL PLANE")}</small>
           </span>
         </div>
         <div className="environment-card">
           <span className="environment-card__glyph">PX</span>
           <span>
-            <small>Environment</small>
-            <strong>{overview.data?.data.environment ?? "Connecting"}</strong>
+            <small>{t("Environment")}</small>
+            <strong>{overview.data?.data.environment ?? t("Connecting")}</strong>
           </span>
           <StatusOrb
-            label="Environment health"
+            label={t("Environment health")}
             status={
               health.length === 0
                 ? "connecting"
@@ -157,8 +160,8 @@ export function AppShell() {
             }
           />
         </div>
-        <nav aria-label="Primary navigation" className="primary-nav">
-          <p className="nav-label">Workspaces</p>
+        <nav aria-label={t("Primary navigation")} className="primary-nav">
+          <p className="nav-label">{t("Workspaces")}</p>
           <Link
             aria-current={location.pathname === "/" ? "page" : undefined}
             className={cn("nav-item", location.pathname === "/" && "nav-item--active")}
@@ -166,7 +169,7 @@ export function AppShell() {
             to="/"
           >
             <Home aria-hidden="true" size={18} />
-            <span>Home</span>
+            <span>{t("Home")}</span>
           </Link>
           {navItems.map((item) => {
             const Icon = item.icon;
@@ -183,11 +186,15 @@ export function AppShell() {
                   to={item.route}
                 >
                   <Icon aria-hidden="true" size={18} />
-                  <span>{item.label}</span>
+                  <span>{t(item.label)}</span>
                   {item.area === "protect" && pending > 0 ? <em>{pending}</em> : null}
                 </Link>
                 {active ? (
-                  <div aria-label={`${item.label} sections`} className="nav-subnav" role="group">
+                  <div
+                    aria-label={`${t(item.label)} ${t("sections")}`}
+                    className="nav-subnav"
+                    role="group"
+                  >
                     {item.sections.map((section) => (
                       <Link
                         aria-current={currentSection === section.id ? "page" : undefined}
@@ -200,7 +207,7 @@ export function AppShell() {
                         search={{ scenario: scenario === "normal" ? undefined : scenario }}
                         to={item.route}
                       >
-                        <span>{section.label}</span>
+                        <span>{t(section.label)}</span>
                         {item.area === "protect" && section.id === "approvals" && pending > 0 ? (
                           <em>{pending}</em>
                         ) : null}
@@ -219,7 +226,7 @@ export function AppShell() {
             to="/system"
           >
             <Settings size={18} />
-            <span>System</span>
+            <span>{t("System")}</span>
           </Link>
           <a
             className="nav-item"
@@ -228,10 +235,10 @@ export function AppShell() {
             target="_blank"
           >
             <CircleHelp size={18} />
-            <span>Documentation</span>
+            <span>{t("Documentation")}</span>
           </a>
           <button
-            aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+            aria-label={t(collapsed ? "Expand sidebar" : "Collapse sidebar")}
             className="sidebar-toggle"
             onClick={() => setCollapsed((value) => !value)}
           >
@@ -240,7 +247,7 @@ export function AppShell() {
             ) : (
               <>
                 <ChevronLeft size={16} />
-                <span>Collapse</span>
+                <span>{t("Collapse")}</span>
               </>
             )}
           </button>
@@ -251,7 +258,7 @@ export function AppShell() {
         <header className="topbar">
           <div className="topbar__left">
             <Button
-              aria-label="Open navigation"
+              aria-label={t("Open navigation")}
               className="mobile-menu"
               onClick={() => setMobileOpen(true)}
               size="sm"
@@ -260,24 +267,24 @@ export function AppShell() {
               <Menu size={18} />
             </Button>
             <button
-              aria-label="Search or jump to commands"
+              aria-label={t("Search or jump to commands")}
               className="command-trigger"
               onClick={() => setCommandOpen(true)}
             >
               <Command aria-hidden="true" size={15} />
-              <span>Search or jump to…</span>
+              <span>{t("Search or jump to…")}</span>
               <kbd>⌘K</kbd>
             </button>
           </div>
           <div className="topbar__right">
             <div className={cn("mock-indicator", !mocksEnabled && "mock-indicator--live")}>
-              <span /> {mocksEnabled ? "MOCK DATA" : "LIVE BFF"}
+              <span /> {t(mocksEnabled ? "MOCK DATA" : "LIVE BFF")}
             </div>
             {mocksEnabled ? (
               <label className="scenario-select">
-                <span className="sr-only">Demo state</span>
+                <span className="sr-only">{t("Demo state")}</span>
                 <select
-                  aria-label="Demo state"
+                  aria-label={t("Demo state")}
                   onChange={(event) => {
                     const next = event.target.value as Scenario;
                     const search = new URLSearchParams(location.searchStr);
@@ -291,18 +298,18 @@ export function AppShell() {
                 >
                   {scenarios.map((item) => (
                     <option key={item.value} value={item.value}>
-                      {item.label}
+                      {t(item.label)}
                     </option>
                   ))}
                 </select>
               </label>
             ) : null}
-            <div className="source-health" aria-label="Upstream health">
+            <div className="source-health" aria-label={t("Upstream health")}>
               {health.length ? (
                 health.map((item) => (
                   <span key={item.source}>
                     <StatusOrb
-                      label={`${item.label} ${item.status}`}
+                      label={`${item.label} ${t(item.status)}`}
                       status={
                         scenario === "partial" && item.source === "agentguard"
                           ? "degraded"
@@ -315,16 +322,27 @@ export function AppShell() {
               ) : (
                 <span>
                   <StatusOrb status={overview.isError ? "down" : "connecting"} />
-                  Sources
+                  {t("Sources")}
                 </span>
               )}
             </div>
-            <div aria-label="Data window: last 60 minutes" className="time-range">
+            <div aria-label={t("Data window: last 60 minutes")} className="time-range">
               <Clock3 size={15} />
-              <span>Last 60m</span>
+              <span>{t("Last 60m")}</span>
             </div>
+            <Button
+              aria-label={t(locale === "en" ? "Switch to Chinese" : "Switch to English")}
+              className="language-toggle"
+              onClick={toggleLocale}
+              size="sm"
+              title={t(locale === "en" ? "Switch to Chinese" : "Switch to English")}
+              variant="ghost"
+            >
+              <Languages aria-hidden="true" size={16} />
+              <span>{locale === "en" ? "中文" : "EN"}</span>
+            </Button>
             <Link
-              aria-label={`${pending} pending approvals`}
+              aria-label={t("{count} pending approvals", { count: pending })}
               className="topbar-icon"
               params={{ section: "approvals" }}
               search={{ scenario: scenario === "normal" ? undefined : scenario }}
@@ -334,7 +352,7 @@ export function AppShell() {
               {pending ? <span>{pending}</span> : null}
             </Link>
             <Link
-              aria-label="Open system settings"
+              aria-label={t("Open system settings")}
               className="avatar"
               search={{ scenario: scenario === "normal" ? undefined : scenario }}
               to="/system"

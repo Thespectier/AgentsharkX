@@ -14,8 +14,11 @@ import {
   StatusOrb,
 } from "../components/ui";
 import { formatError, requestOperation } from "../lib/api";
+import { formatTimeWithZone } from "../lib/format";
+import { useI18n } from "../lib/i18n";
 
 export function SystemPage() {
+  const { t } = useI18n();
   const health = useQuery({
     queryKey: ["system-health"],
     queryFn: ({ signal }) => requestOperation("getSystemHealth", signal),
@@ -93,34 +96,35 @@ export function SystemPage() {
                 </span>
                 <div>
                   <SourceBadge source={source.source} />
-                  <strong>{source.version ?? "Version unavailable"}</strong>
+                  <strong>{source.version ?? t("Version unavailable")}</strong>
                   <span>
-                    {source.latencyMs === null ? "No latency sample" : `${source.latencyMs} ms`}
+                    {source.latencyMs === null ? t("No latency sample") : `${source.latencyMs} ms`}
                   </span>
                 </div>
               </div>
               <ul className="diagnostic-list">
                 <li>
-                  <StatusOrb status={source.status} /> Live management probe: {source.status}
+                  <StatusOrb status={source.status} /> {t("Live management probe")}:{" "}
+                  {t(source.status)}
                 </li>
                 <li>
-                  <Database size={14} /> Checked {new Date(source.checkedAt).toLocaleTimeString()}
+                  <Database size={14} /> {t("Checked")} {formatTimeWithZone(source.checkedAt)}
                 </li>
-                {source.message ? <li>{source.message}</li> : null}
+                {source.message ? <li>{t(source.message)}</li> : null}
               </ul>
               {issue ? (
                 <div className="recovery-guide" role="status">
                   <div className="recovery-guide__summary">
                     <AlertTriangle aria-hidden="true" size={15} />
-                    <strong>{issue.summary}</strong>
+                    <strong>{t(issue.summary)}</strong>
                   </div>
                   <ol>
                     {issue.checks.map((check) => (
-                      <li key={check}>{check}</li>
+                      <li key={check}>{t(check)}</li>
                     ))}
                   </ol>
                   <a href={issue.documentationPath} rel="noreferrer" target="_blank">
-                    Troubleshooting guide <ExternalLink aria-hidden="true" size={12} />
+                    {t("Troubleshooting guide")} <ExternalLink aria-hidden="true" size={12} />
                   </a>
                 </div>
               ) : null}
@@ -151,7 +155,7 @@ export function SystemPage() {
                 }
               />
               <div>
-                <strong>{capability.reason ?? capability.id}</strong>
+                <strong>{t(capability.reason ?? capability.id)}</strong>
                 <code>{capability.id}</code>
               </div>
               <SourceBadge source={capability.source} />

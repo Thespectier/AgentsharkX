@@ -27,11 +27,11 @@ capability registry, and error state for each source.
 
 ## Ownership
 
-| Component | Owns | Does not own |
-|---|---|---|
-| agentgateway | LLM/MCP/A2A/HTTP proxying, routes, providers, policies, guardrails, request logs, cost and latency telemetry | AgentGuard runtime identities, reviews, or rules |
-| AgentGuard | Runtime interception, resources, labels, runtime rules, approvals, traffic, sessions, and security audit | Gateway routing or transport policy |
-| AgentsharkX | Console navigation, admin authentication, source adapters, capability detection, normalization, aggregation, SSE, and high-frequency workflows | Proxying, task inference, a rules engine, replay, or durable event storage |
+| Component    | Owns                                                                                                                                           | Does not own                                                               |
+| ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| agentgateway | LLM/MCP/A2A/HTTP proxying, routes, providers, policies, guardrails, request logs, cost and latency telemetry                                   | AgentGuard runtime identities, reviews, or rules                           |
+| AgentGuard   | Runtime interception, resources, labels, runtime rules, approvals, traffic, sessions, and security audit                                       | Gateway routing or transport policy                                        |
+| AgentsharkX  | Console navigation, admin authentication, source adapters, capability detection, normalization, aggregation, SSE, and high-frequency workflows | Proxying, task inference, a rules engine, replay, or durable event storage |
 
 ## BFF boundaries
 
@@ -90,6 +90,15 @@ drawer can be restored after refresh. The application shell renders the active
 workspace's section routes as nested sidebar links; page headers do not duplicate
 that navigation. The URL remains the source of truth for the selected section,
 including after reload and while the desktop sidebar is collapsed.
+
+The application shell also owns presentation locale and time-zone policy. The
+English/Chinese selection is persisted only as a non-sensitive browser preference
+and updates the document language, navigation, shared controls, and primary
+business surfaces without a reload. API timestamps remain ISO 8601 instants from
+the BFF; the browser formats user-facing timestamps and trend buckets in
+`Asia/Shanghai` and labels them `UTC+8`. The Home greeting selects its day period
+from the current Beijing hour, so browser or host time-zone settings cannot change
+its meaning.
 
 ## Availability model
 

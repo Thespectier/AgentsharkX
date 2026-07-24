@@ -37,8 +37,9 @@ import type {
   GatewayProvider,
   GatewayRoute,
 } from "../../generated/api-client";
-import { formatCount, formatTime } from "../../lib/format";
+import { formatCount, formatTimeWithZone } from "../../lib/format";
 import { formatError, getScenario, requestOperation } from "../../lib/api";
+import { useI18n } from "../../lib/i18n";
 
 type Selection =
   | { kind: "provider"; id: string }
@@ -108,6 +109,7 @@ export function ConnectPage() {
 }
 
 function ConnectOverview({ summary, fetchedAt }: { summary: ConnectSummary; fetchedAt: string }) {
+  const { t } = useI18n();
   const icons = [Cable, Route, Network, Waypoints];
   const analytics = summary.analytics;
   return (
@@ -121,10 +123,10 @@ function ConnectOverview({ summary, fetchedAt }: { summary: ConnectSummary; fetc
                 <Icon size={18} />
               </span>
               <div>
-                <p>{item.label}</p>
-                <strong>{item.value === null ? "Unavailable" : formatCount(item.value)}</strong>
+                <p>{t(item.label)}</p>
+                <strong>{item.value === null ? t("Unavailable") : formatCount(item.value)}</strong>
                 <span>
-                  <CheckCircle2 size={12} /> {item.status}
+                  <CheckCircle2 size={12} /> {t(item.status)}
                 </span>
               </div>
             </Card>
@@ -134,16 +136,20 @@ function ConnectOverview({ summary, fetchedAt }: { summary: ConnectSummary; fetc
       <div className="content-grid">
         <Card>
           <CardHeader
-            action={<span className="fetched-at">Fetched {formatTime(fetchedAt)} UTC</span>}
+            action={
+              <span className="fetched-at">
+                {t("Fetched")} {formatTimeWithZone(fetchedAt)}
+              </span>
+            }
             description="Runtime and configuration were checked independently by the BFF."
             title="Connection status"
           />
           <div className="connection-check">
             <StatusOrb status={summary.health.status} />
             <div>
-              <strong>{summary.health.status}</strong>
+              <strong>{t(summary.health.status)}</strong>
               <span>
-                {summary.health.version ?? "Version unavailable"} ·{" "}
+                {summary.health.version ?? t("Version unavailable")} ·{" "}
                 {summary.health.latencyMs ?? "—"} ms
               </span>
             </div>
@@ -168,7 +174,7 @@ function ConnectOverview({ summary, fetchedAt }: { summary: ConnectSummary; fetc
               ]}
             />
           ) : (
-            <p className="resource-note">{analytics.reason ?? "Analytics is unavailable."}</p>
+            <p className="resource-note">{t(analytics.reason ?? "Analytics is unavailable.")}</p>
           )}
         </Card>
       </div>
@@ -220,7 +226,11 @@ function ProviderTable({
     { key: "kind", header: "Kind", render: (item) => <StatusBadge status={item.kind} /> },
     { key: "models", header: "Explicit references", render: (item) => item.modelCount },
     { key: "source", header: "Source", render: (item) => <SourceBadge source={item.source} /> },
-    { key: "fetched", header: "Fetched", render: (item) => `${formatTime(item.fetchedAt)} UTC` },
+    {
+      key: "fetched",
+      header: "Fetched",
+      render: (item) => formatTimeWithZone(item.fetchedAt),
+    },
   ];
   return (
     <ResourceCard
@@ -270,7 +280,11 @@ function ModelTable({
       render: (item) => <code>{item.provider ?? item.routing ?? "Not provided"}</code>,
     },
     { key: "source", header: "Source", render: (item) => <SourceBadge source={item.source} /> },
-    { key: "fetched", header: "Fetched", render: (item) => `${formatTime(item.fetchedAt)} UTC` },
+    {
+      key: "fetched",
+      header: "Fetched",
+      render: (item) => formatTimeWithZone(item.fetchedAt),
+    },
   ];
   return (
     <ResourceCard
@@ -324,7 +338,11 @@ function McpView({
     },
     { key: "scope", header: "Scope", render: (item) => <code>{item.scope}</code> },
     { key: "source", header: "Source", render: (item) => <SourceBadge source={item.source} /> },
-    { key: "fetched", header: "Fetched", render: (item) => `${formatTime(item.fetchedAt)} UTC` },
+    {
+      key: "fetched",
+      header: "Fetched",
+      render: (item) => formatTimeWithZone(item.fetchedAt),
+    },
   ];
   return (
     <ResourceCard
@@ -387,7 +405,11 @@ function TrafficView({
     },
     { key: "target", header: "Backends", render: (item) => targetSummary(item) },
     { key: "source", header: "Source", render: (item) => <SourceBadge source={item.source} /> },
-    { key: "fetched", header: "Fetched", render: (item) => `${formatTime(item.fetchedAt)} UTC` },
+    {
+      key: "fetched",
+      header: "Fetched",
+      render: (item) => formatTimeWithZone(item.fetchedAt),
+    },
   ];
   return (
     <ResourceCard
@@ -458,17 +480,18 @@ function ResourceControls({
   page?: { nextCursor: string | null; total: number };
   fetching: boolean;
 }) {
+  const { t } = useI18n();
   return (
     <div className="resource-toolbar">
       <label>
-        <span className="sr-only">Filter resources</span>
+        <span className="sr-only">{t("Filter resources")}</span>
         <input
-          placeholder="Filter explicit resources"
+          placeholder={t("Filter explicit resources")}
           value={pager.search}
           onChange={(event) => pager.setSearch(event.target.value)}
         />
       </label>
-      <span>{page ? `${page.total} total` : "—"}</span>
+      <span>{page ? `${page.total} ${t("total")}` : "—"}</span>
       <Button
         disabled={!pager.canPrevious || fetching}
         onClick={pager.previous}
@@ -517,6 +540,7 @@ function usePager() {
 }
 
 function SetupView() {
+  const { t } = useI18n();
   const query = useQuery({
     queryKey: ["connect-setup", getScenario()],
     queryFn: ({ signal }) => requestOperation("verifyGatewaySetup", signal),
@@ -539,11 +563,11 @@ function SetupView() {
           <StatusOrb status={setup.status} />
           <div>
             <strong>
-              {setup.configurationReadable ? "Connection verified" : "Configuration unreadable"}
+              {t(setup.configurationReadable ? "Connection verified" : "Configuration unreadable")}
             </strong>
             <span>
-              {setup.version ?? "Version unavailable"} · {setup.latencyMs ?? "—"} ms · checked{" "}
-              {formatTime(setup.checkedAt)} UTC
+              {setup.version ?? t("Version unavailable")} · {setup.latencyMs ?? "—"} ms ·{" "}
+              {t("Checked")} {formatTimeWithZone(setup.checkedAt)}
             </span>
           </div>
         </div>
@@ -570,6 +594,7 @@ function NativeLinks({
   links: { rawConfig?: string; cel?: string; llmPlayground?: string; mcpPlayground?: string };
   compact?: boolean;
 }) {
+  const { t } = useI18n();
   const values = [
     ["Raw Config", links.rawConfig],
     ["CEL Playground", links.cel],
@@ -579,7 +604,7 @@ function NativeLinks({
   const available = values.flatMap(([label, href]) => (href ? [{ label, href }] : []));
   if (!available.length)
     return compact ? (
-      <p className="resource-note">No validated console URL is configured.</p>
+      <p className="resource-note">{t("No validated console URL is configured.")}</p>
     ) : null;
   return (
     <Card className={compact ? "native-links native-links--compact" : "native-links"}>
@@ -649,7 +674,7 @@ function detailItems(
   const common = [
     { label: "Source", value: <SourceBadge source={item.source} /> },
     { label: "Upstream ID", value: <code>{item.upstreamId ?? "Not provided"}</code> },
-    { label: "Fetched", value: item.fetchedAt },
+    { label: "Fetched", value: formatTimeWithZone(item.fetchedAt) },
     { label: "Raw reference", value: <code>{item.rawRef.id}</code> },
   ];
   if (selection.kind === "provider") {

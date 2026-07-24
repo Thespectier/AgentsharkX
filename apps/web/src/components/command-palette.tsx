@@ -15,6 +15,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Button, cn } from "./ui";
+import { useI18n } from "../lib/i18n";
 
 const commands = [
   { label: "Open Home", hint: "Runtime posture", path: "/", icon: Home },
@@ -53,6 +54,7 @@ export function CommandPalette({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
+  const { t } = useI18n();
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -62,9 +64,11 @@ export function CommandPalette({
     const normalized = query.trim().toLowerCase();
     if (!normalized) return commands;
     return commands.filter((item) =>
-      `${item.label} ${item.hint}`.toLowerCase().includes(normalized),
+      `${item.label} ${item.hint} ${t(item.label)} ${t(item.hint)}`
+        .toLowerCase()
+        .includes(normalized),
     );
-  }, [query]);
+  }, [query, t]);
 
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
@@ -105,12 +109,12 @@ export function CommandPalette({
       {open ? (
         <div className="command-layer">
           <motion.button
-            aria-label="Close command palette"
+            aria-label={t("Close command palette")}
             className="command-backdrop"
             onClick={() => onOpenChange(false)}
           />
           <motion.div
-            aria-label="Command palette"
+            aria-label={t("Command palette")}
             aria-modal="true"
             className="command-palette"
             initial={reduced ? false : { opacity: 0, y: -12, scale: 0.98 }}
@@ -123,7 +127,7 @@ export function CommandPalette({
               <input
                 aria-activedescendant={filtered[active] ? `command-${active}` : undefined}
                 aria-controls="command-results"
-                aria-label="Search commands"
+                aria-label={t("Search commands")}
                 onChange={(event) => {
                   setQuery(event.target.value);
                   setActive(0);
@@ -139,13 +143,13 @@ export function CommandPalette({
                   }
                   if (event.key === "Enter" && filtered[active]) run(filtered[active].path);
                 }}
-                placeholder="Jump to a workspace or action…"
+                placeholder={t("Jump to a workspace or action…")}
                 ref={inputRef}
                 role="combobox"
                 value={query}
               />
               <Button
-                aria-label="Close command palette"
+                aria-label={t("Close command palette")}
                 onClick={() => onOpenChange(false)}
                 size="sm"
                 variant="ghost"
@@ -171,8 +175,8 @@ export function CommandPalette({
                         <Icon aria-hidden="true" size={17} />
                       </span>
                       <span>
-                        <strong>{item.label}</strong>
-                        <small>{item.hint}</small>
+                        <strong>{t(item.label)}</strong>
+                        <small>{t(item.hint)}</small>
                       </span>
                       <kbd>↵</kbd>
                     </button>
@@ -181,19 +185,19 @@ export function CommandPalette({
               ) : (
                 <div className="command-empty">
                   <Command size={22} />
-                  <p>No matching command</p>
+                  <p>{t("No matching command")}</p>
                 </div>
               )}
             </div>
             <footer className="command-footer">
               <span>
                 <kbd>↑</kbd>
-                <kbd>↓</kbd> Navigate
+                <kbd>↓</kbd> {t("Navigate")}
               </span>
               <span>
-                <kbd>esc</kbd> Close
+                <kbd>esc</kbd> {t("Close")}
               </span>
-              <span>Mock console</span>
+              <span>{t("Mock console")}</span>
             </footer>
           </motion.div>
         </div>

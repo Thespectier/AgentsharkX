@@ -13,12 +13,14 @@ import {
 } from "recharts";
 
 import {
+  displayTimeZoneLabel,
   formatCount,
   formatDuration,
-  formatTime,
+  formatTimeWithZone,
   formatTrendTick,
   formatTrendTimestamp,
 } from "../lib/format";
+import { useI18n } from "../lib/i18n";
 import type { TrendPoint, UnifiedEvent } from "../types";
 import { SeverityBadge, SourceBadge, StatusOrb, cn } from "../components/ui";
 
@@ -39,6 +41,7 @@ export function LiveFlow({
   status: "connecting" | "live" | "paused";
 }) {
   const reduced = useReducedMotion();
+  const { t } = useI18n();
   const pulses = useMemo(() => events.slice(0, 12), [events]);
   return (
     <div
@@ -48,9 +51,9 @@ export function LiveFlow({
       <div className="live-flow__header">
         <div>
           <span className="live-flow__label">
-            <Radio size={13} /> Live control plane
+            <Radio size={13} /> {t("Live control plane")}
           </span>
-          <strong>Agent traffic & decisions</strong>
+          <strong>{t("Agent traffic & decisions")}</strong>
         </div>
         <span className="live-flow__state">
           <StatusOrb
@@ -58,10 +61,10 @@ export function LiveFlow({
               status === "live" ? "healthy" : status === "connecting" ? "connecting" : "degraded"
             }
           />
-          {status}
+          {t(status)}
         </span>
       </div>
-      <svg aria-label="Live agent traffic topology" role="img" viewBox="0 0 712 236">
+      <svg aria-label={t("Live agent traffic topology")} role="img" viewBox="0 0 712 236">
         <defs>
           <linearGradient id="flow-blue" x1="0" x2="1">
             <stop offset="0" stopColor="#5c92ff" stopOpacity="0.2" />
@@ -138,13 +141,13 @@ export function LiveFlow({
       <div className="live-flow__footer">
         <span>
           <i className="legend-dot legend-dot--blue" />
-          Gateway traffic
+          {t("Gateway traffic")}
         </span>
         <span>
           <i className="legend-dot legend-dot--cyan" />
-          Guard decisions
+          {t("Guard decisions")}
         </span>
-        <span>Resumable SSE · no inferred correlation</span>
+        <span>{t("Resumable SSE · no inferred correlation")}</span>
       </div>
     </div>
   );
@@ -165,6 +168,7 @@ function FlowNode({
   icon: React.ReactNode;
   small?: boolean;
 }) {
+  const { t } = useI18n();
   return (
     <g className={cn("flow-node", small && "flow-node--small")} transform={`translate(${x} ${y})`}>
       <rect height={small ? 48 : 60} rx={small ? 10 : 13} width={small ? 104 : 124} />
@@ -172,8 +176,8 @@ function FlowNode({
         <div className="flow-node__content">
           {icon}
           <span>
-            <strong>{label}</strong>
-            <small>{meta}</small>
+            <strong>{t(label)}</strong>
+            <small>{t(meta)}</small>
           </span>
         </div>
       </foreignObject>
@@ -183,6 +187,7 @@ function FlowNode({
 
 export function ActivityRail({ events, limit = 6 }: { events: UnifiedEvent[]; limit?: number }) {
   const reduced = useReducedMotion();
+  const { t } = useI18n();
   return (
     <div className="activity-rail">
       <AnimatePresence initial={false}>
@@ -200,13 +205,13 @@ export function ActivityRail({ events, limit = 6 }: { events: UnifiedEvent[]; li
             <div className="activity-item__body">
               <div className="activity-item__meta">
                 <SourceBadge source={event.source} />
-                <span>{formatTime(event.timestamp)}</span>
+                <span>{formatTimeWithZone(event.timestamp)}</span>
               </div>
               <p>{event.summary}</p>
               <div className="activity-item__footer">
-                <span>{event.phase ?? event.kind}</span>
+                <span>{t(event.phase ?? event.kind)}</span>
                 {event.decision ? (
-                  <strong>{event.decision}</strong>
+                  <strong>{t(event.decision)}</strong>
                 ) : (
                   <SeverityBadge severity={event.severity} />
                 )}
@@ -227,16 +232,21 @@ export function RequestTrendChart({
   mode?: "requests" | "latency" | "security";
 }) {
   const reduced = useReducedMotion();
+  const { locale, t } = useI18n();
   const primaryKey = mode === "latency" ? "latency" : mode === "security" ? "denied" : "requests";
   const color = mode === "security" ? "#ff627d" : mode === "latency" ? "#32d6e8" : "#5c92ff";
   const primaryAxis = mode === "requests" ? "traffic" : "primary";
-  const primaryName =
-    mode === "latency" ? "P95 latency" : mode === "security" ? "Denied" : "Requests";
+  const primaryName = t(
+    mode === "latency" ? "P95 latency" : mode === "security" ? "Denied" : "Requests",
+  );
   return (
     <div
       className="chart-wrap"
       role="img"
-      aria-label={`${mode} trend chart for the last 60 minutes in ${data.length} five-minute UTC buckets`}
+      aria-label={t(
+        "{mode} trend chart for the last 60 minutes in {count} five-minute Beijing-time buckets",
+        { mode: t(mode), count: data.length },
+      )}
     >
       <ResponsiveContainer height="100%" width="100%">
         <AreaChart data={data} margin={{ left: 0, right: 0, top: 12, bottom: 0 }}>
@@ -295,17 +305,22 @@ export function RequestTrendChart({
             filterNull={false}
             formatter={(value, name) => [
               value == null
-                ? "No request samples"
-                : name === "P95 latency"
+                ? t("No request samples")
+                : mode === "latency"
                   ? formatDuration(Number(value))
                   : formatCount(Number(value)),
-              name,
+              String(name),
             ]}
             labelFormatter={(value, payload) => {
               const point = payload[0]?.payload as TrendPoint | undefined;
               const sampleLabel =
-                mode === "latency" ? ` · ${formatCount(point?.latencySamples ?? 0)} samples` : "";
-              return `${formatTrendTimestamp(String(value))} UTC · 5-minute bucket${sampleLabel}`;
+                mode === "latency"
+                  ? ` · ${formatCount(point?.latencySamples ?? 0)} ${t("samples")}`
+                  : "";
+              return `${formatTrendTimestamp(
+                String(value),
+                locale,
+              )} ${displayTimeZoneLabel} · ${t("5-minute bucket")}${sampleLabel}`;
             }}
           />
           <Area
@@ -324,7 +339,7 @@ export function RequestTrendChart({
               animationDuration={reduced ? 0 : 650}
               dataKey="denied"
               dot={false}
-              name="Denied"
+              name={t("Denied")}
               stroke="#ff627d"
               strokeDasharray="4 4"
               strokeWidth={1.5}

@@ -10,6 +10,7 @@ import {
   isMockMode,
   requestOperation,
 } from "../lib/api";
+import { useI18n } from "../lib/i18n";
 
 export function AuthGate({
   children,
@@ -18,6 +19,7 @@ export function AuthGate({
   children: ReactNode;
   enabled?: boolean;
 }) {
+  const { t } = useI18n();
   const queryClient = useQueryClient();
   const [token, setToken] = useState("");
   const [sessionLost, setSessionLost] = useState(false);
@@ -57,7 +59,7 @@ export function AuthGate({
       <div className="auth-screen" role="status">
         <div className="auth-probe">
           <Radar aria-hidden="true" size={22} />
-          <span>Checking the control-plane session…</span>
+          <span>{t("Checking the control-plane session…")}</span>
         </div>
       </div>
     );
@@ -85,14 +87,15 @@ export function AuthGate({
           <div className="auth-card__mark">
             <ShieldCheck aria-hidden="true" size={25} />
           </div>
-          <p className="eyebrow">AgentsharkX / Admin session</p>
-          <h1 id="auth-title">Unlock the control plane</h1>
+          <p className="eyebrow">{t("AgentsharkX / Admin session")}</p>
+          <h1 id="auth-title">{t("Unlock the control plane")}</h1>
           <p>
-            The token is exchanged once for a strict browser session. It is never stored in local
-            storage or exposed to upstream services.
+            {t(
+              "The token is exchanged once for a strict browser session. It is never stored in local storage or exposed to upstream services.",
+            )}
           </p>
           <form onSubmit={submit}>
-            <label htmlFor="admin-token">Administrator token</label>
+            <label htmlFor="admin-token">{t("Administrator token")}</label>
             <div className="auth-field">
               <LockKeyhole aria-hidden="true" size={17} />
               <input

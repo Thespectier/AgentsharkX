@@ -40,8 +40,9 @@ import type {
   TrustResourceType,
   TrustScanJob,
 } from "../../generated/api-client";
-import { formatCount, formatTime } from "../../lib/format";
+import { formatCount, formatTimeWithZone } from "../../lib/format";
 import { formatError, getScenario, mutateOperation, requestOperation } from "../../lib/api";
+import { useI18n } from "../../lib/i18n";
 import { synchronizeAgentGuardData } from "../../lib/query-sync";
 
 interface ScanRequest {
@@ -52,6 +53,7 @@ interface ScanRequest {
 }
 
 export function TrustPage() {
+  const { t } = useI18n();
   const section = useWorkspaceSection("trust", "agents");
   const queryClient = useQueryClient();
   const [activeJobId, setActiveJobId] = useState<string>();
@@ -94,7 +96,9 @@ export function TrustPage() {
     shouldBlockFn: () =>
       jobRunning &&
       !window.confirm(
-        "AgentGuard detection is still running. It will continue on the server if you leave this view.",
+        t(
+          "AgentGuard detection is still running. It will continue on the server if you leave this view.",
+        ),
       ),
   });
 
@@ -134,6 +138,7 @@ export function TrustPage() {
 }
 
 function AgentsView() {
+  const { t } = useI18n();
   const pager = usePager();
   const [selected, setSelected] = useState<TrustAgent>();
   const returnFocusRef = useRef<HTMLElement | null>(null);
@@ -163,7 +168,7 @@ function AgentsView() {
       header: "Status",
       render: (item) => (
         <span className="status-cell">
-          <StatusOrb status={item.status} /> {item.status}
+          <StatusOrb status={item.status} /> {t(item.status)}
         </span>
       ),
     },
@@ -182,7 +187,7 @@ function AgentsView() {
     {
       key: "activity",
       header: "Last active",
-      render: (item) => (item.lastActive ? `${formatTime(item.lastActive)} UTC` : "Unknown"),
+      render: (item) => (item.lastActive ? formatTimeWithZone(item.lastActive) : t("Unknown")),
     },
     { key: "source", header: "Source", render: (item) => <SourceBadge source={item.source} /> },
   ];
@@ -198,8 +203,9 @@ function AgentsView() {
           <div className="trust-note">
             <ShieldQuestion size={17} />
             <p>
-              Every row originates from an explicit AgentGuard agent_id. This is contextual
-              metadata, not remote attestation or cryptographic identity.
+              {t(
+                "Every row originates from an explicit AgentGuard agent_id. This is contextual metadata, not remote attestation or cryptographic identity.",
+              )}
             </p>
           </div>
           <DefinitionList
@@ -255,6 +261,7 @@ function AgentWorkspace({
   onClose: () => void;
   returnFocusRef: React.RefObject<HTMLElement | null>;
 }) {
+  const { t } = useI18n();
   const query = useQuery({
     queryKey: ["trust-agent", agent?.id, getScenario()],
     enabled: Boolean(agent),
@@ -271,7 +278,7 @@ function AgentWorkspace({
       title={workspace?.agent.name ?? agent?.name ?? "Agent"}
     >
       {query.isLoading ? (
-        <div className="resource-note">Loading explicit workspace facts…</div>
+        <div className="resource-note">{t("Loading explicit workspace facts…")}</div>
       ) : null}
       {query.isError ? (
         <ErrorState description={formatError(query.error)} onRetry={() => void query.refetch()} />
@@ -295,15 +302,15 @@ function AgentWorkspace({
                 {workspace.sessions.map((session) => (
                   <li key={session.id}>
                     <code>{session.upstreamId}</code>
-                    <span>{session.userId ?? "Unknown principal"}</span>
+                    <span>{session.userId ?? t("Unknown principal")}</span>
                     <time>
-                      {session.lastSeen ? `${formatTime(session.lastSeen)} UTC` : "Unknown"}
+                      {session.lastSeen ? formatTimeWithZone(session.lastSeen) : t("Unknown")}
                     </time>
                   </li>
                 ))}
               </ul>
             ) : (
-              <p className="resource-note">No explicit sessions.</p>
+              <p className="resource-note">{t("No explicit sessions.")}</p>
             )}
           </Card>
           <Card>
@@ -319,7 +326,7 @@ function AgentWorkspace({
                 ))}
               </ul>
             ) : (
-              <p className="resource-note">No explicit resources.</p>
+              <p className="resource-note">{t("No explicit resources.")}</p>
             )}
           </Card>
         </div>
@@ -335,6 +342,7 @@ function ResourcesView({
   onScan: (request: ScanRequest) => void;
   scanPending: boolean;
 }) {
+  const { t } = useI18n();
   const pager = usePager();
   const queryClient = useQueryClient();
   const [resourceType, setResourceType] = useState<TrustResourceType | "">("");
@@ -440,13 +448,13 @@ function ResourcesView({
             <StatusBadge status={item.detection.label ?? "detected"} /> {item.detection.riskLevel}
           </span>
         ) : (
-          "Not scanned"
+          t("Not scanned")
         ),
     },
     {
       key: "fetched",
       header: "Fetched",
-      render: (item) => `${formatTime(item.fetchedAt)} UTC`,
+      render: (item) => formatTimeWithZone(item.fetchedAt),
     },
     { key: "source", header: "Source", render: (item) => <SourceBadge source={item.source} /> },
     {
@@ -455,7 +463,7 @@ function ResourcesView({
       render: (item) =>
         item.type === "tool" ? (
           <Button
-            aria-label={`Edit labels for ${item.name}`}
+            aria-label={t("Edit labels for {name}", { name: item.name })}
             disabled={pendingLabelId === item.id}
             onClick={(event) => {
               event.stopPropagation();
@@ -468,7 +476,7 @@ function ResourcesView({
           </Button>
         ) : (
           <Button
-            aria-label={`Scan ${item.name}`}
+            aria-label={t("Scan {name}", { name: item.name })}
             disabled={scanPending}
             onClick={(event) => {
               event.stopPropagation();
@@ -497,18 +505,18 @@ function ResourcesView({
         <div className="resource-filter-row">
           <ResourceControls pager={pager} page={query.data.data} fetching={query.isFetching} />
           <label>
-            <span className="sr-only">Resource type</span>
+            <span className="sr-only">{t("Resource type")}</span>
             <select
-              aria-label="Resource type"
+              aria-label={t("Resource type")}
               value={resourceType}
               onChange={(event) => {
                 setResourceType(event.target.value as TrustResourceType | "");
                 pager.reset();
               }}
             >
-              <option value="">All resource types</option>
-              <option value="tool">Tools</option>
-              <option value="skill">Skills</option>
+              <option value="">{t("All resource types")}</option>
+              <option value="tool">{t("Tools")}</option>
+              <option value="skill">{t("Skills")}</option>
               <option value="mcp">MCP</option>
             </select>
           </label>
@@ -550,6 +558,7 @@ function LabelDialog({
   onClose: () => void;
   onSave: (update: LabelUpdate) => void;
 }) {
+  const { t } = useI18n();
   const [boundary, setBoundary] = useState("");
   const [sensitivity, setSensitivity] = useState("");
   const [integrity, setIntegrity] = useState("");
@@ -588,7 +597,7 @@ function LabelDialog({
           ["Integrity", integrity, setIntegrity],
         ].map(([label, value, update]) => (
           <label className="field" key={label as string}>
-            <span>{label as string}</span>
+            <span>{t(label as string)}</span>
             <input
               disabled={pending}
               maxLength={64}
@@ -599,7 +608,7 @@ function LabelDialog({
           </label>
         ))}
         <label className="field">
-          <span>Tags (comma separated)</span>
+          <span>{t("Tags (comma separated)")}</span>
           <input
             disabled={pending}
             onChange={(event) => setTags(event.target.value)}
@@ -631,6 +640,7 @@ function LabelDialog({
 }
 
 function ScansView({ activeJob }: { activeJob?: TrustScanJob }) {
+  const { t } = useI18n();
   const query = useQuery({
     queryKey: ["trust-scans", getScenario()],
     queryFn: ({ signal }) => requestOperation("listTrustScans", { signal, query: { limit: 100 } }),
@@ -657,7 +667,7 @@ function ScansView({ activeJob }: { activeJob?: TrustScanJob }) {
               <StatusBadge status={job.status} />
             </div>
             <h2>{job.agentUpstreamId}</h2>
-            <p>{scanSummary(job)}</p>
+            <p>{t(scanSummary(job))}</p>
             {job.results.map((result) => (
               <p key={result.resourceUpstreamId ?? result.name}>
                 <strong>{result.name ?? result.resourceUpstreamId}</strong>:{" "}
@@ -666,7 +676,7 @@ function ScansView({ activeJob }: { activeJob?: TrustScanJob }) {
             ))}
             <footer>
               <span>{job.id}</span>
-              <time>{formatTime(job.updatedAt)} UTC</time>
+              <time>{formatTimeWithZone(job.updatedAt)}</time>
             </footer>
           </div>
         </Card>
@@ -691,12 +701,13 @@ function ScanActivity({
   retrying: boolean;
   onRetry: () => void;
 }) {
+  const { t } = useI18n();
   if (error)
     return <ErrorState description={error} onRetry={onRetry} title="Scan status unavailable" />;
   if (!job)
     return (
       <div className="scan-activity" role="status">
-        <LoaderCircle className="spin" size={17} /> Creating scan job…
+        <LoaderCircle className="spin" size={17} /> {t("Creating scan job…")}
       </div>
     );
   if (job.status === "queued" || job.status === "running")
@@ -705,7 +716,7 @@ function ScanActivity({
         <LoaderCircle className="spin" size={17} />
         <div>
           <strong>Detection {job.status}</strong>
-          <span>Server-reported state · no synthetic percentage</span>
+          <span>{t("Server-reported state · no synthetic percentage")}</span>
         </div>
       </div>
     );
@@ -714,11 +725,11 @@ function ScanActivity({
       <div className="scan-activity scan-activity--error" role="alert">
         <RotateCcw size={17} />
         <div>
-          <strong>Detection failed</strong>
-          <span>{job.error?.message ?? "AgentGuard did not complete the scan."}</span>
+          <strong>{t("Detection failed")}</strong>
+          <span>{job.error?.message ?? t("AgentGuard did not complete the scan.")}</span>
         </div>
         <Button disabled={retrying || job.error?.retryable === false} onClick={onRetry} size="sm">
-          {retrying ? "Retrying…" : "Retry scan"}
+          {retrying ? t("Retrying…") : t("Retry scan")}
         </Button>
       </div>
     );
@@ -726,7 +737,7 @@ function ScanActivity({
     <div className="scan-activity scan-activity--success" role="status">
       <CheckCircle2 size={17} />
       <div>
-        <strong>Detection succeeded</strong>
+        <strong>{t("Detection succeeded")}</strong>
         <span>{job.results.length} AgentGuard result(s) received</span>
       </div>
     </div>
@@ -744,17 +755,20 @@ function ResourceControls({
   page: { nextCursor: string | null; total: number };
   fetching: boolean;
 }) {
+  const { t } = useI18n();
   return (
     <div className="resource-toolbar">
       <label>
-        <span className="sr-only">Filter Trust resources</span>
+        <span className="sr-only">{t("Filter Trust resources")}</span>
         <input
-          placeholder="Filter explicit Trust data"
+          placeholder={t("Filter explicit Trust data")}
           value={pager.search}
           onChange={(event) => pager.setSearch(event.target.value)}
         />
       </label>
-      <span>{page.total} total</span>
+      <span>
+        {page.total} {t("total")}
+      </span>
       <Button
         disabled={!pager.canPrevious || fetching}
         onClick={pager.previous}

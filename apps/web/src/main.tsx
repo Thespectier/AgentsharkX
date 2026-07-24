@@ -5,6 +5,7 @@ import { createRoot } from "react-dom/client";
 
 import { router } from "./app/router";
 import { AuthGate } from "./app/auth-gate";
+import { I18nProvider } from "./lib/i18n";
 import "./styles/index.css";
 
 async function enableMocks() {
@@ -42,9 +43,11 @@ await enableMocks();
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
-      <AuthGate>
-        <RouterProvider router={router} />
-      </AuthGate>
+      <I18nProvider>
+        <AuthGate>
+          <RouterProvider router={router} />
+        </AuthGate>
+      </I18nProvider>
     </QueryClientProvider>
   </StrictMode>,
 );
