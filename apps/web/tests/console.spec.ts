@@ -81,6 +81,58 @@ test("sidebar subnavigation renders immediately without a hard refresh", async (
   await expect(page.getByRole("heading", { name: "Security events" })).toBeVisible();
 });
 
+test("desktop sidebar collapses into a compact icon rail and restores", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.addInitScript(() => {
+    if (localStorage.getItem("agentshark.sidebar") === null) {
+      localStorage.setItem("agentshark.sidebar", "expanded");
+    }
+  });
+  await page.goto("/connect/overview");
+
+  const sidebar = page.locator(".sidebar");
+  const frame = page.locator(".app-frame");
+  await expect(sidebar).toHaveCSS("width", "248px");
+  await page.getByRole("button", { name: "Collapse sidebar" }).click();
+  await expect(sidebar).toHaveCSS("width", "64px");
+  await expect(frame).toHaveCSS("margin-left", "64px");
+  await expect(page.getByRole("button", { name: "Expand sidebar" })).toHaveAttribute(
+    "aria-expanded",
+    "false",
+  );
+  await expect(page.getByRole("link", { name: "Connect", exact: true })).toHaveAttribute(
+    "title",
+    "Connect",
+  );
+  await expect(page.getByRole("group", { name: "Connect sections" })).toBeHidden();
+
+  const rail = await sidebar.evaluate((element) => {
+    const links = [...element.querySelectorAll<HTMLElement>(".nav-item")];
+    return {
+      horizontalOverflow: element.scrollWidth > element.clientWidth,
+      linksCentered: links.every((link) => {
+        const icon = link.querySelector("svg");
+        if (!icon) return false;
+        const linkBounds = link.getBoundingClientRect();
+        const iconBounds = icon.getBoundingClientRect();
+        return (
+          Math.abs(
+            iconBounds.left + iconBounds.width / 2 - (linkBounds.left + linkBounds.width / 2),
+          ) < 1
+        );
+      }),
+    };
+  });
+  expect(rail).toEqual({ horizontalOverflow: false, linksCentered: true });
+
+  await page.reload();
+  await expect(sidebar).toHaveCSS("width", "64px");
+  await page.getByRole("button", { name: "Expand sidebar" }).click();
+  await expect(sidebar).toHaveCSS("width", "248px");
+  await expect(frame).toHaveCSS("margin-left", "248px");
+  await expect(page.getByRole("group", { name: "Connect sections" })).toBeVisible();
+});
+
 test("mobile navigation exposes subpages even after desktop sidebar was collapsed", async ({
   page,
 }) => {

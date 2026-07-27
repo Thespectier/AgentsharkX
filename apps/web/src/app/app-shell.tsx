@@ -163,9 +163,11 @@ export function AppShell() {
         <nav aria-label={t("Primary navigation")} className="primary-nav">
           <p className="nav-label">{t("Workspaces")}</p>
           <Link
+            aria-label={collapsed ? t("Home") : undefined}
             aria-current={location.pathname === "/" ? "page" : undefined}
             className={cn("nav-item", location.pathname === "/" && "nav-item--active")}
             search={{ scenario: scenario === "normal" ? undefined : scenario }}
+            title={collapsed ? t("Home") : undefined}
             to="/"
           >
             <Home aria-hidden="true" size={18} />
@@ -180,9 +182,11 @@ export function AppShell() {
             return (
               <div className="nav-workspace" key={item.label}>
                 <Link
+                  aria-label={collapsed ? t(item.label) : undefined}
                   className={cn("nav-item", active && "nav-item--active")}
                   params={{ section: item.section }}
                   search={{ scenario: scenario === "normal" ? undefined : scenario }}
+                  title={collapsed ? t(item.label) : undefined}
                   to={item.route}
                 >
                   <Icon aria-hidden="true" size={18} />
@@ -221,26 +225,32 @@ export function AppShell() {
         </nav>
         <div className="sidebar__bottom">
           <Link
+            aria-label={collapsed ? t("System") : undefined}
             className={cn("nav-item", location.pathname === "/system" && "nav-item--active")}
             search={{ scenario: scenario === "normal" ? undefined : scenario }}
+            title={collapsed ? t("System") : undefined}
             to="/system"
           >
             <Settings size={18} />
             <span>{t("System")}</span>
           </Link>
           <a
+            aria-label={collapsed ? t("Documentation") : undefined}
             className="nav-item"
             href="https://github.com/Thespectier/AgentsharkX"
             rel="noreferrer"
             target="_blank"
+            title={collapsed ? t("Documentation") : undefined}
           >
             <CircleHelp size={18} />
             <span>{t("Documentation")}</span>
           </a>
           <button
+            aria-expanded={!collapsed}
             aria-label={t(collapsed ? "Expand sidebar" : "Collapse sidebar")}
             className="sidebar-toggle"
             onClick={() => setCollapsed((value) => !value)}
+            title={t(collapsed ? "Expand sidebar" : "Collapse sidebar")}
           >
             {collapsed ? (
               <ChevronRight size={16} />
