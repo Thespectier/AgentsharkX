@@ -46,6 +46,7 @@ export const baseEvents: UnifiedEvent[] = [
     raw: {
       notice: "Phase 1 mock; no upstream raw schema is asserted.",
       mockId: "log-73b1",
+      hasPayload: true,
       redacted: true,
     },
   },
@@ -755,6 +756,9 @@ export const protectApprovals: Approval[] = [
 ];
 
 export const auditData: AuditData = {
+  links: {
+    gatewayLogs: "http://127.0.0.1:15000/ui/llm/logs",
+  },
   metrics: [
     {
       id: "cost",

@@ -42,4 +42,7 @@ identity shapes; no credential value is returned by the public read contract.
 The Phase 6 log and Analytics adapters send the same exact rolling 60-minute
 `timeRange`. Search always sends `includeAttributes=false`; Analytics requests
 `bucketSeconds=300`. The BFF does not call `/api/logs/get` and rejects
-unexpected attributes or payload fields.
+unexpected attributes or payload fields. The pinned UI route `/ui/llm/logs`
+accepts an exact upstream log ID in the `log` query parameter and its native
+detail loader calls `/api/logs/get` with `includePayload=true`; Audit links to
+that source-owned flow without adding it to the BFF contract.

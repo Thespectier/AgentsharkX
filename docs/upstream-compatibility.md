@@ -82,7 +82,10 @@ directory persistent and owner-only. This store is owned by agentgateway, not
 AgentsharkX. The pinned upstream retains LLM prompt/completion payload rows when
 available; AgentsharkX searches with `includeAttributes=false` and never calls
 payload detail, so those fields do not cross the BFF contract. The pinned
-v1.3.1 request types also verify explicit `timeRange` on log search and
+v1.3.1 UI route `/ui/llm/logs?log=<id>` loads the exact source record and asks
+agentgateway for its own retained payload detail. Audit exposes this native
+deep link from the preserved upstream log ID. The pinned v1.3.1 request types
+also verify explicit `timeRange` on log search and
 `timeRange` plus `bucketSeconds` on Analytics; AgentsharkX uses one exact
 rolling 60-minute range and 300-second buckets for both Home and Audit.
 
@@ -214,7 +217,9 @@ For Phase 6, request-log search, Analytics, AgentGuard Traffic/Audit/Sessions,
 and their exact populated shapes were cross-checked against the pinned source.
 The gateway requests share an explicit 60-minute `timeRange`; search always
 sets `includeAttributes=false`, Analytics sets `bucketSeconds=300`, and the BFF
-never calls payload detail. The AgentGuard audit projection does not decode
+never calls payload detail. The pinned native Logs route accepts the preserved
+log ID through its `log` query parameter and loads payload detail within the
+agentgateway console. The AgentGuard audit projection does not decode
 runtime state, arguments/results, plugin results, or free-form reasons.
 Contract tests include sentinel secrets in those omitted fields and fail if
 they reach normalized JSON. AgentGuard Traffic supplies aggregate scalars only

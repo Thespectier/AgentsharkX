@@ -111,6 +111,9 @@ export interface AuditData {
   metrics: Metric[];
   trend: TrendPoint[];
   events: UnifiedEvent[];
+  links: {
+    gatewayLogs?: string;
+  };
   sessions: Array<{
     id: string;
     upstreamId: string;

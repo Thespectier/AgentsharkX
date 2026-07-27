@@ -189,6 +189,7 @@ const emptyAudit: AuditData = {
   trend: [],
   events: [],
   sessions: [],
+  links: auditData.links,
 };
 
 function listResponse<T>(request: Request, data: T[], source: Source) {

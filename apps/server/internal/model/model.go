@@ -380,6 +380,7 @@ type ConsoleLinks struct {
 	CEL               string `json:"cel,omitempty"`
 	LLMPlayground     string `json:"llmPlayground,omitempty"`
 	MCPPlayground     string `json:"mcpPlayground,omitempty"`
+	GatewayLogs       string `json:"gatewayLogs,omitempty"`
 	AgentGuardConsole string `json:"agentguardConsole,omitempty"`
 }
 
@@ -735,6 +736,7 @@ type AuditData struct {
 	Trend    []TrendPoint   `json:"trend"`
 	Events   []UnifiedEvent `json:"events"`
 	Sessions []AuditSession `json:"sessions"`
+	Links    ConsoleLinks   `json:"links"`
 }
 
 type AuditEnvelope struct {

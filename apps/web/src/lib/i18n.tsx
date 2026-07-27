@@ -513,6 +513,11 @@ const zhCN: Record<string, string> = {
   "Gateway request evidence": "网关请求证据",
   "Guard evidence": "防护证据",
   "Sensitive content boundary": "敏感内容边界",
+  "agentgateway source log": "agentgateway 源日志",
+  "Prompt / completion": "提示词 / 补全内容",
+  "Retained upstream and available in the source log": "上游已留存，可在源日志中查看",
+  "Not retained upstream for this event": "此事件未在上游留存相关内容",
+  "Open exact source log": "打开精确匹配的源日志",
   "Started at": "开始时间",
   "Completed at": "完成时间",
   Duration: "持续时间",
@@ -543,8 +548,8 @@ const zhCN: Record<string, string> = {
   "Credential values are never collected": "凭据值永不采集",
   Yes: "是",
   No: "否",
-  "Complete prompts, payloads, authorization values, and tool arguments never cross the AgentsharkX BFF. Payload retention is reported only when agentgateway explicitly provides hasPayload.":
-    "完整提示词、载荷、授权值和工具参数不会跨越 AgentsharkX BFF；仅当 agentgateway 明确提供 hasPayload 时，界面才会标注上游是否留存载荷。",
+  "AgentsharkX keeps its BFF projection redacted. Prompt or completion content retained upstream is available through the exact agentgateway source log and is not copied into this API.":
+    "AgentsharkX 的 BFF 投影保持脱敏；上游留存的提示词或补全内容可通过精确匹配的 agentgateway 源日志查看，不会复制到此 API。",
   "No request samples": "没有请求样本",
   "P95 latency": "P95 延迟",
   "5-minute bucket": "5 分钟桶",

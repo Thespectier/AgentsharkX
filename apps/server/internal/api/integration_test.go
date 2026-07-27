@@ -404,7 +404,7 @@ func TestAuditRoutesExposeBoundedListsAndRedactedDetail(t *testing.T) {
 				ID: "session-resource", UpstreamID: "session-a", AgentID: "agent-resource", AgentUpstreamID: "agent-a",
 				Source: model.SourceAgentGuard, Status: "unknown", RawRef: model.RawRef{Source: model.SourceAgentGuard, ID: "session-a"},
 			}},
-		}, hub,
+		}, hub, model.ConsoleLinks{GatewayLogs: "http://gateway.invalid/ui/llm/logs"},
 	)
 	auditService.Refresh(t.Context())
 	server := httptest.NewServer(New(ServerConfig{Audit: auditService, Stream: hub, Logger: slog.New(slog.DiscardHandler), AuthEnabled: false}))
@@ -412,7 +412,8 @@ func TestAuditRoutesExposeBoundedListsAndRedactedDetail(t *testing.T) {
 
 	var analytics model.AuditEnvelope
 	protectJSON(t, server.Client(), http.MethodGet, server.URL+"/api/v1/audit/analytics", "", http.StatusOK, &analytics)
-	if !analytics.Meta.Partial || len(analytics.Data.Events) != 1 || analytics.Data.Events[0].Raw != nil {
+	if !analytics.Meta.Partial || len(analytics.Data.Events) != 1 || analytics.Data.Events[0].Raw != nil ||
+		analytics.Data.Links.GatewayLogs != "http://gateway.invalid/ui/llm/logs" {
 		t.Fatalf("unexpected audit analytics: %#v", analytics)
 	}
 	var events model.EventsEnvelope

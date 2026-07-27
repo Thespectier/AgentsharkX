@@ -146,7 +146,10 @@ revision token and are verified by a fresh upstream read. Rule check tokens,
 scan jobs, and the Audit event window are bounded in
 memory and are lost when the BFF restarts. AgentGuard mutations are never
 automatically retried. Request-log payloads and attributes are never requested
-by the Audit poller; event detail is an allow-listed redacted projection.
+by the Audit poller; event detail is an allow-listed redacted projection. For
+agentgateway events, Audit provides an exact native Logs link built from the
+verified upstream log ID so retained prompt/completion content can be inspected
+in the source console without copying it through the AgentsharkX BFF.
 
 ## Preview topology and pinned upstreams
 
@@ -183,8 +186,9 @@ state, not an AgentsharkX database. It persists across normal preview restarts
 and makes the native agentgateway **Logs** and **Analytics** pages available.
 The launcher limits the data directory to the checkout user. Agentgateway
 v1.3.1 can retain LLM prompt/completion payloads in this store; AgentsharkX
-never requests or returns those payloads, but operators must still treat the
-database as sensitive.
+never requests or returns those payloads. Audit links each gateway event to the
+matching native Logs detail, where agentgateway loads its own retained content;
+operators must still treat the database and native detail as sensitive.
 
 Default local endpoints:
 

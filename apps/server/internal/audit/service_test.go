@@ -57,7 +57,7 @@ func TestRefreshPreservesSourcesVerifiesExactIDsAndPublishesAfterSnapshot(t *tes
 		trafficErr: errors.New("guard traffic down"),
 		audit:      model.AuditFeed{Status: "available", Events: []model.UnifiedEvent{guardEvent}},
 		sessions:   []model.AuditSession{{ID: "session-id", UpstreamID: "session-a", Source: model.SourceAgentGuard}},
-	}, hub)
+	}, hub, model.ConsoleLinks{GatewayLogs: "http://gateway.invalid/ui/llm/logs"})
 
 	snapshot := service.Refresh(t.Context())
 	if !snapshot.Meta.Partial || len(snapshot.Data.Events) != 2 || len(snapshot.Data.Sessions) != 1 {
@@ -65,6 +65,9 @@ func TestRefreshPreservesSourcesVerifiesExactIDsAndPublishesAfterSnapshot(t *tes
 	}
 	if snapshot.Data.Sessions[0].Events != 1 || snapshot.Data.Sessions[0].Denies != 1 {
 		t.Fatalf("exact session counts were not applied: %#v", snapshot.Data.Sessions[0])
+	}
+	if snapshot.Data.Links.GatewayLogs != "http://gateway.invalid/ui/llm/logs" {
+		t.Fatalf("validated gateway Logs link was not preserved: %#v", snapshot.Data.Links)
 	}
 	for _, event := range snapshot.Data.Events {
 		if event.Correlation == nil || !event.Correlation.Verified {

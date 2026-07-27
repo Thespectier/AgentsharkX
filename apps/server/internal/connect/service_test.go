@@ -99,7 +99,9 @@ func TestSummaryAndSetupExposeVerifiedLinksWithoutInventingHealth(t *testing.T) 
 	if len(summary.Data.Counts) != 4 || *summary.Data.Counts[0].Value != 2 || summary.Data.Counts[0].Status != "configured" {
 		t.Fatalf("unexpected counts: %#v", summary.Data.Counts)
 	}
-	if summary.Data.Links.RawConfig != "http://localhost:15000/ui/raw-config" || summary.Data.Links.CEL != "http://localhost:15000/ui/cel" {
+	if summary.Data.Links.RawConfig != "http://localhost:15000/ui/raw-config" ||
+		summary.Data.Links.CEL != "http://localhost:15000/ui/cel" ||
+		summary.Data.Links.GatewayLogs != "http://localhost:15000/ui/llm/logs" {
 		t.Fatalf("unexpected console links: %#v", summary.Data.Links)
 	}
 	setup := service.Setup(t.Context())

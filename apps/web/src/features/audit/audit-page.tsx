@@ -23,6 +23,7 @@ import {
   DetailDrawer,
   EmptyState,
   ErrorState,
+  ExternalButton,
   MetricCard,
   PageHeader,
   PageSkeleton,
@@ -165,7 +166,9 @@ export function AuditPage() {
         returnFocusRef={triggerRef}
         title={selectedDetail?.summary ?? "Event not found"}
       >
-        {selectedDetail ? <EventDetail event={selectedDetail} /> : null}
+        {selectedDetail ? (
+          <EventDetail event={selectedDetail} gatewayLogs={data.links.gatewayLogs} />
+        ) : null}
       </DetailDrawer>
     </PageFrame>
   );
@@ -455,10 +458,12 @@ function SessionsView({ data }: { data: AuditData }) {
   );
 }
 
-function EventDetail({ event }: { event: UnifiedEvent }) {
+function EventDetail({ event, gatewayLogs }: { event: UnifiedEvent; gatewayLogs?: string }) {
   const { t } = useI18n();
   const evidence = sourceEvidenceRows(event);
   const sensitiveBoundary = sensitiveContentRows(event);
+  const sourceLogHref = gatewayLogHref(gatewayLogs, event);
+  const hasPayload = objectValue(event.raw).hasPayload === true;
   return (
     <div className="event-detail">
       <div className="event-detail__badges">
@@ -503,6 +508,26 @@ function EventDetail({ event }: { event: UnifiedEvent }) {
           <DefinitionList items={evidence} />
         </section>
       ) : null}
+      {sourceLogHref ? (
+        <section className="event-detail__section">
+          <h3>{t("agentgateway source log")}</h3>
+          <DefinitionList
+            items={[
+              {
+                label: "Prompt / completion",
+                value: t(
+                  hasPayload
+                    ? "Retained upstream and available in the source log"
+                    : "Not retained upstream for this event",
+                ),
+              },
+            ]}
+          />
+          <div className="event-detail__source-action">
+            <ExternalButton href={sourceLogHref}>{t("Open exact source log")}</ExternalButton>
+          </div>
+        </section>
+      ) : null}
       <section className="event-detail__section">
         <h3>{t("Sensitive content boundary")}</h3>
         <DefinitionList items={sensitiveBoundary} />
@@ -519,7 +544,7 @@ function EventDetail({ event }: { event: UnifiedEvent }) {
       <div className="redaction-note">
         <ShieldAlert size={15} />{" "}
         {t(
-          "Complete prompts, payloads, authorization values, and tool arguments never cross the AgentsharkX BFF. Payload retention is reported only when agentgateway explicitly provides hasPayload.",
+          "AgentsharkX keeps its BFF projection redacted. Prompt or completion content retained upstream is available through the exact agentgateway source log and is not copied into this API.",
         )}
       </div>
     </div>
@@ -586,6 +611,28 @@ export function sensitiveContentRows(event: UnifiedEvent): EvidenceRow[] {
     { label: "Authorization", value: "Credential values are never collected" },
     { label: "Tool arguments", value: "Not collected by AgentsharkX" },
   ];
+}
+
+export function gatewayLogHref(
+  gatewayLogs: string | undefined,
+  event: UnifiedEvent,
+): string | undefined {
+  if (
+    !gatewayLogs ||
+    event.source !== "agentgateway" ||
+    event.rawRef.source !== "agentgateway" ||
+    !event.rawRef.id
+  ) {
+    return undefined;
+  }
+  try {
+    const url = new URL(gatewayLogs);
+    if (url.protocol !== "http:" && url.protocol !== "https:") return undefined;
+    url.searchParams.set("log", event.rawRef.id);
+    return url.toString();
+  } catch {
+    return undefined;
+  }
 }
 
 function compactRows(rows: Array<[string, string | undefined]>): EvidenceRow[] {

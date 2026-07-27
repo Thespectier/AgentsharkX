@@ -39,6 +39,7 @@ type Service struct {
 	gateway          Gateway
 	guard            Guard
 	stream           *stream.Hub
+	links            model.ConsoleLinks
 	data             model.AuditData
 	meta             model.Meta
 	resolutions      []approvalResolution
@@ -54,13 +55,17 @@ type approvalResolution struct {
 	originalEventID string
 }
 
-func New(gateway Gateway, guard Guard, hub *stream.Hub) *Service {
+func New(gateway Gateway, guard Guard, hub *stream.Hub, links ...model.ConsoleLinks) *Service {
 	if hub == nil {
 		hub = stream.NewHub()
 	}
+	var consoleLinks model.ConsoleLinks
+	if len(links) > 0 {
+		consoleLinks = links[0]
+	}
 	return &Service{
-		gateway: gateway, guard: guard, stream: hub,
-		data:        model.AuditData{Metrics: []model.Metric{}, Trend: []model.TrendPoint{}, Events: []model.UnifiedEvent{}, Sessions: []model.AuditSession{}},
+		gateway: gateway, guard: guard, stream: hub, links: consoleLinks,
+		data:        model.AuditData{Metrics: []model.Metric{}, Trend: []model.TrendPoint{}, Events: []model.UnifiedEvent{}, Sessions: []model.AuditSession{}, Links: consoleLinks},
 		meta:        model.Meta{FetchedAt: time.Now().UTC(), SourceFailures: []model.SourceFailure{}},
 		resolutions: []approvalResolution{}, resolutionKeys: make(map[string]struct{}),
 	}
@@ -156,7 +161,7 @@ func (service *Service) Refresh(ctx context.Context) model.AuditEnvelope {
 	meta := model.Meta{
 		FetchedAt: time.Now().UTC(), Partial: len(failures) > 0, SourceFailures: failures,
 	}
-	data := model.AuditData{Metrics: metrics, Trend: trend, Events: merged, Sessions: sessions}
+	data := model.AuditData{Metrics: metrics, Trend: trend, Events: merged, Sessions: sessions, Links: service.links}
 	service.data = cloneData(data)
 	service.meta = cloneMeta(meta)
 	service.lastWindow = window

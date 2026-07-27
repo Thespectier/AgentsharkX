@@ -73,7 +73,7 @@ func main() {
 	consoleLinks := connectService.Links()
 	consoleLinks.AgentGuardConsole = strings.TrimRight(cfg.Guard.ConsoleURL, "/")
 	hub := stream.NewHub()
-	auditService := audit.New(gatewayClient, guardClient, hub)
+	auditService := audit.New(gatewayClient, guardClient, hub, consoleLinks)
 	protectService := protect.New(gatewayClient, protectGuardClient, consoleLinks, auditService)
 	aggregator.SetOperational(auditService)
 	sessions := auth.New(cfg.AdminToken.Value(), auth.Options{CookieSecure: cfg.CookieSecure, TTL: 8 * time.Hour})

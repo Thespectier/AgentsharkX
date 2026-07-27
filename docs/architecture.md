@@ -191,7 +191,10 @@ an allow-listed redacted projection; list, overview, and SSE events omit that
 projection. Gateway detail presents verified scalar request metadata such as
 duration, HTTP status, provider/model, token usage, cost, and trace/span IDs.
 It also reports the upstream `hasPayload` flag, but never retrieves payload
-contents, complete prompts, authorization values, or tool arguments.
+contents, complete prompts, authorization values, or tool arguments. Audit
+exposes the validated native Logs base URL and builds a source-console deep
+link from the event's preserved upstream log ID. The pinned agentgateway UI,
+not the BFF, owns the resulting payload-detail request.
 
 `/overview` is `mode=operational` when the Audit service is attached. Gateway
 log/Analytics failures and AgentGuard Traffic/Audit/Sessions failures are

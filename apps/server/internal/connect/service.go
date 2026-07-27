@@ -447,5 +447,6 @@ func consoleLinks(raw string) model.ConsoleLinks {
 	return model.ConsoleLinks{
 		Console: base, RawConfig: base + "/raw-config", CEL: base + "/cel",
 		LLMPlayground: base + "/llm/playground", MCPPlayground: base + "/mcp/playground",
+		GatewayLogs: base + "/llm/logs",
 	}
 }

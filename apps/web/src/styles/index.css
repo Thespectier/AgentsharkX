@@ -2592,6 +2592,11 @@ kbd {
 .event-detail__section .definition-list {
   margin: 0;
 }
+.event-detail__source-action {
+  display: flex;
+  margin-top: 10px;
+  justify-content: flex-end;
+}
 .definition-list {
   margin: 18px 0;
   border: 1px solid var(--border-subtle);

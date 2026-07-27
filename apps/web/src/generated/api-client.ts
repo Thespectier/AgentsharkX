@@ -353,6 +353,7 @@ export type ConsoleLinks = {
   cel?: string;
   llmPlayground?: string;
   mcpPlayground?: string;
+  gatewayLogs?: string;
   agentguardConsole?: string;
 };
 
@@ -703,6 +704,7 @@ export type AuditData = {
   trend: Array<TrendPoint>;
   events: Array<UnifiedEvent>;
   sessions: Array<AuditSession>;
+  links: ConsoleLinks;
 };
 
 export type AuditEnvelope = { data: AuditData; meta: Meta };

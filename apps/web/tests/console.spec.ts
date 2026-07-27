@@ -462,6 +462,20 @@ test("an audit detail drawer is recoverable from its URL", async ({ page }) => {
   await expect(page.getByRole("dialog").getByRole("heading", { level: 2 })).toHaveText(title ?? "");
 });
 
+test("gateway audit detail links to the exact native agentgateway log", async ({ page }) => {
+  await page.goto("/audit/traffic");
+  await page.getByText("Chat completion routed through the primary OpenAI backend.").click();
+
+  const sourceLog = page.getByRole("dialog").getByRole("link", {
+    name: "Open exact source log",
+  });
+  await expect(sourceLog).toHaveAttribute(
+    "href",
+    "http://127.0.0.1:15000/ui/llm/logs?log=log-73b1",
+  );
+  await expect(sourceLog).toHaveAttribute("target", "_blank");
+});
+
 test("real-time events reach Home and Audit within three seconds", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByText(/^\[Mock live\]/).first()).toBeVisible({ timeout: 3_000 });
