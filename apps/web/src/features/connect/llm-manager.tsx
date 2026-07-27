@@ -1,6 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   CheckCircle2,
+  Eye,
+  EyeOff,
   KeyRound,
   Network,
   Pencil,
@@ -27,6 +29,7 @@ import {
 import type {
   GatewayModel,
   LlmCredentialInput,
+  LlmCredentialState,
   LlmModelDraft,
   LlmModelSetting,
   LlmMutationReceipt,
@@ -294,7 +297,7 @@ function ProviderSettings({
             <Plus size={14} /> Add provider
           </Button>
         }
-        description="Shared providers and credential references from verified agentgateway fields."
+        description="Reusable provider credentials, cloud authentication, and connection settings."
         title="Providers"
       />
       <SearchBar
@@ -341,7 +344,15 @@ function ModelSettings({
         <Primary
           icon={Network}
           title={item.name}
-          subtitle={item.params.model ?? "No target override"}
+          subtitle={
+            item.upstreamMode === "explicit"
+              ? (item.params.model ?? "Explicit outgoing model")
+              : item.upstreamMode === "strip"
+                ? "Strip prefix"
+                : item.upstreamMode === "custom"
+                  ? "Custom CEL"
+                  : "Incoming model"
+          }
         />
       ),
     },
@@ -388,7 +399,7 @@ function ModelSettings({
             <Plus size={14} /> Add model
           </Button>
         }
-        description="Direct model aliases and provider bindings. Provider binding is fixed after creation."
+        description="Direct model aliases, provider bindings, and outgoing model transformations."
         title="Direct models"
       />
       <SearchBar count={items.length} label="Filter models" onChange={setSearch} value={search} />
@@ -519,11 +530,12 @@ function RowActions({
   );
 }
 
-function CredentialStatus({ item }: { item: { credential: { configured: boolean } } }) {
+function CredentialStatus({ item }: { item: { credential: LlmCredentialState } }) {
   const { t } = useI18n();
   return (
     <span className="llm-credential-state">
-      <KeyRound size={13} /> {t(item.credential.configured ? "Configured" : "Ambient / none")}
+      <KeyRound size={13} />
+      {t(item.credential.configured ? item.credential.kind : "Ambient / none")}
     </span>
   );
 }
@@ -573,7 +585,7 @@ function EditorDialog({
       : `${editor?.item ? "Edit" : "Add"} model`;
   return (
     <Dialog
-      description="Only verified base settings are written. Existing credentials can be preserved without exposing their value."
+      description="Verified provider and direct-model settings are written while unowned agentgateway fields are preserved."
       onClose={onClose}
       open={Boolean(editor)}
       size="wide"
@@ -631,7 +643,7 @@ function ProviderEditor({
     (!custom || Boolean(draft.params.baseUrl && draft.formats.length));
   const submit = (event: FormEvent) => {
     event.preventDefault();
-    if (valid) onSave(draft);
+    if (valid) onSave({ ...draft, credential: normalizeCredential(draft.credential) });
   };
   return (
     <form className="dialog-form llm-form" onSubmit={submit}>
@@ -652,12 +664,17 @@ function ProviderEditor({
               ...draft,
               providerType: providerType as LlmProviderType,
               params: paramsForProviderType(draft.params, providerType as LlmProviderType),
-              formats: providerType === "custom" ? draft.formats : [],
-              credential:
-                (providerType === "bedrock" || providerType === "vertex") &&
-                (draft.credential.mode === "environment" || draft.credential.mode === "file")
-                  ? { mode: "ambient" }
-                  : draft.credential,
+              formats:
+                providerType === "custom"
+                  ? draft.formats.length
+                    ? draft.formats
+                    : [{ type: "completions" }]
+                  : [],
+              credential: credentialModes(providerType as LlmProviderType, Boolean(item)).includes(
+                draft.credential.mode,
+              )
+                ? draft.credential
+                : { mode: "ambient" },
             })
           }
           options={providerTypes}
@@ -683,6 +700,11 @@ function ProviderEditor({
           providerType={draft.providerType}
           setParams={(params) => setDraft({ ...draft, params })}
         />
+        <CheckboxField
+          checked={Boolean(draft.params.tokenize)}
+          label="Tokenize requests before forwarding"
+          onChange={(tokenize) => setDraft({ ...draft, params: { ...draft.params, tokenize } })}
+        />
       </div>
       {custom ? (
         <FormatFields
@@ -691,11 +713,11 @@ function ProviderEditor({
         />
       ) : null}
       <CredentialFields
-        configured={item?.credential.configured ?? false}
         credential={draft.credential}
         editing={Boolean(item)}
         onChange={(credential) => setDraft({ ...draft, credential })}
         providerType={draft.providerType}
+        state={item?.credential}
       />
       {error ? <MutationError error={error} /> : null}
       <footer>
@@ -737,13 +759,18 @@ function ModelEditor({
     params: item?.params ?? {},
     formats: item?.formats ?? [],
     visibility: item?.visibility ?? "public",
+    upstreamMode: item?.upstreamMode ?? "incoming",
+    modelExpression: item?.modelExpression,
     credential: { mode: item ? "preserve" : "ambient" },
   }));
   const valid =
     Boolean(draft.name) &&
     draft.name.trim() === draft.name &&
     (draft.providerMode !== "reference" || Boolean(draft.providerReference)) &&
-    (draft.providerMode !== "custom" || Boolean(draft.params.baseUrl && draft.formats.length));
+    (draft.providerMode !== "custom" || Boolean(draft.params.baseUrl && draft.formats.length)) &&
+    (draft.upstreamMode !== "explicit" || Boolean(draft.params.model)) &&
+    (draft.upstreamMode !== "strip" || draft.name.includes("/")) &&
+    (draft.upstreamMode !== "custom" || Boolean(draft.modelExpression?.trim()));
   const setMode = (providerMode: LlmModelDraft["providerMode"]) => {
     const providerType =
       providerMode === "reference"
@@ -759,7 +786,12 @@ function ModelEditor({
       providerReference:
         providerMode === "reference" ? (draft.providerReference ?? providers[0]?.name) : undefined,
       providerType,
-      formats: providerMode === "custom" ? draft.formats : [],
+      formats:
+        providerMode === "custom"
+          ? draft.formats.length
+            ? draft.formats
+            : [{ type: "completions" }]
+          : [],
       params:
         providerMode === "reference"
           ? { model: draft.params.model }
@@ -768,12 +800,28 @@ function ModelEditor({
         providerMode === "reference" ? { mode: item ? "preserve" : "ambient" } : draft.credential,
     });
   };
+  const setUpstreamMode = (upstreamMode: LlmModelDraft["upstreamMode"]) =>
+    setDraft({
+      ...draft,
+      upstreamMode,
+      params: {
+        ...draft.params,
+        model: upstreamMode === "explicit" ? draft.params.model : undefined,
+      },
+      modelExpression:
+        upstreamMode === "custom" ? (draft.modelExpression ?? "llmRequest.model") : undefined,
+    });
   return (
     <form
       className="dialog-form llm-form"
       onSubmit={(event) => {
         event.preventDefault();
-        if (valid) onSave(draft);
+        if (valid)
+          onSave({
+            ...draft,
+            modelExpression: draft.modelExpression?.trim() || undefined,
+            credential: normalizeCredential(draft.credential),
+          });
       }}
     >
       <div className="llm-form-grid">
@@ -781,7 +829,16 @@ function ModelEditor({
           disabled={Boolean(item && referenced)}
           label="Model name"
           maxLength={256}
-          onChange={(name) => setDraft({ ...draft, name })}
+          onChange={(name) =>
+            setDraft({
+              ...draft,
+              name,
+              upstreamMode:
+                draft.upstreamMode === "strip" && !name.includes("/")
+                  ? "incoming"
+                  : draft.upstreamMode,
+            })
+          }
           required
           value={draft.name}
         />
@@ -809,11 +866,12 @@ function ModelEditor({
                 ...draft,
                 providerType: providerType as LlmProviderType,
                 params: paramsForProviderType(draft.params, providerType as LlmProviderType),
-                credential:
-                  (providerType === "bedrock" || providerType === "vertex") &&
-                  (draft.credential.mode === "environment" || draft.credential.mode === "file")
-                    ? { mode: "ambient" }
-                    : draft.credential,
+                credential: credentialModes(
+                  providerType as LlmProviderType,
+                  Boolean(item),
+                ).includes(draft.credential.mode)
+                  ? draft.credential
+                  : { mode: "ambient" },
               })
             }
             options={
@@ -832,13 +890,37 @@ function ModelEditor({
           options={["public", "internal"]}
           value={draft.visibility}
         />
-        <TextField
-          label="Target model"
-          maxLength={256}
-          onChange={(model) => setDraft({ ...draft, params: { ...draft.params, model } })}
-          placeholder="Optional upstream model override"
-          value={draft.params.model ?? ""}
+        <SelectField
+          label="Outgoing model"
+          onChange={(value) => setUpstreamMode(value as LlmModelDraft["upstreamMode"])}
+          options={[
+            "incoming",
+            "explicit",
+            ...(draft.name.includes("/") ? (["strip"] as const) : []),
+            "custom",
+          ]}
+          value={draft.upstreamMode}
         />
+        {draft.upstreamMode === "explicit" ? (
+          <TextField
+            label="Explicit outgoing model"
+            maxLength={256}
+            onChange={(model) => setDraft({ ...draft, params: { ...draft.params, model } })}
+            placeholder="gpt-4.1-mini"
+            required
+            value={draft.params.model ?? ""}
+          />
+        ) : null}
+        {draft.upstreamMode === "custom" ? (
+          <TextAreaField
+            label="Model CEL expression"
+            maxLength={4096}
+            onChange={(modelExpression) => setDraft({ ...draft, modelExpression })}
+            placeholder={'llmRequest.model.stripPrefix("anthropic/")'}
+            required
+            value={draft.modelExpression ?? ""}
+          />
+        ) : null}
         {draft.providerMode !== "reference" ? (
           <TextField
             label="Base URL"
@@ -853,11 +935,18 @@ function ModelEditor({
           />
         ) : null}
         {draft.providerMode !== "reference" && draft.providerType ? (
-          <ProviderSpecificFields
-            params={draft.params}
-            providerType={draft.providerType}
-            setParams={(params) => setDraft({ ...draft, params })}
-          />
+          <>
+            <ProviderSpecificFields
+              params={draft.params}
+              providerType={draft.providerType}
+              setParams={(params) => setDraft({ ...draft, params })}
+            />
+            <CheckboxField
+              checked={Boolean(draft.params.tokenize)}
+              label="Tokenize requests before forwarding"
+              onChange={(tokenize) => setDraft({ ...draft, params: { ...draft.params, tokenize } })}
+            />
+          </>
         ) : null}
       </div>
       {draft.providerMode === "custom" ? (
@@ -868,11 +957,11 @@ function ModelEditor({
       ) : null}
       {draft.providerMode !== "reference" ? (
         <CredentialFields
-          configured={item?.credential.configured ?? false}
           credential={draft.credential}
           editing={Boolean(item)}
           onChange={(credential) => setDraft({ ...draft, credential })}
           providerType={draft.providerType}
+          state={item?.credential}
         />
       ) : (
         <p className="llm-form-note">
@@ -965,7 +1054,7 @@ function paramsForProviderType(
   params: LlmProviderDraft["params"],
   providerType: LlmProviderType,
 ): LlmProviderDraft["params"] {
-  const common = { model: params.model, baseUrl: params.baseUrl };
+  const common = { model: params.model, baseUrl: params.baseUrl, tokenize: params.tokenize };
   if (providerType === "bedrock") return { ...common, awsRegion: params.awsRegion };
   if (providerType === "vertex") {
     return {
@@ -978,7 +1067,7 @@ function paramsForProviderType(
     return {
       ...common,
       azureResourceName: params.azureResourceName,
-      azureResourceType: params.azureResourceType,
+      azureResourceType: params.azureResourceType ?? "openAI",
       azureApiVersion: params.azureApiVersion,
       azureProjectName: params.azureProjectName,
     };
@@ -986,34 +1075,56 @@ function paramsForProviderType(
   return common;
 }
 
+function normalizeCredential(credential: LlmCredentialInput): LlmCredentialInput {
+  if (
+    credential.mode === "environment" ||
+    credential.mode === "file" ||
+    credential.mode === "gcp-file"
+  )
+    return { ...credential, reference: credential.reference?.trim() };
+  if (credential.mode === "literal") return { ...credential, secret: credential.secret?.trim() };
+  if (credential.mode === "azure-managed-identity")
+    return { ...credential, clientId: credential.clientId?.trim() || undefined };
+  return credential;
+}
+
+function credentialModes(
+  providerType: LlmProviderType | undefined,
+  editing: boolean,
+): LlmCredentialInput["mode"][] {
+  const options: LlmCredentialInput["mode"][] = editing ? ["preserve", "ambient"] : ["ambient"];
+  if (providerType === "bedrock") return [...options, "aws-static"];
+  if (providerType === "vertex") return [...options, "gcp-file"];
+  if (providerType === "azure")
+    return [...options, "environment", "literal", "file", "azure-managed-identity"];
+  if (!providerType) return options;
+  return [...options, "environment", "literal", "file"];
+}
+
 function CredentialFields({
   credential,
-  configured,
+  state,
   editing,
   providerType,
   onChange,
 }: {
   credential: LlmCredentialInput;
-  configured: boolean;
+  state?: LlmCredentialState;
   editing: boolean;
   providerType?: LlmProviderType;
   onChange: (credential: LlmCredentialInput) => void;
 }) {
   const { t } = useI18n();
-  const options: LlmCredentialInput["mode"][] = editing ? ["preserve", "ambient"] : ["ambient"];
-  if (providerType !== "bedrock" && providerType !== "vertex") {
-    options.push("environment", "file");
-  }
+  const options = credentialModes(providerType, editing);
   return (
     <fieldset className="llm-fieldset">
       <legend>{t("Authentication source")}</legend>
       <p>
         {t(
-          configured
-            ? "Authentication is configured upstream. Its value is not exposed."
-            : providerType === "bedrock" || providerType === "vertex"
-              ? "Use ambient cloud identity here; structured cloud credentials remain native-console only."
-              : "No credential value is exposed by agentgateway.",
+          state?.configured
+            ? "Authentication is configured upstream as {kind}. Its value is not exposed."
+            : "No credential value is exposed by agentgateway.",
+          { kind: state ? t(state.kind) : t("ambient") },
         )}
       </p>
       <div className="llm-form-grid">
@@ -1041,6 +1152,60 @@ function CredentialFields({
             placeholder="/var/run/secrets/provider-key"
             required
             value={credential.reference ?? ""}
+          />
+        ) : null}
+        {credential.mode === "literal" ? (
+          <SecretField
+            label="Provider API key"
+            maxLength={8192}
+            onChange={(secret) => onChange({ ...credential, secret })}
+            placeholder="API key"
+            required
+            value={credential.secret ?? ""}
+          />
+        ) : null}
+        {credential.mode === "aws-static" ? (
+          <>
+            <SecretField
+              label="AWS access key ID"
+              maxLength={512}
+              onChange={(accessKeyId) => onChange({ ...credential, accessKeyId })}
+              required
+              value={credential.accessKeyId ?? ""}
+            />
+            <SecretField
+              label="AWS secret access key"
+              maxLength={8192}
+              onChange={(secretAccessKey) => onChange({ ...credential, secretAccessKey })}
+              required
+              value={credential.secretAccessKey ?? ""}
+            />
+            <SecretField
+              label="AWS session token"
+              maxLength={8192}
+              onChange={(sessionToken) => onChange({ ...credential, sessionToken })}
+              placeholder="Optional"
+              value={credential.sessionToken ?? ""}
+            />
+          </>
+        ) : null}
+        {credential.mode === "gcp-file" ? (
+          <TextField
+            label="Google credential file"
+            maxLength={1024}
+            onChange={(reference) => onChange({ ...credential, reference })}
+            placeholder="$HOME/.secrets/gcp-sa.json"
+            required
+            value={credential.reference ?? ""}
+          />
+        ) : null}
+        {credential.mode === "azure-managed-identity" ? (
+          <TextField
+            label="Azure managed identity client ID"
+            maxLength={512}
+            onChange={(clientId) => onChange({ ...credential, clientId })}
+            placeholder="Optional user-assigned client ID"
+            value={credential.clientId ?? ""}
           />
         ) : null}
       </div>
@@ -1119,6 +1284,94 @@ function TextField({
         value={value}
         {...props}
       />
+    </label>
+  );
+}
+
+function TextAreaField({
+  label,
+  value,
+  onChange,
+  placeholder,
+  ...props
+}: { label: string; value: string; onChange: (value: string) => void } & Omit<
+  React.TextareaHTMLAttributes<HTMLTextAreaElement>,
+  "value" | "onChange"
+>) {
+  const { t } = useI18n();
+  return (
+    <label className="field llm-field llm-field--wide">
+      <span>{t(label)}</span>
+      <textarea
+        aria-label={t(label)}
+        onChange={(event) => onChange(event.target.value)}
+        placeholder={placeholder ? t(placeholder) : undefined}
+        rows={3}
+        value={value}
+        {...props}
+      />
+    </label>
+  );
+}
+
+function SecretField({
+  label,
+  value,
+  onChange,
+  placeholder,
+  ...props
+}: { label: string; value: string; onChange: (value: string) => void } & Omit<
+  React.InputHTMLAttributes<HTMLInputElement>,
+  "value" | "onChange" | "type"
+>) {
+  const { t } = useI18n();
+  const [visible, setVisible] = useState(false);
+  return (
+    <label className="field llm-field">
+      <span>{t(label)}</span>
+      <span className="llm-secret-input">
+        <input
+          aria-label={t(label)}
+          autoCapitalize="none"
+          autoComplete="off"
+          onChange={(event) => onChange(event.target.value)}
+          placeholder={placeholder ? t(placeholder) : undefined}
+          spellCheck={false}
+          type={visible ? "text" : "password"}
+          value={value}
+          {...props}
+        />
+        <button
+          aria-label={t(visible ? "Hide secret" : "Show secret")}
+          onClick={() => setVisible((current) => !current)}
+          title={t(visible ? "Hide secret" : "Show secret")}
+          type="button"
+        >
+          {visible ? <EyeOff size={15} /> : <Eye size={15} />}
+        </button>
+      </span>
+    </label>
+  );
+}
+
+function CheckboxField({
+  label,
+  checked,
+  onChange,
+}: {
+  label: string;
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+}) {
+  const { t } = useI18n();
+  return (
+    <label className="llm-checkbox-field">
+      <input
+        checked={checked}
+        onChange={(event) => onChange(event.target.checked)}
+        type="checkbox"
+      />
+      <span>{t(label)}</span>
     </label>
   );
 }

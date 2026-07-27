@@ -125,11 +125,13 @@ Reconnecting clients send `Last-Event-ID` and receive only newer retained
 records. Both the ring and browser list dedupe by normalized source/event ID.
 Connect reads a bounded `/api/config` snapshot per request and never returns raw
 config, policy bodies, credential values, or prompt payloads. The LLM management
-contract returns only verified provider/direct-model fields, allow-listed params,
-custom format names/paths, and a boolean credential state. It accepts no literal
-API key: operators select ambient auth, an environment-variable name, a file
-reference, or preserve an existing opaque value. Bedrock/Vertex structured
-credentials remain native-console only. Protect may
+contract returns only verified provider/direct-model main-form fields,
+allow-listed params, custom format names/paths, and credential configured/kind
+state. Credential changes use typed, write-only inputs for native ambient,
+environment-variable, file, literal, AWS static, GCP credential-file, and Azure
+managed identity modes; values are never included in a read response. Direct
+models expose the verified incoming, explicit, stripped-prefix, and custom CEL
+outgoing-model mappings. Protect may
 summarize explicit route/backend policy keys and raw config paths, while policy
 editing stays in agentgateway. Trust reads the four
 AgentGuard session/resource routes independently, so one failed capability does

@@ -15,6 +15,7 @@ import type {
   DiagnosticsData,
   LabelUpdate,
   LlmConfiguration,
+  LlmCredentialState,
   LlmDeleteRequest,
   LlmModelDraft,
   LlmModelMutationRequest,
@@ -232,7 +233,7 @@ let mockLlmConfiguration: LlmConfiguration = {
       providerType: "openai",
       params: { model: "gpt-5.4-nano" },
       formats: [],
-      credential: { configured: true },
+      credential: { configured: true, kind: "environment" },
       modelCount: 1,
       editable: true,
     },
@@ -250,7 +251,8 @@ let mockLlmConfiguration: LlmConfiguration = {
       params: {},
       formats: [],
       visibility: "public",
-      credential: { configured: false },
+      upstreamMode: "incoming",
+      credential: { configured: false, kind: "ambient" },
       editable: true,
     },
     {
@@ -265,7 +267,8 @@ let mockLlmConfiguration: LlmConfiguration = {
       params: { model: "gpt-5.4-nano" },
       formats: [],
       visibility: "public",
-      credential: { configured: false },
+      upstreamMode: "explicit",
+      credential: { configured: false, kind: "ambient" },
       editable: true,
     },
   ],
@@ -348,12 +351,14 @@ function nextLlmRevision() {
   }
 }
 
-function credentialConfigured(
+function credentialState(
   draft: LlmProviderDraft | LlmModelDraft,
-  current?: { credential: { configured: boolean } },
+  current?: { credential: LlmCredentialState },
 ) {
-  if (draft.credential.mode === "preserve") return current?.credential.configured ?? false;
-  return draft.credential.mode === "environment" || draft.credential.mode === "file";
+  if (draft.credential.mode === "preserve")
+    return current?.credential ?? { configured: false, kind: "ambient" as const };
+  if (draft.credential.mode === "ambient") return { configured: false, kind: "ambient" as const };
+  return { configured: true, kind: draft.credential.mode } as LlmCredentialState;
 }
 
 function providerSetting(
@@ -373,7 +378,7 @@ function providerSetting(
     providerType: draft.providerType,
     params: structuredClone(draft.params),
     formats: structuredClone(draft.formats),
-    credential: { configured: credentialConfigured(draft, current) },
+    credential: credentialState(draft, current),
     modelCount: current?.modelCount ?? 0,
     editable: true,
   };
@@ -396,7 +401,9 @@ function modelSetting(draft: LlmModelDraft, current?: LlmModelSetting): LlmModel
     params: structuredClone(draft.params),
     formats: structuredClone(draft.formats),
     visibility: draft.visibility,
-    credential: { configured: credentialConfigured(draft, current) },
+    upstreamMode: draft.upstreamMode,
+    modelExpression: draft.modelExpression,
+    credential: credentialState(draft, current),
     editable: true,
   };
 }

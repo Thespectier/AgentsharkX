@@ -169,13 +169,38 @@ export type LlmProviderParams = {
   azureResourceType?: "openAI" | "foundry";
   azureApiVersion?: string;
   azureProjectName?: string;
+  tokenize?: boolean;
 };
 
-export type LlmCredentialState = { configured: boolean };
+export type LlmCredentialState = {
+  configured: boolean;
+  kind:
+    | "ambient"
+    | "environment"
+    | "literal"
+    | "file"
+    | "aws-static"
+    | "gcp-file"
+    | "azure-managed-identity"
+    | "other";
+};
 
 export type LlmCredentialInput = {
-  mode: "preserve" | "ambient" | "environment" | "file";
+  mode:
+    | "preserve"
+    | "ambient"
+    | "environment"
+    | "literal"
+    | "file"
+    | "aws-static"
+    | "gcp-file"
+    | "azure-managed-identity";
   reference?: string;
+  secret?: string;
+  accessKeyId?: string;
+  secretAccessKey?: string;
+  sessionToken?: string;
+  clientId?: string;
 };
 
 export type LlmProviderSetting = {
@@ -206,6 +231,8 @@ export type LlmModelSetting = {
   params: LlmProviderParams;
   formats: Array<LlmProviderFormat>;
   visibility: "public" | "internal";
+  upstreamMode: "incoming" | "explicit" | "strip" | "custom";
+  modelExpression?: string;
   credential: LlmCredentialState;
   editable: boolean;
 };
@@ -238,6 +265,8 @@ export type LlmModelDraft = {
   params: LlmProviderParams;
   formats: Array<LlmProviderFormat>;
   visibility: "public" | "internal";
+  upstreamMode: "incoming" | "explicit" | "strip" | "custom";
+  modelExpression?: string;
   credential: LlmCredentialInput;
 };
 

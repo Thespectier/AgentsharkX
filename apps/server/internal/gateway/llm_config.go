@@ -49,6 +49,7 @@ var (
 	managedParamKeys = []string{
 		"model", "baseUrl", "awsRegion", "vertexRegion", "vertexProject",
 		"azureResourceName", "azureResourceType", "azureApiVersion", "azureProjectName",
+		"tokenize",
 	}
 )
 
@@ -68,11 +69,12 @@ type editableProvider struct {
 }
 
 type editableModel struct {
-	Name       string          `json:"name"`
-	Provider   json.RawMessage `json:"provider"`
-	Params     json.RawMessage `json:"params"`
-	Visibility string          `json:"visibility"`
-	Auth       json.RawMessage `json:"auth"`
+	Name           string          `json:"name"`
+	Provider       json.RawMessage `json:"provider"`
+	Params         json.RawMessage `json:"params"`
+	Visibility     string          `json:"visibility"`
+	Transformation json.RawMessage `json:"transformation"`
+	Auth           json.RawMessage `json:"auth"`
 }
 
 func (client *Client) LLMConfiguration(ctx context.Context) (model.LLMConfiguration, string, error) {
@@ -307,7 +309,7 @@ func providerSetting(raw json.RawMessage, field string, fetchedAt time.Time) (mo
 	if err := validateFormats(kind, formats); err != nil {
 		return model.LLMProviderSetting{}, &ContractError{Field: field + "/provider/custom/formats", Problem: "unsupported custom provider formats"}
 	}
-	credential.Configured = credential.Configured || hasNonNullNestedField(item.Defaults, "auth")
+	credential = combineCredentialStates(credential, authCredentialState(nestedRawField(item.Defaults, "auth")))
 	return model.LLMProviderSetting{
 		ConnectResource: resource(field, item.Name, fetchedAt), Name: item.Name, ProviderType: kind,
 		Params: params, Formats: formats, Credential: credential, Editable: true,
@@ -337,7 +339,7 @@ func modelSetting(raw json.RawMessage, field string, fetchedAt time.Time) (model
 	if err != nil {
 		return model.LLMModelSetting{}, err
 	}
-	credential.Configured = credential.Configured || rawConfigured(item.Auth)
+	credential = combineCredentialStates(credential, authCredentialState(item.Auth))
 	formats, err := customFormats(item.Provider, field+"/provider")
 	if err != nil {
 		return model.LLMModelSetting{}, err
@@ -352,17 +354,22 @@ func modelSetting(raw json.RawMessage, field string, fetchedAt time.Time) (model
 	if visibility != "public" && visibility != "internal" {
 		return model.LLMModelSetting{}, &ContractError{Field: field + "/visibility", Problem: "unsupported visibility"}
 	}
+	upstreamMode, modelExpression, err := modelUpstreamMode(item.Name, params.Model, item.Transformation, field+"/transformation")
+	if err != nil {
+		return model.LLMModelSetting{}, err
+	}
 	return model.LLMModelSetting{
 		ConnectResource: resource(field, item.Name, fetchedAt), Name: item.Name, ProviderMode: mode,
 		ProviderType: providerType, ProviderReference: reference, Params: params, Formats: formats,
-		Visibility: visibility, Credential: credential, Editable: true,
+		Visibility: visibility, UpstreamMode: upstreamMode, ModelExpression: modelExpression,
+		Credential: credential, Editable: true,
 	}, nil
 }
 
 func sanitizedParams(raw json.RawMessage, field string) (model.LLMProviderParams, model.LLMCredentialState, error) {
 	params := model.LLMProviderParams{}
 	if len(raw) == 0 || string(raw) == "null" {
-		return params, model.LLMCredentialState{}, nil
+		return params, model.LLMCredentialState{Kind: "ambient"}, nil
 	}
 	if err := json.Unmarshal(raw, &params); err != nil {
 		return params, model.LLMCredentialState{}, &ContractError{Field: field, Problem: "invalid provider params"}
@@ -371,7 +378,7 @@ func sanitizedParams(raw json.RawMessage, field string) (model.LLMProviderParams
 	if err := json.Unmarshal(raw, &values); err != nil || values == nil {
 		return params, model.LLMCredentialState{}, &ContractError{Field: field, Problem: "expected object"}
 	}
-	return params, model.LLMCredentialState{Configured: rawConfigured(values["apiKey"])}, nil
+	return params, apiKeyCredentialState(values["apiKey"]), nil
 }
 
 func customFormats(raw json.RawMessage, field string) ([]model.LLMProviderFormat, error) {
@@ -398,16 +405,114 @@ func customFormats(raw json.RawMessage, field string) ([]model.LLMProviderFormat
 	return value.Custom.Formats, nil
 }
 
-func hasNonNullNestedField(raw json.RawMessage, name string) bool {
+func nestedRawField(raw json.RawMessage, name string) json.RawMessage {
 	if !rawConfigured(raw) {
-		return false
+		return nil
 	}
 	var values map[string]json.RawMessage
-	return json.Unmarshal(raw, &values) == nil && rawConfigured(values[name])
+	if json.Unmarshal(raw, &values) != nil {
+		return nil
+	}
+	return values[name]
 }
 
 func rawConfigured(raw json.RawMessage) bool {
 	return len(raw) > 0 && string(raw) != "null" && string(raw) != `""` && string(raw) != "{}"
+}
+
+func apiKeyCredentialState(raw json.RawMessage) model.LLMCredentialState {
+	if !rawConfigured(raw) {
+		return model.LLMCredentialState{Kind: "ambient"}
+	}
+	var value string
+	if json.Unmarshal(raw, &value) == nil {
+		kind := "literal"
+		if strings.HasPrefix(value, "$") {
+			kind = "environment"
+		}
+		return model.LLMCredentialState{Configured: true, Kind: kind}
+	}
+	var file struct {
+		File string `json:"file"`
+	}
+	if json.Unmarshal(raw, &file) == nil && file.File != "" {
+		return model.LLMCredentialState{Configured: true, Kind: "file"}
+	}
+	return model.LLMCredentialState{Configured: true, Kind: "other"}
+}
+
+func authCredentialState(raw json.RawMessage) model.LLMCredentialState {
+	if !rawConfigured(raw) {
+		return model.LLMCredentialState{Kind: "ambient"}
+	}
+	var value map[string]any
+	if json.Unmarshal(raw, &value) != nil {
+		return model.LLMCredentialState{Configured: true, Kind: "other"}
+	}
+	if aws, ok := value["aws"].(map[string]any); ok {
+		if _, hasAccessKey := aws["accessKeyId"].(string); hasAccessKey {
+			return model.LLMCredentialState{Configured: true, Kind: "aws-static"}
+		}
+	}
+	if gcp, ok := value["gcp"].(map[string]any); ok {
+		if credential, ok := gcp["credential"].(map[string]any); ok {
+			if _, hasFile := credential["file"].(string); hasFile {
+				return model.LLMCredentialState{Configured: true, Kind: "gcp-file"}
+			}
+		}
+	}
+	if azure, ok := value["azure"].(map[string]any); ok {
+		if explicit, ok := azure["explicitConfig"].(map[string]any); ok {
+			if _, managed := explicit["managedIdentity"].(map[string]any); managed {
+				return model.LLMCredentialState{Configured: true, Kind: "azure-managed-identity"}
+			}
+		}
+	}
+	return model.LLMCredentialState{Configured: true, Kind: "other"}
+}
+
+func combineCredentialStates(left, right model.LLMCredentialState) model.LLMCredentialState {
+	if !left.Configured {
+		return right
+	}
+	if !right.Configured {
+		return left
+	}
+	return model.LLMCredentialState{Configured: true, Kind: "other"}
+}
+
+func modelUpstreamMode(name, explicitModel string, transformation json.RawMessage, field string) (string, string, error) {
+	if explicitModel != "" {
+		return "explicit", "", nil
+	}
+	if !rawConfigured(transformation) {
+		return "incoming", "", nil
+	}
+	var values map[string]json.RawMessage
+	if json.Unmarshal(transformation, &values) != nil || values == nil {
+		return "", "", &ContractError{Field: field, Problem: "expected object"}
+	}
+	rawExpression := values["model"]
+	if !rawConfigured(rawExpression) {
+		return "incoming", "", nil
+	}
+	var expression string
+	if json.Unmarshal(rawExpression, &expression) != nil || expression == "" {
+		return "", "", &ContractError{Field: field + "/model", Problem: "expected CEL expression string"}
+	}
+	if expression == stripPrefixExpression(name) {
+		return "strip", "", nil
+	}
+	return "custom", expression, nil
+}
+
+func stripPrefixExpression(name string) string {
+	index := strings.Index(name, "/")
+	if index < 0 {
+		return ""
+	}
+	prefix := name[:index+1]
+	return fmt.Sprintf(`llmRequest.model.stripPrefix(%q)`, prefix)
 }
 
 func (document *llmConfigDocument) apply(change model.LLMChange) error {
@@ -573,10 +678,8 @@ func buildProviderEntry(existing json.RawMessage, draft model.LLMProviderDraft, 
 	} else {
 		entry["params"] = params
 	}
-	if draft.Credential.Mode != "preserve" {
-		if err := removeNestedField(entry, "defaults", "auth"); err != nil {
-			return nil, err
-		}
+	if err := applyProviderCredential(entry, draft.Credential); err != nil {
+		return nil, err
 	}
 	return json.Marshal(entry)
 }
@@ -610,8 +713,17 @@ func buildModelEntry(existing json.RawMessage, draft model.LLMModelDraft, updati
 	} else {
 		entry["params"] = params
 	}
-	if draft.Credential.Mode != "preserve" {
-		delete(entry, "auth")
+	transformation, err := mergeModelTransformation(entry["transformation"], draft)
+	if err != nil {
+		return nil, err
+	}
+	if len(transformation) == 0 {
+		delete(entry, "transformation")
+	} else {
+		entry["transformation"] = transformation
+	}
+	if err := applyModelCredential(entry, draft.Credential); err != nil {
+		return nil, err
 	}
 	entry["visibility"] = mustJSON(draft.Visibility)
 	return json.Marshal(entry)
@@ -633,6 +745,91 @@ func removeNestedField(entry map[string]json.RawMessage, objectName, fieldName s
 	}
 	entry[objectName] = rawObject(values)
 	return nil
+}
+
+func setNestedField(entry map[string]json.RawMessage, objectName, fieldName string, value json.RawMessage) error {
+	values := make(map[string]json.RawMessage)
+	if raw := entry[objectName]; rawConfigured(raw) {
+		if json.Unmarshal(raw, &values) != nil || values == nil {
+			return ErrLLMInvalidRequest
+		}
+	}
+	values[fieldName] = value
+	entry[objectName] = rawObject(values)
+	return nil
+}
+
+func applyProviderCredential(entry map[string]json.RawMessage, credential model.LLMCredentialInput) error {
+	if credential.Mode == "preserve" {
+		return nil
+	}
+	auth := credentialAuth(credential)
+	if len(auth) == 0 {
+		return removeNestedField(entry, "defaults", "auth")
+	}
+	return setNestedField(entry, "defaults", "auth", auth)
+}
+
+func applyModelCredential(entry map[string]json.RawMessage, credential model.LLMCredentialInput) error {
+	if credential.Mode == "preserve" {
+		return nil
+	}
+	auth := credentialAuth(credential)
+	if len(auth) == 0 {
+		delete(entry, "auth")
+	} else {
+		entry["auth"] = auth
+	}
+	return nil
+}
+
+func credentialAuth(credential model.LLMCredentialInput) json.RawMessage {
+	switch credential.Mode {
+	case "aws-static":
+		aws := map[string]any{
+			"accessKeyId": credential.AccessKeyID, "secretAccessKey": credential.SecretAccessKey,
+			"region": nil, "serviceName": nil, "sessionToken": nil,
+		}
+		if credential.SessionToken != "" {
+			aws["sessionToken"] = credential.SessionToken
+		}
+		return mustJSON(map[string]any{"aws": aws})
+	case "gcp-file":
+		return mustJSON(map[string]any{"gcp": map[string]any{"credential": map[string]string{"file": credential.Reference}}})
+	case "azure-managed-identity":
+		var identity any
+		if credential.ClientID != "" {
+			identity = map[string]string{"clientId": strings.TrimSpace(credential.ClientID)}
+		}
+		return mustJSON(map[string]any{"azure": map[string]any{
+			"explicitConfig": map[string]any{
+				"managedIdentity": map[string]any{"userAssignedIdentity": identity},
+			},
+		}})
+	default:
+		return nil
+	}
+}
+
+func mergeModelTransformation(existing json.RawMessage, draft model.LLMModelDraft) (json.RawMessage, error) {
+	transformation := make(map[string]json.RawMessage)
+	if rawConfigured(existing) && json.Unmarshal(existing, &transformation) != nil {
+		return nil, ErrLLMInvalidRequest
+	}
+	delete(transformation, "model")
+	switch draft.UpstreamMode {
+	case "incoming", "explicit":
+	case "strip":
+		transformation["model"] = mustJSON(stripPrefixExpression(draft.Name))
+	case "custom":
+		transformation["model"] = mustJSON(draft.ModelExpression)
+	default:
+		return nil, ErrLLMInvalidRequest
+	}
+	if len(transformation) == 0 {
+		return nil, nil
+	}
+	return json.Marshal(transformation)
 }
 
 func providerValue(existing json.RawMessage, providerType string, formats []model.LLMProviderFormat) (json.RawMessage, error) {
@@ -672,12 +869,15 @@ func mergeParams(existing json.RawMessage, draft model.LLMProviderParams, creden
 	setStringParam(params, "azureResourceType", draft.AzureResourceType)
 	setStringParam(params, "azureApiVersion", draft.AzureAPIVersion)
 	setStringParam(params, "azureProjectName", draft.AzureProjectName)
+	if draft.Tokenize {
+		params["tokenize"] = mustJSON(true)
+	}
 	switch credential.Mode {
 	case "preserve":
 		if !updating {
 			return nil, ErrLLMInvalidRequest
 		}
-	case "ambient":
+	case "ambient", "aws-static", "gcp-file", "azure-managed-identity":
 		delete(params, "apiKey")
 	case "environment":
 		if !environmentName.MatchString(credential.Reference) {
@@ -690,6 +890,8 @@ func mergeParams(existing json.RawMessage, draft model.LLMProviderParams, creden
 			return nil, ErrLLMInvalidRequest
 		}
 		params["apiKey"] = mustJSON(map[string]string{"file": path})
+	case "literal":
+		params["apiKey"] = mustJSON(strings.TrimSpace(credential.Secret))
 	default:
 		return nil, ErrLLMInvalidRequest
 	}
@@ -736,12 +938,15 @@ func (document *llmConfigDocument) validateModelDraft(draft model.LLMModelDraft,
 	if err := validateParams(draft.Params); err != nil {
 		return err
 	}
+	if err := validateModelUpstream(draft); err != nil {
+		return err
+	}
 	switch draft.ProviderMode {
 	case "reference":
 		if !validConfigName(draft.ProviderReference) || !document.providerNameExists(draft.ProviderReference, -1) {
 			return ErrLLMInvalidRequest
 		}
-		if draft.ProviderType != "" || len(draft.Formats) > 0 || !onlyModelParam(draft.Params) || draft.Credential.Mode == "environment" || draft.Credential.Mode == "file" {
+		if draft.ProviderType != "" || len(draft.Formats) > 0 || !onlyModelParam(draft.Params) {
 			return ErrLLMInvalidRequest
 		}
 	case "builtin":
@@ -768,30 +973,117 @@ func (document *llmConfigDocument) validateModelDraft(draft model.LLMModelDraft,
 }
 
 func validateProviderCredential(providerType string, credential model.LLMCredentialInput, updating bool) error {
-	if (providerType == "bedrock" || providerType == "vertex") &&
-		(credential.Mode == "environment" || credential.Mode == "file") {
+	if err := validateCredential(credential, updating); err != nil {
+		return err
+	}
+	allowed := map[string]struct{}{"preserve": {}, "ambient": {}}
+	switch providerType {
+	case "":
+	case "bedrock":
+		allowed["aws-static"] = struct{}{}
+	case "vertex":
+		allowed["gcp-file"] = struct{}{}
+	case "azure":
+		allowed["environment"] = struct{}{}
+		allowed["literal"] = struct{}{}
+		allowed["file"] = struct{}{}
+		allowed["azure-managed-identity"] = struct{}{}
+	default:
+		allowed["environment"] = struct{}{}
+		allowed["literal"] = struct{}{}
+		allowed["file"] = struct{}{}
+	}
+	if _, ok := allowed[credential.Mode]; !ok {
 		return ErrLLMInvalidRequest
 	}
-	return validateCredential(credential, updating)
+	return nil
 }
 
 func validateCredential(credential model.LLMCredentialInput, updating bool) error {
 	switch credential.Mode {
 	case "preserve":
-		if !updating || credential.Reference != "" {
+		if !updating || !credentialFieldsEmpty(credential) {
 			return ErrLLMInvalidRequest
 		}
 	case "ambient":
-		if credential.Reference != "" {
+		if !credentialFieldsEmpty(credential) {
 			return ErrLLMInvalidRequest
 		}
 	case "environment":
-		if !environmentName.MatchString(credential.Reference) {
+		if !environmentName.MatchString(credential.Reference) || !credentialFieldsEmptyExcept(credential, "reference") {
 			return ErrLLMInvalidRequest
 		}
-	case "file":
-		path := strings.TrimSpace(credential.Reference)
-		if path == "" || len(path) > 1024 || strings.ContainsAny(path, "\r\n") {
+	case "file", "gcp-file":
+		if !validCredentialValue(credential.Reference, 1024) || strings.TrimSpace(credential.Reference) != credential.Reference ||
+			!credentialFieldsEmptyExcept(credential, "reference") {
+			return ErrLLMInvalidRequest
+		}
+	case "literal":
+		if !validCredentialValue(credential.Secret, 8192) || strings.TrimSpace(credential.Secret) != credential.Secret ||
+			!credentialFieldsEmptyExcept(credential, "secret") {
+			return ErrLLMInvalidRequest
+		}
+	case "aws-static":
+		if !validCredentialValue(credential.AccessKeyID, 512) ||
+			!validCredentialValue(credential.SecretAccessKey, 8192) ||
+			(credential.SessionToken != "" && !validCredentialValue(credential.SessionToken, 8192)) ||
+			!credentialFieldsEmptyExcept(credential, "accessKeyId", "secretAccessKey", "sessionToken") {
+			return ErrLLMInvalidRequest
+		}
+	case "azure-managed-identity":
+		if (credential.ClientID != "" && (!validCredentialValue(credential.ClientID, 512) || strings.TrimSpace(credential.ClientID) != credential.ClientID)) ||
+			!credentialFieldsEmptyExcept(credential, "clientId") {
+			return ErrLLMInvalidRequest
+		}
+	default:
+		return ErrLLMInvalidRequest
+	}
+	return nil
+}
+
+func validCredentialValue(value string, max int) bool {
+	return value != "" && len(value) <= max && !strings.ContainsAny(value, "\x00\r\n")
+}
+
+func credentialFieldsEmpty(credential model.LLMCredentialInput) bool {
+	return credentialFieldsEmptyExcept(credential)
+}
+
+func credentialFieldsEmptyExcept(credential model.LLMCredentialInput, fields ...string) bool {
+	allowed := make(map[string]struct{}, len(fields))
+	for _, field := range fields {
+		allowed[field] = struct{}{}
+	}
+	values := map[string]string{
+		"reference": credential.Reference, "secret": credential.Secret,
+		"accessKeyId": credential.AccessKeyID, "secretAccessKey": credential.SecretAccessKey,
+		"sessionToken": credential.SessionToken, "clientId": credential.ClientID,
+	}
+	for field, value := range values {
+		if _, ok := allowed[field]; !ok && value != "" {
+			return false
+		}
+	}
+	return true
+}
+
+func validateModelUpstream(draft model.LLMModelDraft) error {
+	switch draft.UpstreamMode {
+	case "incoming":
+		if draft.Params.Model != "" || draft.ModelExpression != "" {
+			return ErrLLMInvalidRequest
+		}
+	case "explicit":
+		if draft.Params.Model == "" || draft.ModelExpression != "" {
+			return ErrLLMInvalidRequest
+		}
+	case "strip":
+		if draft.Params.Model != "" || draft.ModelExpression != "" || stripPrefixExpression(draft.Name) == "" {
+			return ErrLLMInvalidRequest
+		}
+	case "custom":
+		if draft.Params.Model != "" || strings.TrimSpace(draft.ModelExpression) != draft.ModelExpression ||
+			draft.ModelExpression == "" || len(draft.ModelExpression) > 4096 || strings.ContainsRune(draft.ModelExpression, '\x00') {
 			return ErrLLMInvalidRequest
 		}
 	default:
@@ -842,7 +1134,7 @@ func validateProviderParams(providerType string, params model.LLMProviderParams)
 func onlyModelParam(params model.LLMProviderParams) bool {
 	return params.BaseURL == "" && params.AWSRegion == "" && params.VertexRegion == "" &&
 		params.VertexProject == "" && params.AzureResourceName == "" &&
-		params.AzureResourceType == "" && params.AzureAPIVersion == "" && params.AzureProjectName == ""
+		params.AzureResourceType == "" && params.AzureAPIVersion == "" && params.AzureProjectName == "" && !params.Tokenize
 }
 
 func validateFormats(providerType string, formats []model.LLMProviderFormat) error {
@@ -1027,6 +1319,7 @@ func modelDraftMatches(item model.LLMModelSetting, draft model.LLMModelDraft) bo
 	return item.ProviderMode == draft.ProviderMode && item.ProviderType == draft.ProviderType &&
 		item.ProviderReference == draft.ProviderReference && item.Params == draft.Params &&
 		formatsMatch(item.Formats, draft.Formats) && item.Visibility == draft.Visibility &&
+		item.UpstreamMode == draft.UpstreamMode && item.ModelExpression == draft.ModelExpression &&
 		credentialStateMatches(item.Credential, draft.Credential)
 }
 
@@ -1047,9 +1340,9 @@ func credentialStateMatches(state model.LLMCredentialState, input model.LLMCrede
 	case "preserve":
 		return true
 	case "ambient":
-		return !state.Configured
-	case "environment", "file":
-		return state.Configured
+		return !state.Configured && state.Kind == "ambient"
+	case "environment", "literal", "file", "aws-static", "gcp-file", "azure-managed-identity":
+		return state.Configured && state.Kind == input.Mode
 	default:
 		return false
 	}

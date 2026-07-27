@@ -4,8 +4,8 @@ Last verified: 2026-07-27.
 
 Phase 8 still prevents direct browser contact with either upstream. The
 agentgateway adapter reads redacted request-log and Analytics contracts and now
-performs a typed, credential-safe subset of Provider/direct-Model configuration
-writes. The AgentGuard adapter reads Trust, Protect, and Audit
+performs the typed Provider/direct-Model main-form configuration workflow. The
+AgentGuard adapter reads Trust, Protect, and Audit
 resources and invokes
 verified label, detection, runtime-rule, and approval mutations with
 `X-Api-Key`, source-scoped errors, strict response bounds, and no automatic
@@ -119,17 +119,19 @@ against the checkout-owned mode-0644 file. The
 `make gateway-config-write-smoke` check keeps the potentially sensitive config
 in mode-0600 temporary files and never prints it.
 
-Phase 8 does not accept raw configuration or literal provider credentials from
-the browser. The BFF necessarily parses a bounded whole-document snapshot to
-preserve unowned fields and opaque existing credential values, but the public
-contract returns only allow-listed Provider/direct-Model settings plus
-`credential.configured`. New API-key inputs are ambient auth, an environment
-variable name, or a file reference; unmodeled structured cloud credentials are
-preserve/ambient only and otherwise stay native-console owned. Each write uses a bounded five-minute,
+Phase 8 does not accept raw configuration. The BFF necessarily parses a bounded
+whole-document snapshot to preserve unowned fields and opaque existing
+credential values, but the public read contract returns only allow-listed
+Provider/direct-Model settings plus credential configured/kind state. The typed
+write contract matches the pinned main forms: API keys can use ambient,
+environment-variable, file, or write-only literal input; Bedrock accepts AWS
+static credentials, Vertex accepts a GCP credential file, and Azure accepts
+managed identity. Direct models support incoming, explicit, stripped-prefix,
+and custom CEL outgoing-model mappings. Each write uses a bounded five-minute,
 one-use revision token, an in-process mutation lock, a fresh revision check, one
-upstream POST, and a refetch that verifies the requested result. Provider type
-and Model provider binding are immutable on update; referenced Provider/Model
-deletion is rejected.
+upstream POST, and a refetch that verifies the requested result. Credential
+values are not returned or logged. Provider type and Model provider binding are
+immutable on update; referenced Provider/Model deletion is rejected.
 
 Because the upstream has no conditional update, a native-console or YAML write
 can still occur between the BFF's final read and whole-document POST. The BFF

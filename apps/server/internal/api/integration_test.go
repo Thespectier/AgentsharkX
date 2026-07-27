@@ -542,6 +542,7 @@ func TestConnectLLMConfigurationWritesThroughBFFWithoutExposingCredentials(t *te
 	t.Parallel()
 
 	const upstreamCredential = "never-return-literal-api-key"
+	const newCredential = "write-only-provider-api-key"
 	var mu sync.Mutex
 	configuration := []byte(`{"llm":{"providers":[{"name":"shared","provider":"openAI","params":{"apiKey":"` + upstreamCredential + `","model":"gpt-5.4-nano"}}],"models":[]},"binds":[]}`)
 	mutationCalls := 0
@@ -593,7 +594,7 @@ func TestConnectLLMConfigurationWritesThroughBFFWithoutExposingCredentials(t *te
 		RevisionToken: current.Data.RevisionToken,
 		Provider: model.LLMProviderDraft{
 			Name: "anthropic-backup", ProviderType: "anthropic",
-			Credential: model.LLMCredentialInput{Mode: "ambient"},
+			Credential: model.LLMCredentialInput{Mode: "literal", Secret: newCredential},
 		},
 	})
 	if err != nil {
@@ -604,12 +605,17 @@ func TestConnectLLMConfigurationWritesThroughBFFWithoutExposingCredentials(t *te
 	if receipt.Data.Operation != "create-llm-provider" || receipt.Data.Target != "anthropic-backup" {
 		t.Fatalf("unexpected LLM mutation receipt: %#v", receipt.Data)
 	}
+	receiptJSON, _ := json.Marshal(receipt)
+	if bytes.Contains(receiptJSON, []byte(newCredential)) {
+		t.Fatal("mutation receipt exposed the submitted credential")
+	}
 	mu.Lock()
 	written := append([]byte(nil), configuration...)
 	writes := mutationCalls
 	mu.Unlock()
-	if writes != 1 || !bytes.Contains(written, []byte(upstreamCredential)) || !bytes.Contains(written, []byte("anthropic-backup")) {
-		t.Fatalf("unexpected upstream write: calls=%d body=%s", writes, written)
+	if writes != 1 || !bytes.Contains(written, []byte(upstreamCredential)) ||
+		!bytes.Contains(written, []byte(newCredential)) || !bytes.Contains(written, []byte("anthropic-backup")) {
+		t.Fatalf("unexpected upstream write count or preserved fields: calls=%d", writes)
 	}
 }
 

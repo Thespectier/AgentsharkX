@@ -221,10 +221,12 @@ Connect 汇总 agentgateway 中显式配置的：
    控制台。
 
 LLM 编辑器不会读取或显示现有 API Key。编辑已有条目时默认保留上游凭据；新建或
-替换凭据时只能选择运行环境凭据、填写环境变量名，或填写 secret 文件路径，不能在
-页面中输入明文 Key。Bedrock/Vertex 等结构化云凭据仍需在原生控制台管理。Provider
-类型和 Model 的 Provider 绑定创建后暂不可修改；被
-Model 引用的 Provider、被 Virtual Model 引用的直连 Model 不能删除。
+替换凭据时可选择运行环境、环境变量、secret 文件或一次性明文输入。Bedrock 支持
+AWS 静态凭据，Vertex 支持 GCP 凭据文件，Azure 支持托管身份。一次性明文和结构化
+凭据仅随当前写请求发送，保存后不会由读取接口返回或重新显示。直连 Model 可将出站
+模型名设为沿用入站名称、显式名称、去除 Provider 前缀或自定义 CEL 表达式。Provider
+类型和 Model 的 Provider 绑定创建后暂不可修改；被 Model 引用的 Provider、被
+Virtual Model 引用的直连 Model 不能删除。
 
 agentgateway 管理控制台默认地址为 <http://127.0.0.1:15000/ui>。
 
@@ -271,8 +273,9 @@ make gateway-config-write-smoke
 端口，不会误用 `.env` 中仅供 Compose 网络解析的 `http://agentgateway:15000`。
 
 默认预览配置没有业务监听器、Provider 凭据或真实业务路由，但已经启用
-agentgateway 自己的 SQLite 请求日志数据库。Provider API Key 应配置在
-agentgateway 中，不能放入 AgentsharkX。
+agentgateway 自己的 SQLite 请求日志数据库。Provider API Key 可通过 Connect 的
+write-only 输入或 agentgateway 原生控制台配置，最终都由 agentgateway 配置管理面
+保存和使用。
 
 ### 4.2 Trust：Agent 和运行时资源
 
@@ -714,8 +717,8 @@ BFF 会拒绝：
 
 - `.env` 和 `.agentgateway.env` 不得提交到 Git；
 - AgentsharkX 管理令牌与 AgentGuard API Key 不能混用；
-- Provider API Key 只保存在 `.agentgateway.env`、agentgateway 支持的文件/Secret
-  Store 或其他服务端密钥存储中；
+- Provider API Key 可通过 Connect 的 write-only 明文模式写入 agentgateway 配置；
+  生产环境仍建议使用 `.agentgateway.env`、文件/Secret Store 或其他服务端密钥存储；
 - 生产环境必须使用 HTTPS 和 Secure Cookie；
 - agentgateway 管理端口和 AgentGuard 管理 API 应位于私有管理网络；
 - AgentsharkX 不请求或展示原始网关 Payload、工具参数、运行时结果和上游密钥；

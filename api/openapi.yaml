@@ -1783,12 +1783,26 @@ components:
         azureResourceType: { type: string, enum: [openAI, foundry] }
         azureApiVersion: { type: string, maxLength: 128 }
         azureProjectName: { type: string, maxLength: 256 }
+        tokenize: { type: boolean }
     LlmCredentialState:
       type: object
       additionalProperties: false
-      required: [configured]
+      required: [configured, kind]
       properties:
         configured: { type: boolean }
+        kind:
+          type: string
+          enum:
+            [
+              ambient,
+              environment,
+              literal,
+              file,
+              aws-static,
+              gcp-file,
+              azure-managed-identity,
+              other,
+            ]
     LlmCredentialInput:
       type: object
       additionalProperties: false
@@ -1796,11 +1810,44 @@ components:
       properties:
         mode:
           type: string
-          enum: [preserve, ambient, environment, file]
+          enum:
+            [
+              preserve,
+              ambient,
+              environment,
+              literal,
+              file,
+              aws-static,
+              gcp-file,
+              azure-managed-identity,
+            ]
         reference:
           type: string
           minLength: 1
           maxLength: 1024
+          writeOnly: true
+        secret:
+          type: string
+          minLength: 1
+          maxLength: 8192
+          writeOnly: true
+        accessKeyId:
+          type: string
+          minLength: 1
+          maxLength: 512
+          writeOnly: true
+        secretAccessKey:
+          type: string
+          minLength: 1
+          maxLength: 8192
+          writeOnly: true
+        sessionToken:
+          type: string
+          maxLength: 8192
+          writeOnly: true
+        clientId:
+          type: string
+          maxLength: 512
           writeOnly: true
     LlmProviderSetting:
       type: object
@@ -1850,6 +1897,7 @@ components:
           params,
           formats,
           visibility,
+          upstreamMode,
           credential,
           editable,
         ]
@@ -1868,6 +1916,9 @@ components:
           type: array
           items: { $ref: '#/components/schemas/LlmProviderFormat' }
         visibility: { type: string, enum: [public, internal] }
+        upstreamMode:
+          { type: string, enum: [incoming, explicit, strip, custom] }
+        modelExpression: { type: string, maxLength: 4096 }
         credential: { $ref: '#/components/schemas/LlmCredentialState' }
         editable: { type: boolean }
     LlmConfiguration:
@@ -1920,7 +1971,16 @@ components:
     LlmModelDraft:
       type: object
       additionalProperties: false
-      required: [name, providerMode, params, formats, visibility, credential]
+      required:
+        [
+          name,
+          providerMode,
+          params,
+          formats,
+          visibility,
+          upstreamMode,
+          credential,
+        ]
       properties:
         name: { type: string, minLength: 1, maxLength: 256 }
         providerMode: { type: string, enum: [builtin, custom, reference] }
@@ -1932,6 +1992,9 @@ components:
           maxItems: 7
           items: { $ref: '#/components/schemas/LlmProviderFormat' }
         visibility: { type: string, enum: [public, internal] }
+        upstreamMode:
+          { type: string, enum: [incoming, explicit, strip, custom] }
+        modelExpression: { type: string, maxLength: 4096 }
         credential: { $ref: '#/components/schemas/LlmCredentialInput' }
     LlmProviderMutationRequest:
       type: object

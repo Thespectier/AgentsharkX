@@ -29,7 +29,7 @@ import (
 )
 
 const maxLoginBodyBytes = 4096
-const maxMutationBodyBytes = 16 * 1024
+const maxMutationBodyBytes = 32 * 1024
 
 type contextKey string
 

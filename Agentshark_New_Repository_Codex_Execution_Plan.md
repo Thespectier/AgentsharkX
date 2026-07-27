@@ -705,22 +705,23 @@ AgentGuard 为 GPLv3，agentgateway 为 Apache-2.0。实现上保持独立进程
 
 ### Phase 8：Connect LLM 基础配置管理
 
-目标：把经过验证的 agentgateway Provider 和直连 Model 高频设置搬入
+目标：把经过验证的 agentgateway Provider 和直连 Model 主表单设置搬入
 `Connect / LLM`，同时保留上游高级编辑器的所有权和凭据边界。
 
 任务：
 
 1. 在 OpenAPI 中定义脱敏 LLM 配置、Provider/Model typed CRUD 和写入回执。
-2. BFF 读取整份 `/api/config`，只返回验证过的基础字段、格式和凭据配置状态。
+2. BFF 读取整份 `/api/config`，只返回验证过的主表单字段、格式和凭据配置状态/类型。
 3. 写入使用短时一次性 revision token、进程内串行化、读改写、单次 POST 和回读验证。
-4. 不接收明文 API Key；仅支持保留、运行环境、环境变量名或文件引用。
+4. 凭据写入支持保留、运行环境、环境变量、文件、一次性明文，以及验证过的 AWS、GCP、Azure 模式；读取接口不返回凭据值。
 5. Connect UI 提供共享 Provider 和直连 Model 管理；Virtual Model 和高级策略只读并跳转原生控制台。
 6. 添加 adapter、service、BFF、Mock 和浏览器流程测试，并记录上游整份配置写入的并发限制。
 
 验收：
 
 - Provider 和直连 Model 可新增、编辑、删除，并显示来源与写入回执。
-- 响应、浏览器、日志不包含现有凭据值或新凭据引用内容。
+- Provider 覆盖原生主表单凭据模式，直连 Model 覆盖原生出站模型映射模式。
+- 读取响应、写入回执和服务日志不包含现有或新凭据值；保存后页面不重新显示凭据。
 - 引用中的 Provider/Model 不可删除，陈旧或重复 revision token 不会触发上游 POST。
 - 一次成功操作只 POST 一次，写后回读验证目标状态且保留非 LLM、高级字段和现有凭据。
 - Virtual Model、Guardrail、负载/故障转移策略与原始 YAML 继续由 agentgateway 原生控制台编辑。

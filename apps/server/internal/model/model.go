@@ -201,15 +201,22 @@ type LLMProviderParams struct {
 	AzureResourceType string `json:"azureResourceType,omitempty"`
 	AzureAPIVersion   string `json:"azureApiVersion,omitempty"`
 	AzureProjectName  string `json:"azureProjectName,omitempty"`
+	Tokenize          bool   `json:"tokenize,omitempty"`
 }
 
 type LLMCredentialState struct {
-	Configured bool `json:"configured"`
+	Configured bool   `json:"configured"`
+	Kind       string `json:"kind"`
 }
 
 type LLMCredentialInput struct {
-	Mode      string `json:"mode"`
-	Reference string `json:"reference,omitempty"`
+	Mode            string `json:"mode"`
+	Reference       string `json:"reference,omitempty"`
+	Secret          string `json:"secret,omitempty"`
+	AccessKeyID     string `json:"accessKeyId,omitempty"`
+	SecretAccessKey string `json:"secretAccessKey,omitempty"`
+	SessionToken    string `json:"sessionToken,omitempty"`
+	ClientID        string `json:"clientId,omitempty"`
 }
 
 type LLMProviderSetting struct {
@@ -232,6 +239,8 @@ type LLMModelSetting struct {
 	Params            LLMProviderParams   `json:"params"`
 	Formats           []LLMProviderFormat `json:"formats"`
 	Visibility        string              `json:"visibility"`
+	UpstreamMode      string              `json:"upstreamMode"`
+	ModelExpression   string              `json:"modelExpression,omitempty"`
 	Credential        LLMCredentialState  `json:"credential"`
 	Editable          bool                `json:"editable"`
 }
@@ -267,6 +276,8 @@ type LLMModelDraft struct {
 	Params            LLMProviderParams   `json:"params"`
 	Formats           []LLMProviderFormat `json:"formats"`
 	Visibility        string              `json:"visibility"`
+	UpstreamMode      string              `json:"upstreamMode"`
+	ModelExpression   string              `json:"modelExpression,omitempty"`
 	Credential        LLMCredentialInput  `json:"credential"`
 }
 

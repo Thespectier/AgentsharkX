@@ -10,11 +10,12 @@ reimplementing either upstream.
 The repository is at the **0.7.0 Phase 7 preview** with the Phase 8 Connect LLM
 management round applied. Connect reads explicit agentgateway providers, models,
 MCP targets, and routes, and manages verified shared-provider and direct-model
-base settings through the BFF. Existing credentials are never returned to the
-browser; new API-key credentials use ambient auth, an environment-variable name,
-or a file reference rather than a literal value. Structured cloud credentials
-remain native-console only. Virtual models and advanced routing,
-policy, and raw configuration remain in the native agentgateway console. Trust now reads AgentGuard sessions,
+main-form settings through the BFF. Existing credentials are never returned to
+the browser. New credentials support the native ambient, environment-variable,
+file, write-only literal, AWS static, GCP credential-file, and Azure managed
+identity modes. Direct models also support incoming, explicit, stripped-prefix,
+and custom CEL outgoing-model mappings. Virtual models and advanced routing,
+policy, TLS, and raw configuration remain in the native agentgateway console. Trust now reads AgentGuard sessions,
 tools, skills, and MCP resources, builds Agents only from explicit AgentGuard
 identity fields, and supports tool-label updates plus polled Skill/MCP detection
 jobs. Protect now displays read-only agentgateway policy/guardrail summaries,

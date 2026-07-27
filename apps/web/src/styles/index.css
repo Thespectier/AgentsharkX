@@ -1615,7 +1615,11 @@ kbd {
   min-width: 0;
   margin: 0;
 }
+.llm-field--wide {
+  grid-column: 1 / -1;
+}
 .llm-field input,
+.llm-secret-input input,
 .llm-format-row > input {
   width: 100%;
   min-height: 38px;
@@ -1624,6 +1628,46 @@ kbd {
   border-radius: 8px;
   background: #0a1019;
   color: var(--text-primary);
+}
+.llm-secret-input {
+  position: relative;
+  display: block;
+}
+.llm-secret-input input {
+  padding-right: 38px;
+}
+.llm-secret-input button {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  display: grid;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  place-items: center;
+}
+.llm-secret-input button:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.llm-checkbox-field {
+  display: flex;
+  min-height: 38px;
+  padding: 9px 10px;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+.llm-checkbox-field input {
+  accent-color: var(--accent-blue);
 }
 .llm-field input:disabled,
 .llm-field select:disabled,

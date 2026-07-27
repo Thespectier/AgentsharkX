@@ -35,8 +35,10 @@ format names are retained.
 The exact pinned UI/source confirms that configuration writes submit the whole
 document, are accepted only for a file-backed source, are validated before the
 active YAML file is replaced, and provide no ETag or conditional-write header.
-Phase 8 therefore exposes only typed provider/direct-model fields and never
-accepts raw configuration or literal credentials from the browser.
+Phase 8 therefore exposes typed provider/direct-model main-form fields without
+accepting raw configuration. Typed write-only credential inputs match the
+pinned literal API-key, AWS static, GCP credential-file, and Azure managed
+identity shapes; no credential value is returned by the public read contract.
 The Phase 6 log and Analytics adapters send the same exact rolling 60-minute
 `timeRange`. Search always sends `includeAttributes=false`; Analytics requests
 `bucketSeconds=300`. The BFF does not call `/api/logs/get` and rejects

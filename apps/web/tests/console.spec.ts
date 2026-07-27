@@ -199,17 +199,18 @@ test("Connect manages verified LLM providers and direct models, then reruns setu
   let dialog = page.getByRole("dialog");
   await dialog.getByLabel("Provider name").fill("anthropic-backup");
   await dialog.getByLabel("Provider type").selectOption("anthropic");
-  await dialog.getByLabel("Credential mode").selectOption("environment");
-  await dialog.getByLabel("Environment variable").fill("ANTHROPIC_API_KEY");
+  await dialog.getByLabel("Credential mode").selectOption("literal");
+  await dialog.getByLabel("Provider API key").fill("browser-write-only-key");
   await dialog.getByRole("button", { name: "Save provider" }).click();
   await expect(page.getByText("Provider created in agentgateway.")).toBeVisible();
-  await expect(page.getByText("ANTHROPIC_API_KEY")).toHaveCount(0);
+  await expect(page.getByText("browser-write-only-key")).toHaveCount(0);
 
   await page.getByRole("button", { name: "Add model" }).click();
   dialog = page.getByRole("dialog");
   await dialog.getByLabel("Model name").fill("backup-chat");
   await dialog.getByLabel("Shared provider").selectOption("anthropic-backup");
-  await dialog.getByLabel("Target model").fill("claude-haiku-4-5");
+  await dialog.getByLabel("Outgoing model").selectOption("explicit");
+  await dialog.getByLabel("Explicit outgoing model").fill("claude-haiku-4-5");
   await dialog.getByRole("button", { name: "Save model" }).click();
   await expect(page.getByText("Model created in agentgateway.")).toBeVisible();
 

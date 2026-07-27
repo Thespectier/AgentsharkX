@@ -120,7 +120,7 @@ func TestApplyLLMChangePreservesSecretsAndUnrelatedConfiguration(t *testing.T) {
 		Operation: "update-llm-provider", ResourceID: provider.ID,
 		Provider: model.LLMProviderDraft{
 			Name: "shared-custom", ProviderType: "custom",
-			Params:     model.LLMProviderParams{BaseURL: "https://new.example/v1"},
+			Params:     model.LLMProviderParams{BaseURL: "https://new.example/v1", Tokenize: true},
 			Formats:    []model.LLMProviderFormat{{Type: "completions"}, {Type: "responses", Path: "/v1/responses"}},
 			Credential: model.LLMCredentialInput{Mode: "preserve"},
 		},
@@ -244,6 +244,158 @@ func TestCreateProviderWritesEnvironmentReferenceOnly(t *testing.T) {
 	defer state.mu.Unlock()
 	if !strings.Contains(string(state.lastPost), `"apiKey":"$OPENAI_API_KEY"`) {
 		t.Fatalf("environment reference missing: %s", state.lastPost)
+	}
+}
+
+func TestCredentialModesWriteVerifiedShapesWithoutReturningValues(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name         string
+		providerType string
+		params       model.LLMProviderParams
+		credential   model.LLMCredentialInput
+		kind         string
+		expected     []string
+		forbidden    []string
+	}{
+		{
+			name: "literal API key", providerType: "openai",
+			credential: model.LLMCredentialInput{Mode: "literal", Secret: "write-only-literal-value"},
+			kind:       "literal", expected: []string{`"apiKey":"write-only-literal-value"`},
+			forbidden: []string{"write-only-literal-value"},
+		},
+		{
+			name: "AWS static", providerType: "bedrock", params: model.LLMProviderParams{AWSRegion: "us-east-1"},
+			credential: model.LLMCredentialInput{
+				Mode: "aws-static", AccessKeyID: "AWS_TEST_ACCESS_ID",
+				SecretAccessKey: "write-only-aws-secret", SessionToken: "write-only-session-token",
+			},
+			kind:      "aws-static",
+			expected:  []string{`"aws"`, `"accessKeyId":"AWS_TEST_ACCESS_ID"`, `"secretAccessKey":"write-only-aws-secret"`, `"region":null`, `"serviceName":null`, `"sessionToken":"write-only-session-token"`},
+			forbidden: []string{"AWS_TEST_ACCESS_ID", "write-only-aws-secret", "write-only-session-token"},
+		},
+		{
+			name: "GCP file", providerType: "vertex", params: model.LLMProviderParams{VertexProject: "project-a"},
+			credential: model.LLMCredentialInput{Mode: "gcp-file", Reference: "/var/run/gcp.json"},
+			kind:       "gcp-file", expected: []string{`"gcp"`, `"file":"/var/run/gcp.json"`},
+			forbidden: []string{"/var/run/gcp.json"},
+		},
+		{
+			name: "Azure managed identity", providerType: "azure",
+			params:     model.LLMProviderParams{AzureResourceName: "resource-a", AzureResourceType: "openAI"},
+			credential: model.LLMCredentialInput{Mode: "azure-managed-identity", ClientID: "managed-client-id"},
+			kind:       "azure-managed-identity",
+			expected:   []string{`"azure"`, `"managedIdentity"`, `"clientId":"managed-client-id"`},
+			forbidden:  []string{"managed-client-id"},
+		},
+	}
+
+	for _, test := range tests {
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			state := &mutableConfigServer{config: json.RawMessage(`{"llm":{"providers":[],"models":[],"virtualModels":[]}}`)}
+			upstream := httptest.NewServer(http.HandlerFunc(state.handler))
+			defer upstream.Close()
+			client, err := New(upstream.URL, upstream.Client(), 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, revision, err := client.LLMConfiguration(t.Context())
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = client.ApplyLLMChange(t.Context(), revision, model.LLMChange{
+				Operation: "create-llm-provider",
+				Provider: model.LLMProviderDraft{
+					Name: "provider-a", ProviderType: test.providerType, Params: test.params,
+					Formats: []model.LLMProviderFormat{}, Credential: test.credential,
+				},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			state.mu.Lock()
+			posted := string(state.lastPost)
+			state.mu.Unlock()
+			for _, expected := range test.expected {
+				if !strings.Contains(posted, expected) {
+					t.Fatalf("upstream write missing expected field %q", expected)
+				}
+			}
+			configuration, _, err := client.LLMConfiguration(t.Context())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(configuration.Providers) != 1 || configuration.Providers[0].Credential.Kind != test.kind {
+				t.Fatalf("credential state = %#v", configuration.Providers)
+			}
+			encoded, _ := json.Marshal(configuration)
+			for _, forbidden := range test.forbidden {
+				if strings.Contains(string(encoded), forbidden) {
+					t.Fatalf("sanitized configuration exposed submitted credential field %q", forbidden)
+				}
+			}
+		})
+	}
+}
+
+func TestModelOutgoingModesWriteStripAndCustomExpressions(t *testing.T) {
+	t.Parallel()
+	state := &mutableConfigServer{config: json.RawMessage(`{"llm":{"providers":[],"models":[],"virtualModels":[]}}`)}
+	upstream := httptest.NewServer(http.HandlerFunc(state.handler))
+	defer upstream.Close()
+	client, err := New(upstream.URL, upstream.Client(), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, revision, err := client.LLMConfiguration(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = client.ApplyLLMChange(t.Context(), revision, model.LLMChange{
+		Operation: "create-llm-model",
+		Model: model.LLMModelDraft{
+			Name: "anthropic/*", ProviderMode: "builtin", ProviderType: "anthropic",
+			Params: model.LLMProviderParams{}, Formats: []model.LLMProviderFormat{}, Visibility: "public",
+			UpstreamMode: "strip", Credential: model.LLMCredentialInput{Mode: "ambient"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	state.mu.Lock()
+	posted := string(state.lastPost)
+	state.mu.Unlock()
+	if !strings.Contains(posted, `"model":"llmRequest.model.stripPrefix(\"anthropic/\")"`) {
+		t.Fatalf("strip transformation missing: %s", posted)
+	}
+
+	configuration, revision, err := client.LLMConfiguration(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if configuration.Models[0].UpstreamMode != "strip" {
+		t.Fatalf("strip setting = %#v", configuration.Models[0])
+	}
+	_, err = client.ApplyLLMChange(t.Context(), revision, model.LLMChange{
+		Operation: "update-llm-model", ResourceID: configuration.Models[0].ID,
+		Model: model.LLMModelDraft{
+			Name: "anthropic/*", ProviderMode: "builtin", ProviderType: "anthropic",
+			Params: model.LLMProviderParams{}, Formats: []model.LLMProviderFormat{}, Visibility: "public",
+			UpstreamMode: "custom", ModelExpression: `llmRequest.model + "-latest"`,
+			Credential: model.LLMCredentialInput{Mode: "preserve"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	configuration, _, err = client.LLMConfiguration(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if configuration.Models[0].UpstreamMode != "custom" || configuration.Models[0].ModelExpression != `llmRequest.model + "-latest"` {
+		t.Fatalf("custom setting = %#v", configuration.Models[0])
 	}
 }
 
