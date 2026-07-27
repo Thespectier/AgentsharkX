@@ -76,10 +76,17 @@ func (server *server) routes() {
 	server.mux.Handle("GET /api/v1/connect/summary", server.requireAuth(http.HandlerFunc(server.connectSummary)))
 	server.mux.Handle("GET /api/v1/connect/analytics", server.requireAuth(http.HandlerFunc(server.connectAnalytics)))
 	server.mux.Handle("GET /api/v1/connect/setup", server.requireAuth(http.HandlerFunc(server.connectSetup)))
+	server.mux.Handle("GET /api/v1/connect/llm/configuration", server.requireAuth(http.HandlerFunc(server.llmConfiguration)))
 	server.mux.Handle("GET /api/v1/connect/llm/providers", server.requireAuth(http.HandlerFunc(server.providers)))
+	server.mux.Handle("POST /api/v1/connect/llm/providers", server.requireAuth(server.requireCSRF(http.HandlerFunc(server.createLLMProvider))))
 	server.mux.Handle("GET /api/v1/connect/llm/providers/{resourceId}", server.requireAuth(http.HandlerFunc(server.provider)))
+	server.mux.Handle("PATCH /api/v1/connect/llm/providers/{resourceId}", server.requireAuth(server.requireCSRF(http.HandlerFunc(server.updateLLMProvider))))
+	server.mux.Handle("DELETE /api/v1/connect/llm/providers/{resourceId}", server.requireAuth(server.requireCSRF(http.HandlerFunc(server.deleteLLMProvider))))
 	server.mux.Handle("GET /api/v1/connect/llm/models", server.requireAuth(http.HandlerFunc(server.models)))
+	server.mux.Handle("POST /api/v1/connect/llm/models", server.requireAuth(server.requireCSRF(http.HandlerFunc(server.createLLMModel))))
 	server.mux.Handle("GET /api/v1/connect/llm/models/{resourceId}", server.requireAuth(http.HandlerFunc(server.gatewayModel)))
+	server.mux.Handle("PATCH /api/v1/connect/llm/models/{resourceId}", server.requireAuth(server.requireCSRF(http.HandlerFunc(server.updateLLMModel))))
+	server.mux.Handle("DELETE /api/v1/connect/llm/models/{resourceId}", server.requireAuth(server.requireCSRF(http.HandlerFunc(server.deleteLLMModel))))
 	server.mux.Handle("GET /api/v1/connect/mcp/servers", server.requireAuth(http.HandlerFunc(server.mcpServers)))
 	server.mux.Handle("GET /api/v1/connect/mcp/servers/{resourceId}", server.requireAuth(http.HandlerFunc(server.mcpServer)))
 	server.mux.Handle("GET /api/v1/connect/traffic/routes", server.requireAuth(http.HandlerFunc(server.trafficRoutes)))
@@ -195,6 +202,14 @@ func (server *server) connectSetup(writer http.ResponseWriter, request *http.Req
 	server.writeJSON(writer, http.StatusOK, server.config.Connect.Setup(request.Context()))
 }
 
+func (server *server) llmConfiguration(writer http.ResponseWriter, request *http.Request) {
+	if !server.connectAvailable(writer, request) {
+		return
+	}
+	envelope, err := server.config.Connect.LLMConfiguration(request.Context())
+	server.writeConnectResult(writer, request, envelope, err)
+}
+
 func (server *server) providers(writer http.ResponseWriter, request *http.Request) {
 	query, ok := server.resourceQuery(writer, request)
 	if !ok || !server.connectAvailable(writer, request) {
@@ -212,6 +227,42 @@ func (server *server) provider(writer http.ResponseWriter, request *http.Request
 	server.writeConnectResult(writer, request, envelope, err)
 }
 
+func (server *server) createLLMProvider(writer http.ResponseWriter, request *http.Request) {
+	if !server.connectAvailable(writer, request) {
+		return
+	}
+	var input model.LLMProviderMutationRequest
+	if !server.decodeMutation(writer, request, &input) {
+		return
+	}
+	envelope, err := server.config.Connect.CreateProvider(request.Context(), input)
+	server.writeConnectMutation(writer, request, http.StatusCreated, envelope, err)
+}
+
+func (server *server) updateLLMProvider(writer http.ResponseWriter, request *http.Request) {
+	if !server.connectAvailable(writer, request) {
+		return
+	}
+	var input model.LLMProviderMutationRequest
+	if !server.decodeMutation(writer, request, &input) {
+		return
+	}
+	envelope, err := server.config.Connect.UpdateProvider(request.Context(), request.PathValue("resourceId"), input)
+	server.writeConnectMutation(writer, request, http.StatusOK, envelope, err)
+}
+
+func (server *server) deleteLLMProvider(writer http.ResponseWriter, request *http.Request) {
+	if !server.connectAvailable(writer, request) {
+		return
+	}
+	var input model.LLMDeleteRequest
+	if !server.decodeMutation(writer, request, &input) {
+		return
+	}
+	envelope, err := server.config.Connect.DeleteProvider(request.Context(), request.PathValue("resourceId"), input)
+	server.writeConnectMutation(writer, request, http.StatusOK, envelope, err)
+}
+
 func (server *server) models(writer http.ResponseWriter, request *http.Request) {
 	query, ok := server.resourceQuery(writer, request)
 	if !ok || !server.connectAvailable(writer, request) {
@@ -227,6 +278,42 @@ func (server *server) gatewayModel(writer http.ResponseWriter, request *http.Req
 	}
 	envelope, err := server.config.Connect.Model(request.Context(), request.PathValue("resourceId"))
 	server.writeConnectResult(writer, request, envelope, err)
+}
+
+func (server *server) createLLMModel(writer http.ResponseWriter, request *http.Request) {
+	if !server.connectAvailable(writer, request) {
+		return
+	}
+	var input model.LLMModelMutationRequest
+	if !server.decodeMutation(writer, request, &input) {
+		return
+	}
+	envelope, err := server.config.Connect.CreateModel(request.Context(), input)
+	server.writeConnectMutation(writer, request, http.StatusCreated, envelope, err)
+}
+
+func (server *server) updateLLMModel(writer http.ResponseWriter, request *http.Request) {
+	if !server.connectAvailable(writer, request) {
+		return
+	}
+	var input model.LLMModelMutationRequest
+	if !server.decodeMutation(writer, request, &input) {
+		return
+	}
+	envelope, err := server.config.Connect.UpdateModel(request.Context(), request.PathValue("resourceId"), input)
+	server.writeConnectMutation(writer, request, http.StatusOK, envelope, err)
+}
+
+func (server *server) deleteLLMModel(writer http.ResponseWriter, request *http.Request) {
+	if !server.connectAvailable(writer, request) {
+		return
+	}
+	var input model.LLMDeleteRequest
+	if !server.decodeMutation(writer, request, &input) {
+		return
+	}
+	envelope, err := server.config.Connect.DeleteModel(request.Context(), request.PathValue("resourceId"), input)
+	server.writeConnectMutation(writer, request, http.StatusOK, envelope, err)
 }
 
 func (server *server) mcpServers(writer http.ResponseWriter, request *http.Request) {
@@ -559,6 +646,30 @@ func (server *server) writeConnectResult(writer http.ResponseWriter, request *ht
 		server.writeError(writer, request, http.StatusNotFound, "NOT_FOUND", "agentgateway resource was not found", source(model.SourceAgentGateway), false)
 		return
 	}
+	if errors.Is(err, connect.ErrInvalidRequest) {
+		server.writeError(writer, request, http.StatusBadRequest, "INVALID_REQUEST", "the LLM configuration request is invalid", source(model.SourceAgentGateway), false)
+		return
+	}
+	if errors.Is(err, connect.ErrRevisionStale) {
+		server.writeError(writer, request, http.StatusConflict, "CONFIGURATION_CHANGED", "agentgateway configuration changed; refresh before saving again", source(model.SourceAgentGateway), false)
+		return
+	}
+	if errors.Is(err, connect.ErrReferenced) {
+		server.writeError(writer, request, http.StatusConflict, "RESOURCE_REFERENCED", "the LLM configuration resource is still referenced", source(model.SourceAgentGateway), false)
+		return
+	}
+	if errors.Is(err, connect.ErrConflict) {
+		server.writeError(writer, request, http.StatusConflict, "RESOURCE_CONFLICT", "an LLM configuration resource already uses that name", source(model.SourceAgentGateway), false)
+		return
+	}
+	if errors.Is(err, connect.ErrMutationInFlight) {
+		server.writeError(writer, request, http.StatusConflict, "MUTATION_IN_FLIGHT", "another LLM configuration change is still in progress", source(model.SourceAgentGateway), false)
+		return
+	}
+	if errors.Is(err, gateway.ErrLLMWriteUnverified) {
+		server.writeError(writer, request, http.StatusServiceUnavailable, "WRITE_UNVERIFIED", "the write result could not be verified; refresh before making another change", source(model.SourceAgentGateway), false)
+		return
+	}
 	var contractError *gateway.ContractError
 	if errors.As(err, &contractError) {
 		server.writeError(writer, request, http.StatusBadGateway, "UPSTREAM_CONTRACT_MISMATCH", contractError.Error(), source(model.SourceAgentGateway), false)
@@ -570,6 +681,21 @@ func (server *server) writeConnectResult(writer http.ResponseWriter, request *ht
 		return
 	}
 	server.writeError(writer, request, http.StatusInternalServerError, "INTERNAL_ERROR", "the request could not be completed", source(model.SourceAgentGateway), true)
+}
+
+func (server *server) writeConnectMutation(writer http.ResponseWriter, request *http.Request, status int, envelope model.LLMMutationEnvelope, err error) {
+	if err != nil {
+		server.writeConnectResult(writer, request, nil, err)
+		return
+	}
+	envelope.Data.RequestID = requestID(request.Context())
+	server.config.Logger.Info("connect operation completed",
+		"request_id", envelope.Data.RequestID,
+		"operation", envelope.Data.Operation,
+		"target", envelope.Data.Target,
+		"status", envelope.Data.Status,
+	)
+	server.writeJSON(writer, status, envelope)
 }
 
 func (server *server) writeTrustResult(writer http.ResponseWriter, request *http.Request, status int, envelope any, err error) {

@@ -2,6 +2,7 @@ package connect
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -9,9 +10,12 @@ import (
 )
 
 type fakeGateway struct {
-	snapshot  model.GatewaySnapshot
-	analytics model.GatewayAnalytics
-	health    model.SourceHealth
+	snapshot      model.GatewaySnapshot
+	analytics     model.GatewayAnalytics
+	health        model.SourceHealth
+	configuration model.LLMConfiguration
+	revision      string
+	apply         func(context.Context, string, model.LLMChange) error
 }
 
 func (fake fakeGateway) Health(context.Context) model.SourceHealth { return fake.health }
@@ -20,6 +24,23 @@ func (fake fakeGateway) Snapshot(context.Context) (model.GatewaySnapshot, error)
 }
 func (fake fakeGateway) Analytics(context.Context) (model.GatewayAnalytics, error) {
 	return fake.analytics, nil
+}
+func (fake fakeGateway) LLMConfiguration(context.Context) (model.LLMConfiguration, string, error) {
+	return fake.configuration, fake.revision, nil
+}
+func (fake fakeGateway) ApplyLLMChange(ctx context.Context, revision string, change model.LLMChange) (string, error) {
+	if fake.apply != nil {
+		if err := fake.apply(ctx, revision, change); err != nil {
+			return "", err
+		}
+	}
+	if change.Provider.Name != "" {
+		return change.Provider.Name, nil
+	}
+	if change.Model.Name != "" {
+		return change.Model.Name, nil
+	}
+	return change.ResourceID, nil
 }
 
 func TestResourceListsFilterPaginateAndResolveDetails(t *testing.T) {
@@ -84,5 +105,45 @@ func TestSummaryAndSetupExposeVerifiedLinksWithoutInventingHealth(t *testing.T) 
 	setup := service.Setup(t.Context())
 	if !setup.Data.ConfigurationReadable || setup.Data.Version != "1.3.1" || setup.Data.Status != model.HealthHealthy {
 		t.Fatalf("unexpected setup verification: %#v", setup.Data)
+	}
+}
+
+func TestLLMConfigurationIssuesOneTimeRevisionAndAppliesTypedChange(t *testing.T) {
+	t.Parallel()
+	fetchedAt := time.Date(2026, 7, 27, 8, 0, 0, 0, time.UTC)
+	var applied model.LLMChange
+	service := New(fakeGateway{
+		configuration: model.LLMConfiguration{
+			Source: model.SourceAgentGateway, FetchedAt: fetchedAt,
+			Providers: []model.LLMProviderSetting{}, Models: []model.LLMModelSetting{},
+			VirtualModels: []model.GatewayModel{},
+		},
+		revision: "revision-a",
+		apply: func(_ context.Context, revision string, change model.LLMChange) error {
+			if revision != "revision-a" {
+				t.Fatalf("revision = %q", revision)
+			}
+			applied = change
+			return nil
+		},
+	}, "http://localhost:15000/ui")
+
+	configuration, err := service.LLMConfiguration(t.Context())
+	if err != nil || configuration.Data.RevisionToken == "" || configuration.Data.Links.RawConfig == "" {
+		t.Fatalf("unexpected configuration: %#v err=%v", configuration, err)
+	}
+	request := model.LLMProviderMutationRequest{
+		RevisionToken: configuration.Data.RevisionToken,
+		Provider: model.LLMProviderDraft{
+			Name: "shared", ProviderType: "openai", Formats: []model.LLMProviderFormat{},
+			Credential: model.LLMCredentialInput{Mode: "environment", Reference: "OPENAI_API_KEY"},
+		},
+	}
+	receipt, err := service.CreateProvider(t.Context(), request)
+	if err != nil || receipt.Data.Operation != "create-llm-provider" || applied.Provider.Name != "shared" {
+		t.Fatalf("unexpected mutation: receipt=%#v change=%#v err=%v", receipt, applied, err)
+	}
+	if _, err := service.CreateProvider(t.Context(), request); !errors.Is(err, ErrRevisionStale) {
+		t.Fatalf("one-time revision error = %v", err)
 	}
 }

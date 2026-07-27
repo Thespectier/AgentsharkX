@@ -7,18 +7,19 @@ The container was started with an empty static configuration plus
 `ADMIN_ADDR=0.0.0.0:15000` and `STATS_ADDR=0.0.0.0:15020`. This verifies the
 management surface without configuring or sending business traffic.
 
-| Sample | Request | Result |
-|---|---|---|
-| `readiness.response.txt` | `GET :15021/healthz/ready` | 200 |
-| `runtime.response.json` | `GET :15000/api/runtime` | 200 |
-| `config.response.json` | `GET :15000/api/config` | 200 |
-| `config-populated.response.json` | `GET :15000/api/config` | Sanitized populated shape from the pinned upstream UI fixture and runtime |
-| `config-dump.response.json` | `GET :15000/config_dump` | 200, selected stable top-level fields |
-| `cost-models.response.json` | `GET :15000/api/costs/models` | 200 |
-| `logs-unconfigured.response.json` | `POST :15000/api/logs/search` | 500, no request-log DB |
-| `logs-populated.response.json` | `POST :15000/api/logs/search` | Sanitized populated shape from the pinned log-store source contract |
-| `analytics-unconfigured.response.json` | `POST :15000/api/logs/analytics/summary` | 500, no request-log DB |
-| `metrics.sample.txt` | `GET :15020/metrics` | 200, truncated non-sensitive sample |
+| Sample                                 | Request                                  | Result                                                                    |
+| -------------------------------------- | ---------------------------------------- | ------------------------------------------------------------------------- |
+| `readiness.response.txt`               | `GET :15021/healthz/ready`               | 200                                                                       |
+| `runtime.response.json`                | `GET :15000/api/runtime`                 | 200                                                                       |
+| `config.response.json`                 | `GET :15000/api/config`                  | 200                                                                       |
+| `config-populated.response.json`       | `GET :15000/api/config`                  | Sanitized populated shape from the pinned upstream UI fixture and runtime |
+| `config-write.response.json`           | `POST :15000/api/config`                 | 200, sanitized success response from the pinned file-backed writer        |
+| `config-dump.response.json`            | `GET :15000/config_dump`                 | 200, selected stable top-level fields                                     |
+| `cost-models.response.json`            | `GET :15000/api/costs/models`            | 200                                                                       |
+| `logs-unconfigured.response.json`      | `POST :15000/api/logs/search`            | 500, no request-log DB                                                    |
+| `logs-populated.response.json`         | `POST :15000/api/logs/search`            | Sanitized populated shape from the pinned log-store source contract       |
+| `analytics-unconfigured.response.json` | `POST :15000/api/logs/analytics/summary` | 500, no request-log DB                                                    |
+| `metrics.sample.txt`                   | `GET :15020/metrics`                     | 200, truncated non-sensitive sample                                       |
 
 Provider/model/MCP/route summaries must be derived only from explicit
 config/config-dump fields. No dedicated resource-list API was found in this
@@ -31,6 +32,11 @@ and API-key fixture values are intentionally excluded from the frozen sample.
 The `provider.custom` object discriminator was additionally verified from the
 running pinned `/api/config` contract on 2026-07-27; only its non-sensitive
 format names are retained.
+The exact pinned UI/source confirms that configuration writes submit the whole
+document, are accepted only for a file-backed source, are validated before the
+active YAML file is replaced, and provide no ETag or conditional-write header.
+Phase 8 therefore exposes only typed provider/direct-model fields and never
+accepts raw configuration or literal credentials from the browser.
 The Phase 6 log and Analytics adapters send the same exact rolling 60-minute
 `timeRange`. Search always sends `includeAttributes=false`; Analytics requests
 `bucketSeconds=300`. The BFF does not call `/api/logs/get` and rejects

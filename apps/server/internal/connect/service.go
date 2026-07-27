@@ -3,43 +3,232 @@ package connect
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/base64"
 	"errors"
 	"fmt"
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
+	"github.com/Thespectier/AgentsharkX/apps/server/internal/gateway"
 	"github.com/Thespectier/AgentsharkX/apps/server/internal/model"
 )
 
 const (
 	defaultLimit = 25
 	maxLimit     = 100
+	maxRevisions = 100
+	revisionTTL  = 5 * time.Minute
 )
 
 var (
-	ErrInvalidCursor = errors.New("invalid pagination cursor")
-	ErrNotFound      = errors.New("resource not found")
+	ErrInvalidCursor    = errors.New("invalid pagination cursor")
+	ErrNotFound         = errors.New("resource not found")
+	ErrInvalidRequest   = errors.New("invalid connect request")
+	ErrRevisionStale    = errors.New("configuration revision is stale")
+	ErrConflict         = errors.New("configuration resource conflicts with current state")
+	ErrReferenced       = errors.New("configuration resource is still referenced")
+	ErrMutationInFlight = errors.New("LLM configuration mutation already in progress")
 )
 
 type Gateway interface {
 	Health(context.Context) model.SourceHealth
 	Snapshot(context.Context) (model.GatewaySnapshot, error)
 	Analytics(context.Context) (model.GatewayAnalytics, error)
+	LLMConfiguration(context.Context) (model.LLMConfiguration, string, error)
+	ApplyLLMChange(context.Context, string, model.LLMChange) (string, error)
+}
+
+type revisionState struct {
+	revision  string
+	createdAt time.Time
+	expiresAt time.Time
 }
 
 type Service struct {
-	gateway Gateway
-	links   model.ConsoleLinks
+	gateway   Gateway
+	links     model.ConsoleLinks
+	mu        sync.Mutex
+	revisions map[string]revisionState
+	mutating  bool
 }
 
 func New(gateway Gateway, consoleURL string) *Service {
-	return &Service{gateway: gateway, links: consoleLinks(consoleURL)}
+	return &Service{
+		gateway: gateway, links: consoleLinks(consoleURL), revisions: make(map[string]revisionState),
+	}
 }
 
 func (service *Service) Links() model.ConsoleLinks { return service.links }
+
+func (service *Service) LLMConfiguration(ctx context.Context) (model.LLMConfigurationEnvelope, error) {
+	configuration, revision, err := service.gateway.LLMConfiguration(ctx)
+	if err != nil {
+		return model.LLMConfigurationEnvelope{}, err
+	}
+	token, err := service.issueRevision(revision)
+	if err != nil {
+		return model.LLMConfigurationEnvelope{}, err
+	}
+	configuration.RevisionToken = token
+	configuration.Links = service.links
+	return model.LLMConfigurationEnvelope{
+		Data: configuration,
+		Meta: gatewayMeta(configuration.FetchedAt, false),
+	}, nil
+}
+
+func (service *Service) CreateProvider(ctx context.Context, request model.LLMProviderMutationRequest) (model.LLMMutationEnvelope, error) {
+	return service.applyLLMChange(ctx, request.RevisionToken, model.LLMChange{
+		Operation: "create-llm-provider", Provider: request.Provider,
+	}, request.Provider.Name, "LLM provider created")
+}
+
+func (service *Service) UpdateProvider(ctx context.Context, id string, request model.LLMProviderMutationRequest) (model.LLMMutationEnvelope, error) {
+	return service.applyLLMChange(ctx, request.RevisionToken, model.LLMChange{
+		Operation: "update-llm-provider", ResourceID: id, Provider: request.Provider,
+	}, request.Provider.Name, "LLM provider updated")
+}
+
+func (service *Service) DeleteProvider(ctx context.Context, id string, request model.LLMDeleteRequest) (model.LLMMutationEnvelope, error) {
+	if !request.Confirmed {
+		return model.LLMMutationEnvelope{}, ErrInvalidRequest
+	}
+	return service.applyLLMChange(ctx, request.RevisionToken, model.LLMChange{
+		Operation: "delete-llm-provider", ResourceID: id,
+	}, id, "LLM provider deleted")
+}
+
+func (service *Service) CreateModel(ctx context.Context, request model.LLMModelMutationRequest) (model.LLMMutationEnvelope, error) {
+	return service.applyLLMChange(ctx, request.RevisionToken, model.LLMChange{
+		Operation: "create-llm-model", Model: request.Model,
+	}, request.Model.Name, "LLM model created")
+}
+
+func (service *Service) UpdateModel(ctx context.Context, id string, request model.LLMModelMutationRequest) (model.LLMMutationEnvelope, error) {
+	return service.applyLLMChange(ctx, request.RevisionToken, model.LLMChange{
+		Operation: "update-llm-model", ResourceID: id, Model: request.Model,
+	}, request.Model.Name, "LLM model updated")
+}
+
+func (service *Service) DeleteModel(ctx context.Context, id string, request model.LLMDeleteRequest) (model.LLMMutationEnvelope, error) {
+	if !request.Confirmed {
+		return model.LLMMutationEnvelope{}, ErrInvalidRequest
+	}
+	return service.applyLLMChange(ctx, request.RevisionToken, model.LLMChange{
+		Operation: "delete-llm-model", ResourceID: id,
+	}, id, "LLM model deleted")
+}
+
+func (service *Service) applyLLMChange(ctx context.Context, token string, change model.LLMChange, target, message string) (model.LLMMutationEnvelope, error) {
+	if token == "" || len(token) > 128 || target == "" {
+		return model.LLMMutationEnvelope{}, ErrInvalidRequest
+	}
+	revision, ok := service.consumeRevision(token)
+	if !ok {
+		return model.LLMMutationEnvelope{}, ErrRevisionStale
+	}
+	if !service.beginMutation() {
+		return model.LLMMutationEnvelope{}, ErrMutationInFlight
+	}
+	defer service.endMutation()
+	resolvedTarget, err := service.gateway.ApplyLLMChange(ctx, revision, change)
+	if err != nil {
+		return model.LLMMutationEnvelope{}, translateLLMError(err)
+	}
+	if resolvedTarget != "" {
+		target = resolvedTarget
+	}
+	completedAt := time.Now().UTC()
+	return model.LLMMutationEnvelope{
+		Data: model.LLMMutationReceipt{
+			Operation: change.Operation, Status: "succeeded", Source: model.SourceAgentGateway,
+			Target: target, CompletedAt: completedAt, Message: message,
+		},
+		Meta: gatewayMeta(completedAt, false),
+	}, nil
+}
+
+func translateLLMError(err error) error {
+	switch {
+	case errors.Is(err, gateway.ErrConfigurationChanged):
+		return ErrRevisionStale
+	case errors.Is(err, gateway.ErrLLMInvalidRequest):
+		return ErrInvalidRequest
+	case errors.Is(err, gateway.ErrLLMResourceNotFound):
+		return ErrNotFound
+	case errors.Is(err, gateway.ErrLLMResourceReferenced):
+		return ErrReferenced
+	case errors.Is(err, gateway.ErrLLMResourceConflict):
+		return ErrConflict
+	default:
+		return err
+	}
+}
+
+func (service *Service) issueRevision(revision string) (string, error) {
+	bytes := make([]byte, 24)
+	if _, err := rand.Read(bytes); err != nil {
+		return "", err
+	}
+	token := base64.RawURLEncoding.EncodeToString(bytes)
+	now := time.Now().UTC()
+	service.mu.Lock()
+	defer service.mu.Unlock()
+	service.pruneRevisionsLocked(now)
+	if len(service.revisions) >= maxRevisions {
+		var oldestToken string
+		var oldestTime time.Time
+		for candidate, state := range service.revisions {
+			if oldestToken == "" || state.createdAt.Before(oldestTime) {
+				oldestToken, oldestTime = candidate, state.createdAt
+			}
+		}
+		delete(service.revisions, oldestToken)
+	}
+	service.revisions[token] = revisionState{revision: revision, createdAt: now, expiresAt: now.Add(revisionTTL)}
+	return token, nil
+}
+
+func (service *Service) consumeRevision(token string) (string, bool) {
+	now := time.Now().UTC()
+	service.mu.Lock()
+	defer service.mu.Unlock()
+	service.pruneRevisionsLocked(now)
+	state, ok := service.revisions[token]
+	if !ok || !state.expiresAt.After(now) {
+		return "", false
+	}
+	delete(service.revisions, token)
+	return state.revision, true
+}
+
+func (service *Service) pruneRevisionsLocked(now time.Time) {
+	for token, state := range service.revisions {
+		if !state.expiresAt.After(now) {
+			delete(service.revisions, token)
+		}
+	}
+}
+
+func (service *Service) beginMutation() bool {
+	service.mu.Lock()
+	defer service.mu.Unlock()
+	if service.mutating {
+		return false
+	}
+	service.mutating = true
+	return true
+}
+
+func (service *Service) endMutation() {
+	service.mu.Lock()
+	service.mutating = false
+	service.mu.Unlock()
+}
 
 func (service *Service) Summary(ctx context.Context) (model.ConnectSummaryEnvelope, error) {
 	snapshot, err := service.gateway.Snapshot(ctx)

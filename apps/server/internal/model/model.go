@@ -186,6 +186,127 @@ type GatewayModel struct {
 	Targets     []string `json:"targets,omitempty"`
 }
 
+type LLMProviderFormat struct {
+	Type string `json:"type"`
+	Path string `json:"path,omitempty"`
+}
+
+type LLMProviderParams struct {
+	Model             string `json:"model,omitempty"`
+	BaseURL           string `json:"baseUrl,omitempty"`
+	AWSRegion         string `json:"awsRegion,omitempty"`
+	VertexRegion      string `json:"vertexRegion,omitempty"`
+	VertexProject     string `json:"vertexProject,omitempty"`
+	AzureResourceName string `json:"azureResourceName,omitempty"`
+	AzureResourceType string `json:"azureResourceType,omitempty"`
+	AzureAPIVersion   string `json:"azureApiVersion,omitempty"`
+	AzureProjectName  string `json:"azureProjectName,omitempty"`
+}
+
+type LLMCredentialState struct {
+	Configured bool `json:"configured"`
+}
+
+type LLMCredentialInput struct {
+	Mode      string `json:"mode"`
+	Reference string `json:"reference,omitempty"`
+}
+
+type LLMProviderSetting struct {
+	ConnectResource
+	Name         string              `json:"name"`
+	ProviderType string              `json:"providerType"`
+	Params       LLMProviderParams   `json:"params"`
+	Formats      []LLMProviderFormat `json:"formats"`
+	Credential   LLMCredentialState  `json:"credential"`
+	ModelCount   int                 `json:"modelCount"`
+	Editable     bool                `json:"editable"`
+}
+
+type LLMModelSetting struct {
+	ConnectResource
+	Name              string              `json:"name"`
+	ProviderMode      string              `json:"providerMode"`
+	ProviderType      string              `json:"providerType,omitempty"`
+	ProviderReference string              `json:"providerReference,omitempty"`
+	Params            LLMProviderParams   `json:"params"`
+	Formats           []LLMProviderFormat `json:"formats"`
+	Visibility        string              `json:"visibility"`
+	Credential        LLMCredentialState  `json:"credential"`
+	Editable          bool                `json:"editable"`
+}
+
+type LLMConfiguration struct {
+	Source        Source               `json:"source"`
+	FetchedAt     time.Time            `json:"fetchedAt"`
+	RevisionToken string               `json:"revisionToken"`
+	Providers     []LLMProviderSetting `json:"providers"`
+	Models        []LLMModelSetting    `json:"models"`
+	VirtualModels []GatewayModel       `json:"virtualModels"`
+	Links         ConsoleLinks         `json:"links"`
+}
+
+type LLMConfigurationEnvelope struct {
+	Data LLMConfiguration `json:"data"`
+	Meta Meta             `json:"meta"`
+}
+
+type LLMProviderDraft struct {
+	Name         string              `json:"name"`
+	ProviderType string              `json:"providerType"`
+	Params       LLMProviderParams   `json:"params"`
+	Formats      []LLMProviderFormat `json:"formats"`
+	Credential   LLMCredentialInput  `json:"credential"`
+}
+
+type LLMModelDraft struct {
+	Name              string              `json:"name"`
+	ProviderMode      string              `json:"providerMode"`
+	ProviderType      string              `json:"providerType,omitempty"`
+	ProviderReference string              `json:"providerReference,omitempty"`
+	Params            LLMProviderParams   `json:"params"`
+	Formats           []LLMProviderFormat `json:"formats"`
+	Visibility        string              `json:"visibility"`
+	Credential        LLMCredentialInput  `json:"credential"`
+}
+
+type LLMProviderMutationRequest struct {
+	RevisionToken string           `json:"revisionToken"`
+	Provider      LLMProviderDraft `json:"provider"`
+}
+
+type LLMModelMutationRequest struct {
+	RevisionToken string        `json:"revisionToken"`
+	Model         LLMModelDraft `json:"model"`
+}
+
+type LLMDeleteRequest struct {
+	RevisionToken string `json:"revisionToken"`
+	Confirmed     bool   `json:"confirmed"`
+}
+
+type LLMChange struct {
+	Operation  string
+	ResourceID string
+	Provider   LLMProviderDraft
+	Model      LLMModelDraft
+}
+
+type LLMMutationReceipt struct {
+	Operation   string    `json:"operation"`
+	Status      string    `json:"status"`
+	Source      Source    `json:"source"`
+	Target      string    `json:"target"`
+	RequestID   string    `json:"requestId"`
+	CompletedAt time.Time `json:"completedAt"`
+	Message     string    `json:"message"`
+}
+
+type LLMMutationEnvelope struct {
+	Data LLMMutationReceipt `json:"data"`
+	Meta Meta               `json:"meta"`
+}
+
 type GatewayMCPServer struct {
 	ConnectResource
 	Name      string `json:"name"`

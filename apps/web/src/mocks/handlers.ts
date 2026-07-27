@@ -14,6 +14,14 @@ import type {
   ConfirmedActionRequest,
   DiagnosticsData,
   LabelUpdate,
+  LlmConfiguration,
+  LlmDeleteRequest,
+  LlmModelDraft,
+  LlmModelMutationRequest,
+  LlmModelSetting,
+  LlmProviderDraft,
+  LlmProviderMutationRequest,
+  LlmProviderSetting,
   MCPDetectionRequest,
   ProtectSnapshot,
   RuntimeRule,
@@ -207,6 +215,63 @@ async function pageResponse<T>(request: Request, data: T[], source: Source) {
 let mockTrustResources = trustResources.map((resource) => structuredClone(resource));
 let mockProtectSnapshot = structuredClone(protectSnapshot);
 let mockProtectApprovals = structuredClone(protectApprovals);
+let mockLlmRevision = 1;
+let nextLlmResource = 100;
+let mockLlmConfiguration: LlmConfiguration = {
+  source: "agentgateway",
+  fetchedAt: capturedAt,
+  revisionToken: "mock-llm-revision-1",
+  providers: [
+    {
+      id: "openai-shared",
+      upstreamId: "openai-shared",
+      source: "agentgateway",
+      fetchedAt: capturedAt,
+      rawRef: { source: "agentgateway", id: "/llm/providers/0" },
+      name: "openai-shared",
+      providerType: "openai",
+      params: { model: "gpt-5.4-nano" },
+      formats: [],
+      credential: { configured: true },
+      modelCount: 1,
+      editable: true,
+    },
+  ],
+  models: [
+    {
+      id: "openai-wildcard",
+      upstreamId: "openai/*",
+      source: "agentgateway",
+      fetchedAt: capturedAt,
+      rawRef: { source: "agentgateway", id: "/llm/models/0" },
+      name: "openai/*",
+      providerMode: "builtin",
+      providerType: "openai",
+      params: {},
+      formats: [],
+      visibility: "public",
+      credential: { configured: false },
+      editable: true,
+    },
+    {
+      id: "fast",
+      upstreamId: "fast",
+      source: "agentgateway",
+      fetchedAt: capturedAt,
+      rawRef: { source: "agentgateway", id: "/llm/models/1" },
+      name: "fast",
+      providerMode: "reference",
+      providerReference: "openai-shared",
+      params: { model: "gpt-5.4-nano" },
+      formats: [],
+      visibility: "public",
+      credential: { configured: false },
+      editable: true,
+    },
+  ],
+  virtualModels: connectData.models.filter((model) => model.kind === "virtual"),
+  links: connectData.summary.links,
+};
 const ruleChecks = new Map<string, string>();
 const approvalAttempts = new Map<string, number>();
 
@@ -243,6 +308,113 @@ function protectReceipt(operation: string, target: string, message: string) {
       message,
     },
     meta: { ...meta("agentguard"), fetchedAt: completedAt },
+  });
+}
+
+function llmFailure(status: number, code: string, message: string): Response {
+  return HttpResponse.json(
+    {
+      error: {
+        code,
+        message,
+        source: "agentgateway",
+        requestId: `req_mock_llm_${status}`,
+        retryable: status >= 500,
+      },
+    } satisfies ApiFailure,
+    { status },
+  );
+}
+
+function acceptLlmRevision(revisionToken: string): Response | undefined {
+  if (revisionToken !== mockLlmConfiguration.revisionToken) {
+    return llmFailure(
+      409,
+      "CONFIGURATION_CHANGED",
+      "agentgateway configuration changed. Refresh and retry the operation.",
+    );
+  }
+  return undefined;
+}
+
+function nextLlmRevision() {
+  mockLlmRevision += 1;
+  mockLlmConfiguration.revisionToken = `mock-llm-revision-${mockLlmRevision}`;
+  mockLlmConfiguration.fetchedAt = new Date().toISOString();
+  for (const provider of mockLlmConfiguration.providers) {
+    provider.modelCount = mockLlmConfiguration.models.filter(
+      (model) => model.providerMode === "reference" && model.providerReference === provider.name,
+    ).length;
+  }
+}
+
+function credentialConfigured(
+  draft: LlmProviderDraft | LlmModelDraft,
+  current?: { credential: { configured: boolean } },
+) {
+  if (draft.credential.mode === "preserve") return current?.credential.configured ?? false;
+  return draft.credential.mode === "environment" || draft.credential.mode === "file";
+}
+
+function providerSetting(
+  draft: LlmProviderDraft,
+  current?: LlmProviderSetting,
+): LlmProviderSetting {
+  const index = current
+    ? mockLlmConfiguration.providers.findIndex((provider) => provider.id === current.id)
+    : mockLlmConfiguration.providers.length;
+  return {
+    id: current?.id ?? `mock-provider-${nextLlmResource++}`,
+    upstreamId: draft.name,
+    source: "agentgateway",
+    fetchedAt: new Date().toISOString(),
+    rawRef: { source: "agentgateway", id: `/llm/providers/${Math.max(index, 0)}` },
+    name: draft.name,
+    providerType: draft.providerType,
+    params: structuredClone(draft.params),
+    formats: structuredClone(draft.formats),
+    credential: { configured: credentialConfigured(draft, current) },
+    modelCount: current?.modelCount ?? 0,
+    editable: true,
+  };
+}
+
+function modelSetting(draft: LlmModelDraft, current?: LlmModelSetting): LlmModelSetting {
+  const index = current
+    ? mockLlmConfiguration.models.findIndex((model) => model.id === current.id)
+    : mockLlmConfiguration.models.length;
+  return {
+    id: current?.id ?? `mock-model-${nextLlmResource++}`,
+    upstreamId: draft.name,
+    source: "agentgateway",
+    fetchedAt: new Date().toISOString(),
+    rawRef: { source: "agentgateway", id: `/llm/models/${Math.max(index, 0)}` },
+    name: draft.name,
+    providerMode: draft.providerMode,
+    providerType: draft.providerType,
+    providerReference: draft.providerReference,
+    params: structuredClone(draft.params),
+    formats: structuredClone(draft.formats),
+    visibility: draft.visibility,
+    credential: { configured: credentialConfigured(draft, current) },
+    editable: true,
+  };
+}
+
+function llmReceipt(operation: string, target: string, message: string) {
+  nextLlmRevision();
+  const completedAt = new Date().toISOString();
+  return HttpResponse.json({
+    data: {
+      operation,
+      status: "succeeded",
+      source: "agentgateway",
+      target,
+      requestId: `req_mock_${operation.replaceAll("-", "_")}`,
+      completedAt,
+      message,
+    },
+    meta: { ...meta("agentgateway"), fetchedAt: completedAt },
   });
 }
 const mockScanJobs = new Map(trustScans.map((job) => [job.id, structuredClone(job)]));
@@ -373,6 +545,100 @@ export const handlers = [
       "agentgateway",
     ),
   ),
+  http.get("/api/v1/connect/llm/configuration", ({ request }) =>
+    respond(
+      request,
+      structuredClone(mockLlmConfiguration),
+      { ...structuredClone(mockLlmConfiguration), providers: [], models: [], virtualModels: [] },
+      "agentgateway",
+    ),
+  ),
+  http.post("/api/v1/connect/llm/providers", async ({ request }) => {
+    const body = (await request.json()) as LlmProviderMutationRequest;
+    const conflict = acceptLlmRevision(body.revisionToken);
+    if (conflict) return conflict;
+    if (mockLlmConfiguration.providers.some((provider) => provider.name === body.provider.name)) {
+      return llmFailure(409, "RESOURCE_CONFLICT", "A provider with this name already exists.");
+    }
+    mockLlmConfiguration.providers.push(providerSetting(body.provider));
+    return llmReceipt(
+      "create-llm-provider",
+      body.provider.name,
+      "Provider created in agentgateway.",
+    );
+  }),
+  http.patch("/api/v1/connect/llm/providers/:resourceId", async ({ request, params }) => {
+    const body = (await request.json()) as LlmProviderMutationRequest;
+    const conflict = acceptLlmRevision(body.revisionToken);
+    if (conflict) return conflict;
+    const index = mockLlmConfiguration.providers.findIndex(
+      (provider) => provider.id === String(params.resourceId),
+    );
+    if (index < 0) return llmFailure(404, "RESOURCE_NOT_FOUND", "Provider was not found.");
+    const current = mockLlmConfiguration.providers[index];
+    mockLlmConfiguration.providers[index] = providerSetting(body.provider, current);
+    return llmReceipt(
+      "update-llm-provider",
+      body.provider.name,
+      "Provider updated in agentgateway.",
+    );
+  }),
+  http.delete("/api/v1/connect/llm/providers/:resourceId", async ({ request, params }) => {
+    const body = (await request.json()) as LlmDeleteRequest;
+    const conflict = acceptLlmRevision(body.revisionToken);
+    if (conflict) return conflict;
+    if (!body.confirmed) return llmFailure(400, "INVALID_REQUEST", "Deletion must be confirmed.");
+    const index = mockLlmConfiguration.providers.findIndex(
+      (provider) => provider.id === String(params.resourceId),
+    );
+    if (index < 0) return llmFailure(404, "RESOURCE_NOT_FOUND", "Provider was not found.");
+    const provider = mockLlmConfiguration.providers[index];
+    if (provider.modelCount > 0) {
+      return llmFailure(409, "RESOURCE_REFERENCED", "Provider is referenced by a model.");
+    }
+    mockLlmConfiguration.providers.splice(index, 1);
+    return llmReceipt("delete-llm-provider", provider.name, "Provider deleted from agentgateway.");
+  }),
+  http.post("/api/v1/connect/llm/models", async ({ request }) => {
+    const body = (await request.json()) as LlmModelMutationRequest;
+    const conflict = acceptLlmRevision(body.revisionToken);
+    if (conflict) return conflict;
+    if (mockLlmConfiguration.models.some((model) => model.name === body.model.name)) {
+      return llmFailure(409, "RESOURCE_CONFLICT", "A model with this name already exists.");
+    }
+    mockLlmConfiguration.models.push(modelSetting(body.model));
+    return llmReceipt("create-llm-model", body.model.name, "Model created in agentgateway.");
+  }),
+  http.patch("/api/v1/connect/llm/models/:resourceId", async ({ request, params }) => {
+    const body = (await request.json()) as LlmModelMutationRequest;
+    const conflict = acceptLlmRevision(body.revisionToken);
+    if (conflict) return conflict;
+    const index = mockLlmConfiguration.models.findIndex(
+      (model) => model.id === String(params.resourceId),
+    );
+    if (index < 0) return llmFailure(404, "RESOURCE_NOT_FOUND", "Model was not found.");
+    const current = mockLlmConfiguration.models[index];
+    mockLlmConfiguration.models[index] = modelSetting(body.model, current);
+    return llmReceipt("update-llm-model", body.model.name, "Model updated in agentgateway.");
+  }),
+  http.delete("/api/v1/connect/llm/models/:resourceId", async ({ request, params }) => {
+    const body = (await request.json()) as LlmDeleteRequest;
+    const conflict = acceptLlmRevision(body.revisionToken);
+    if (conflict) return conflict;
+    if (!body.confirmed) return llmFailure(400, "INVALID_REQUEST", "Deletion must be confirmed.");
+    const index = mockLlmConfiguration.models.findIndex(
+      (model) => model.id === String(params.resourceId),
+    );
+    if (index < 0) return llmFailure(404, "RESOURCE_NOT_FOUND", "Model was not found.");
+    const model = mockLlmConfiguration.models[index];
+    const referenced = mockLlmConfiguration.virtualModels.some((virtualModel) =>
+      virtualModel.targets?.includes(model.name),
+    );
+    if (referenced)
+      return llmFailure(409, "RESOURCE_REFERENCED", "Model is referenced by a virtual model.");
+    mockLlmConfiguration.models.splice(index, 1);
+    return llmReceipt("delete-llm-model", model.name, "Model deleted from agentgateway.");
+  }),
   http.get("/api/v1/connect/llm/providers", ({ request }) =>
     pageResponse(request, connectData.providers, "agentgateway"),
   ),

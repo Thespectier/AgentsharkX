@@ -215,10 +215,16 @@ Connect 汇总 agentgateway 中显式配置的：
 建议操作顺序：
 
 1. 打开 **Connect**，检查来源和能力状态；
-2. 查看 Provider、Model、MCP 和 Route 列表；
-3. 选择具体资源查看安全投影后的详情；
-4. 需要编辑原始配置、CEL 或使用 Playground 时，通过深链接进入 agentgateway
+2. 在 **Connect → LLM** 新增、编辑或删除共享 Provider 和直连 Model；
+3. 查看 MCP 和 Route 列表及其安全投影后的详情；
+4. 需要编辑 Virtual Model、路由策略、Guardrail、原始配置、CEL 或使用 Playground 时，通过深链接进入 agentgateway
    控制台。
+
+LLM 编辑器不会读取或显示现有 API Key。编辑已有条目时默认保留上游凭据；新建或
+替换凭据时只能选择运行环境凭据、填写环境变量名，或填写 secret 文件路径，不能在
+页面中输入明文 Key。Bedrock/Vertex 等结构化云凭据仍需在原生控制台管理。Provider
+类型和 Model 的 Provider 绑定创建后暂不可修改；被
+Model 引用的 Provider、被 Virtual Model 引用的直连 Model 不能删除。
 
 agentgateway 管理控制台默认地址为 <http://127.0.0.1:15000/ui>。
 

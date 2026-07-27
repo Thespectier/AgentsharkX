@@ -1,6 +1,6 @@
 # Architecture
 
-Status: Phase 7 post-preview usability and live-data consistency, verified 2026-07-23.
+Status: Phase 8 Connect LLM management over the Phase 7 preview, verified 2026-07-27.
 
 ## Context
 
@@ -40,8 +40,9 @@ The Go BFF is organized into the following packages:
 - `config`: validated environment configuration with secret-safe diagnostics.
 - `auth`: one-admin session, strict cookie, CSRF, and write protection.
 - `gateway`: agentgateway management adapter.
-- `connect`: filtering, cursor pagination, details, setup verification, and
-  native-console links over sanitized gateway resources.
+- `connect`: filtering, cursor pagination, details, setup verification,
+  short-lived LLM revision tokens, serialized typed provider/direct-model
+  mutations, and native-console links over sanitized gateway resources.
 - `guard`: AgentGuard management adapter.
 - `trust`: explicit AgentGuard identity/resource aggregation, filtering,
   pagination, label writes, and bounded scan-job orchestration.
@@ -115,7 +116,7 @@ A gateway failure cannot suppress AgentGuard data, and an AgentGuard failure
 cannot suppress gateway data. Aggregated responses carry per-source metadata
 and stale markers rather than collapsing partial failures into a global 500.
 
-## Phase 7 runtime data and storage
+## Phase 8 runtime data and storage
 
 The BFF has no database. Background monitors poll the two health contracts and,
 every two seconds by default, the verified Audit read contracts. New normalized
@@ -123,13 +124,27 @@ events enter a 1000-record ring and are published with a monotonic SSE sequence.
 Reconnecting clients send `Last-Event-ID` and receive only newer retained
 records. Both the ring and browser list dedupe by normalized source/event ID.
 Connect reads a bounded `/api/config` snapshot per request and never returns raw
-config, params, policy bodies, credentials, or prompt payloads. Protect may
+config, policy bodies, credential values, or prompt payloads. The LLM management
+contract returns only verified provider/direct-model fields, allow-listed params,
+custom format names/paths, and a boolean credential state. It accepts no literal
+API key: operators select ambient auth, an environment-variable name, a file
+reference, or preserve an existing opaque value. Bedrock/Vertex structured
+credentials remain native-console only. Protect may
 summarize explicit route/backend policy keys and raw config paths, while policy
 editing stays in agentgateway. Trust reads the four
 AgentGuard session/resource routes independently, so one failed capability does
 not erase successful siblings. It whitelists display fields and never returns
 session keys, client URLs, arbitrary principal/metadata objects, descriptors,
 file contents, MCP URLs, detector metadata, reasons, or LLM configuration.
+
+The pinned agentgateway exposes only whole-document `GET` and `POST /api/config`
+operations and no ETag. The BFF therefore issues bounded five-minute, one-use
+revision tokens, serializes in-process LLM mutations, rereads immediately before
+the change, preserves unowned fields and opaque credential values, posts exactly
+once, then refetches and verifies the requested result. A native-console or YAML
+write can still race between the final read and whole-document POST; the BFF
+rejects detectable stale revisions but cannot make that upstream gap atomic.
+Provider type and model provider binding are immutable during Phase 8 edits.
 
 Agent rows are an AgentsharkX view over explicit AgentGuard `agent_id` and
 `owner_agent_id` fields. No gateway log, timing window, name similarity, or

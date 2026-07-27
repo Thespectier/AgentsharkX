@@ -5,7 +5,8 @@ info:
   description: |
     Source-preserving management API above agentgateway and AgentGuard.
     Authentication, independent upstream health and capability probes, and
-    read-only agentgateway resources provide the management foundation. Trust adds
+    agentgateway resource reads and typed LLM configuration writes provide the
+    management foundation. Trust adds
     source-preserving AgentGuard identities, resources, label updates, and
     bounded asynchronous scan orchestration. Protect adds source-grouped
     gateway policy summaries, AgentGuard runtime-rule check/publish/delete,
@@ -221,6 +222,39 @@ paths:
           $ref: '#/components/responses/BadGateway'
         '503':
           $ref: '#/components/responses/UpstreamUnavailable'
+    post:
+      tags: [Connect]
+      operationId: createLlmProvider
+      summary: Create one verified agentgateway LLM provider configuration
+      x-implementation-phase: 8
+      x-implementation-status: implemented
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LlmProviderMutationRequest'
+      responses:
+        '201':
+          description: Provider configuration saved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LlmMutationEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+        '503':
+          $ref: '#/components/responses/UpstreamUnavailable'
 
   /api/v1/connect/llm/providers/{resourceId}:
     get:
@@ -242,6 +276,99 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/NotFound'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+        '503':
+          $ref: '#/components/responses/UpstreamUnavailable'
+    patch:
+      tags: [Connect]
+      operationId: updateLlmProvider
+      summary: Update one verified agentgateway LLM provider configuration
+      x-implementation-phase: 8
+      x-implementation-status: implemented
+      parameters:
+        - $ref: '#/components/parameters/ResourceId'
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LlmProviderMutationRequest'
+      responses:
+        '200':
+          description: Provider configuration saved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LlmMutationEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+        '503':
+          $ref: '#/components/responses/UpstreamUnavailable'
+    delete:
+      tags: [Connect]
+      operationId: deleteLlmProvider
+      summary: Delete one unreferenced agentgateway LLM provider configuration
+      x-implementation-phase: 8
+      x-implementation-status: implemented
+      parameters:
+        - $ref: '#/components/parameters/ResourceId'
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LlmDeleteRequest'
+      responses:
+        '200':
+          description: Provider configuration deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LlmMutationEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+        '503':
+          $ref: '#/components/responses/UpstreamUnavailable'
+
+  /api/v1/connect/llm/configuration:
+    get:
+      tags: [Connect]
+      operationId: getLlmConfiguration
+      summary: Read the sanitized editable agentgateway LLM configuration
+      x-implementation-phase: 8
+      x-implementation-status: implemented
+      responses:
+        '200':
+          description: Sanitized LLM configuration and a short-lived revision token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LlmConfigurationEnvelope'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '502':
           $ref: '#/components/responses/BadGateway'
         '503':
@@ -273,6 +400,39 @@ paths:
           $ref: '#/components/responses/BadGateway'
         '503':
           $ref: '#/components/responses/UpstreamUnavailable'
+    post:
+      tags: [Connect]
+      operationId: createLlmModel
+      summary: Create one verified direct agentgateway LLM model configuration
+      x-implementation-phase: 8
+      x-implementation-status: implemented
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LlmModelMutationRequest'
+      responses:
+        '201':
+          description: Direct model configuration saved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LlmMutationEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+        '503':
+          $ref: '#/components/responses/UpstreamUnavailable'
 
   /api/v1/connect/llm/models/{resourceId}:
     get:
@@ -294,6 +454,78 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/NotFound'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+        '503':
+          $ref: '#/components/responses/UpstreamUnavailable'
+    patch:
+      tags: [Connect]
+      operationId: updateLlmModel
+      summary: Update one verified direct agentgateway LLM model configuration
+      x-implementation-phase: 8
+      x-implementation-status: implemented
+      parameters:
+        - $ref: '#/components/parameters/ResourceId'
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LlmModelMutationRequest'
+      responses:
+        '200':
+          description: Direct model configuration saved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LlmMutationEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+        '503':
+          $ref: '#/components/responses/UpstreamUnavailable'
+    delete:
+      tags: [Connect]
+      operationId: deleteLlmModel
+      summary: Delete one direct agentgateway LLM model configuration
+      x-implementation-phase: 8
+      x-implementation-status: implemented
+      parameters:
+        - $ref: '#/components/parameters/ResourceId'
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LlmDeleteRequest'
+      responses:
+        '200':
+          description: Direct model configuration deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LlmMutationEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
         '502':
           $ref: '#/components/responses/BadGateway'
         '503':
@@ -1165,7 +1397,7 @@ components:
           schema:
             $ref: '#/components/schemas/ErrorEnvelope'
     Conflict:
-      description: Object was already modified or approval already resolved
+      description: Object was already modified, is referenced, or another mutation is active
       content:
         application/json:
           schema:
@@ -1494,6 +1726,267 @@ components:
         targets:
           type: array
           items: { type: string }
+    LlmProviderType:
+      type: string
+      enum:
+        - openai
+        - anthropic
+        - gemini
+        - vertex
+        - bedrock
+        - azure
+        - copilot
+        - cohere
+        - ollama
+        - baseten
+        - cerebras
+        - deepinfra
+        - deepseek
+        - groq
+        - huggingface
+        - mistral
+        - openrouter
+        - togetherai
+        - xai
+        - fireworks
+        - custom
+    LlmProviderFormat:
+      type: object
+      additionalProperties: false
+      required: [type]
+      properties:
+        type:
+          type: string
+          enum:
+            [
+              completions,
+              messages,
+              responses,
+              embeddings,
+              anthropicTokenCount,
+              realtime,
+              rerank,
+            ]
+        path:
+          type: string
+          maxLength: 512
+    LlmProviderParams:
+      type: object
+      additionalProperties: false
+      properties:
+        model: { type: string, maxLength: 256 }
+        baseUrl: { type: string, maxLength: 2048 }
+        awsRegion: { type: string, maxLength: 128 }
+        vertexRegion: { type: string, maxLength: 128 }
+        vertexProject: { type: string, maxLength: 256 }
+        azureResourceName: { type: string, maxLength: 256 }
+        azureResourceType: { type: string, enum: [openAI, foundry] }
+        azureApiVersion: { type: string, maxLength: 128 }
+        azureProjectName: { type: string, maxLength: 256 }
+    LlmCredentialState:
+      type: object
+      additionalProperties: false
+      required: [configured]
+      properties:
+        configured: { type: boolean }
+    LlmCredentialInput:
+      type: object
+      additionalProperties: false
+      required: [mode]
+      properties:
+        mode:
+          type: string
+          enum: [preserve, ambient, environment, file]
+        reference:
+          type: string
+          minLength: 1
+          maxLength: 1024
+          writeOnly: true
+    LlmProviderSetting:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          id,
+          upstreamId,
+          source,
+          fetchedAt,
+          rawRef,
+          name,
+          providerType,
+          params,
+          formats,
+          credential,
+          modelCount,
+          editable,
+        ]
+      properties:
+        id: { type: string }
+        upstreamId: { type: string }
+        source: { $ref: '#/components/schemas/GatewaySource' }
+        fetchedAt: { type: string, format: date-time }
+        rawRef: { $ref: '#/components/schemas/RawRef' }
+        name: { type: string }
+        providerType: { $ref: '#/components/schemas/LlmProviderType' }
+        params: { $ref: '#/components/schemas/LlmProviderParams' }
+        formats:
+          type: array
+          items: { $ref: '#/components/schemas/LlmProviderFormat' }
+        credential: { $ref: '#/components/schemas/LlmCredentialState' }
+        modelCount: { type: integer, minimum: 0 }
+        editable: { type: boolean }
+    LlmModelSetting:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          id,
+          upstreamId,
+          source,
+          fetchedAt,
+          rawRef,
+          name,
+          providerMode,
+          params,
+          formats,
+          visibility,
+          credential,
+          editable,
+        ]
+      properties:
+        id: { type: string }
+        upstreamId: { type: string }
+        source: { $ref: '#/components/schemas/GatewaySource' }
+        fetchedAt: { type: string, format: date-time }
+        rawRef: { $ref: '#/components/schemas/RawRef' }
+        name: { type: string }
+        providerMode: { type: string, enum: [builtin, custom, reference] }
+        providerType: { $ref: '#/components/schemas/LlmProviderType' }
+        providerReference: { type: string }
+        params: { $ref: '#/components/schemas/LlmProviderParams' }
+        formats:
+          type: array
+          items: { $ref: '#/components/schemas/LlmProviderFormat' }
+        visibility: { type: string, enum: [public, internal] }
+        credential: { $ref: '#/components/schemas/LlmCredentialState' }
+        editable: { type: boolean }
+    LlmConfiguration:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          source,
+          fetchedAt,
+          revisionToken,
+          providers,
+          models,
+          virtualModels,
+          links,
+        ]
+      properties:
+        source: { $ref: '#/components/schemas/GatewaySource' }
+        fetchedAt: { type: string, format: date-time }
+        revisionToken: { type: string, minLength: 1, maxLength: 128 }
+        providers:
+          type: array
+          items: { $ref: '#/components/schemas/LlmProviderSetting' }
+        models:
+          type: array
+          items: { $ref: '#/components/schemas/LlmModelSetting' }
+        virtualModels:
+          type: array
+          items: { $ref: '#/components/schemas/GatewayModel' }
+        links: { $ref: '#/components/schemas/ConsoleLinks' }
+    LlmConfigurationEnvelope:
+      type: object
+      additionalProperties: false
+      required: [data, meta]
+      properties:
+        data: { $ref: '#/components/schemas/LlmConfiguration' }
+        meta: { $ref: '#/components/schemas/Meta' }
+    LlmProviderDraft:
+      type: object
+      additionalProperties: false
+      required: [name, providerType, params, formats, credential]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 256 }
+        providerType: { $ref: '#/components/schemas/LlmProviderType' }
+        params: { $ref: '#/components/schemas/LlmProviderParams' }
+        formats:
+          type: array
+          maxItems: 7
+          items: { $ref: '#/components/schemas/LlmProviderFormat' }
+        credential: { $ref: '#/components/schemas/LlmCredentialInput' }
+    LlmModelDraft:
+      type: object
+      additionalProperties: false
+      required: [name, providerMode, params, formats, visibility, credential]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 256 }
+        providerMode: { type: string, enum: [builtin, custom, reference] }
+        providerType: { $ref: '#/components/schemas/LlmProviderType' }
+        providerReference: { type: string, maxLength: 256 }
+        params: { $ref: '#/components/schemas/LlmProviderParams' }
+        formats:
+          type: array
+          maxItems: 7
+          items: { $ref: '#/components/schemas/LlmProviderFormat' }
+        visibility: { type: string, enum: [public, internal] }
+        credential: { $ref: '#/components/schemas/LlmCredentialInput' }
+    LlmProviderMutationRequest:
+      type: object
+      additionalProperties: false
+      required: [revisionToken, provider]
+      properties:
+        revisionToken:
+          { type: string, minLength: 1, maxLength: 128, writeOnly: true }
+        provider: { $ref: '#/components/schemas/LlmProviderDraft' }
+    LlmModelMutationRequest:
+      type: object
+      additionalProperties: false
+      required: [revisionToken, model]
+      properties:
+        revisionToken:
+          { type: string, minLength: 1, maxLength: 128, writeOnly: true }
+        model: { $ref: '#/components/schemas/LlmModelDraft' }
+    LlmDeleteRequest:
+      type: object
+      additionalProperties: false
+      required: [revisionToken, confirmed]
+      properties:
+        revisionToken:
+          { type: string, minLength: 1, maxLength: 128, writeOnly: true }
+        confirmed: { type: boolean }
+    LlmMutationReceipt:
+      type: object
+      additionalProperties: false
+      required:
+        [operation, status, source, target, requestId, completedAt, message]
+      properties:
+        operation:
+          type: string
+          enum:
+            [
+              create-llm-provider,
+              update-llm-provider,
+              delete-llm-provider,
+              create-llm-model,
+              update-llm-model,
+              delete-llm-model,
+            ]
+        status: { type: string, enum: [succeeded] }
+        source: { $ref: '#/components/schemas/GatewaySource' }
+        target: { type: string }
+        requestId: { type: string }
+        completedAt: { type: string, format: date-time }
+        message: { type: string }
+    LlmMutationEnvelope:
+      type: object
+      additionalProperties: false
+      required: [data, meta]
+      properties:
+        data: { $ref: '#/components/schemas/LlmMutationReceipt' }
+        meta: { $ref: '#/components/schemas/Meta' }
     GatewayMCPServer:
       type: object
       additionalProperties: false
@@ -1510,7 +2003,21 @@ components:
     GatewayRoute:
       type: object
       additionalProperties: false
-      required: [id, source, fetchedAt, rawRef, name, listener, protocol, port, hostnames, targets, backendCount, unavailableBackendCount]
+      required:
+        [
+          id,
+          source,
+          fetchedAt,
+          rawRef,
+          name,
+          listener,
+          protocol,
+          port,
+          hostnames,
+          targets,
+          backendCount,
+          unavailableBackendCount,
+        ]
       properties:
         id: { type: string }
         upstreamId: { type: string }
@@ -1688,7 +2195,16 @@ components:
     ConnectSetup:
       type: object
       additionalProperties: false
-      required: [source, managementConfigured, configurationReadable, status, latencyMs, checkedAt, links]
+      required:
+        [
+          source,
+          managementConfigured,
+          configurationReadable,
+          status,
+          latencyMs,
+          checkedAt,
+          links,
+        ]
       properties:
         source: { $ref: '#/components/schemas/GatewaySource' }
         managementConfigured: { type: boolean }
@@ -1722,7 +2238,8 @@ components:
     TrustDetection:
       type: object
       additionalProperties: false
-      required: [riskLevel, capabilities, riskLabels, policyTargets, suggestedPlugins]
+      required:
+        [riskLevel, capabilities, riskLabels, policyTargets, suggestedPlugins]
       properties:
         resourceUpstreamId: { type: string }
         name: { type: string }
@@ -1743,7 +2260,18 @@ components:
     TrustResource:
       type: object
       additionalProperties: false
-      required: [id, upstreamId, source, fetchedAt, rawRef, name, type, ownerAgentId, ownerAgentUpstreamId]
+      required:
+        [
+          id,
+          upstreamId,
+          source,
+          fetchedAt,
+          rawRef,
+          name,
+          type,
+          ownerAgentId,
+          ownerAgentUpstreamId,
+        ]
       properties:
         id: { type: string }
         upstreamId: { type: string }
@@ -1765,7 +2293,18 @@ components:
     TrustSession:
       type: object
       additionalProperties: false
-      required: [id, upstreamId, source, fetchedAt, rawRef, agentId, agentUpstreamId, lastSeen, status]
+      required:
+        [
+          id,
+          upstreamId,
+          source,
+          fetchedAt,
+          rawRef,
+          agentId,
+          agentUpstreamId,
+          lastSeen,
+          status,
+        ]
       properties:
         id: { type: string }
         upstreamId: { type: string }
@@ -1780,7 +2319,24 @@ components:
     TrustAgent:
       type: object
       additionalProperties: false
-      required: [id, upstreamId, source, fetchedAt, rawRef, name, framework, principal, trustLevel, status, sessions, tools, skills, mcps, lastActive]
+      required:
+        [
+          id,
+          upstreamId,
+          source,
+          fetchedAt,
+          rawRef,
+          name,
+          framework,
+          principal,
+          trustLevel,
+          status,
+          sessions,
+          tools,
+          skills,
+          mcps,
+          lastActive,
+        ]
       properties:
         id: { type: string }
         upstreamId: { type: string }
@@ -1868,7 +2424,22 @@ components:
     TrustScanJob:
       type: object
       additionalProperties: false
-      required: [id, source, agentId, agentUpstreamId, resourceType, resourceIds, status, createdAt, startedAt, completedAt, updatedAt, results, warnings]
+      required:
+        [
+          id,
+          source,
+          agentId,
+          agentUpstreamId,
+          resourceType,
+          resourceIds,
+          status,
+          createdAt,
+          startedAt,
+          completedAt,
+          updatedAt,
+          results,
+          warnings,
+        ]
       properties:
         id: { type: string }
         source: { $ref: '#/components/schemas/GuardSource' }
@@ -1975,7 +2546,20 @@ components:
     ProtectPolicy:
       type: object
       additionalProperties: false
-      required: [id, upstreamId, source, fetchedAt, rawRef, name, type, scope, phase, action, status]
+      required:
+        [
+          id,
+          upstreamId,
+          source,
+          fetchedAt,
+          rawRef,
+          name,
+          type,
+          scope,
+          phase,
+          action,
+          status,
+        ]
       properties:
         id: { type: string }
         upstreamId: { type: string }
@@ -1991,7 +2575,20 @@ components:
     RuntimeRule:
       type: object
       additionalProperties: false
-      required: [id, upstreamId, source, fetchedAt, rawRef, name, scope, phase, action, status, userManaged]
+      required:
+        [
+          id,
+          upstreamId,
+          source,
+          fetchedAt,
+          rawRef,
+          name,
+          scope,
+          phase,
+          action,
+          status,
+          userManaged,
+        ]
       properties:
         id: { type: string }
         upstreamId: { type: string }
@@ -2003,7 +2600,8 @@ components:
         agentUpstreamId: { type: string }
         scope: { type: string }
         phase: { type: string }
-        action: { type: string, enum: [ALLOW, DENY, HUMAN_CHECK, LLM_CHECK, DEGRADE] }
+        action:
+          { type: string, enum: [ALLOW, DENY, HUMAN_CHECK, LLM_CHECK, DEGRADE] }
         status: { type: string }
         severity: { type: string }
         category: { type: string }
@@ -2013,7 +2611,22 @@ components:
     ProtectPluginPhase:
       type: object
       additionalProperties: false
-      required: [id, upstreamId, source, fetchedAt, rawRef, agentId, agentUpstreamId, phase, configSource, enabledLocalPlugins, enabledRemotePlugins, availableLocalPlugins, availableRemotePlugins]
+      required:
+        [
+          id,
+          upstreamId,
+          source,
+          fetchedAt,
+          rawRef,
+          agentId,
+          agentUpstreamId,
+          phase,
+          configSource,
+          enabledLocalPlugins,
+          enabledRemotePlugins,
+          availableLocalPlugins,
+          availableRemotePlugins,
+        ]
       properties:
         id: { type: string }
         upstreamId: { type: string }
@@ -2023,7 +2636,11 @@ components:
         agentId: { type: string }
         agentUpstreamId: { type: string }
         phase: { type: string }
-        configSource: { type: string, enum: [agent_override, server_default, none, unavailable] }
+        configSource:
+          {
+            type: string,
+            enum: [agent_override, server_default, none, unavailable],
+          }
         enabledLocalPlugins:
           type: array
           items: { type: string }
@@ -2077,7 +2694,18 @@ components:
     RuntimeRuleCheck:
       type: object
       additionalProperties: false
-      required: [source, ok, publishable, ruleCount, errors, warnings, hints, expiresAt, requestId]
+      required:
+        [
+          source,
+          ok,
+          publishable,
+          ruleCount,
+          errors,
+          warnings,
+          hints,
+          expiresAt,
+          requestId,
+        ]
       properties:
         source: { $ref: '#/components/schemas/GuardSource' }
         ok: { type: boolean }
@@ -2112,7 +2740,8 @@ components:
           minLength: 1
           maxLength: 12288
           writeOnly: true
-        checkToken: { type: string, minLength: 1, maxLength: 128, writeOnly: true }
+        checkToken:
+          { type: string, minLength: 1, maxLength: 128, writeOnly: true }
         note:
           type: string
           minLength: 1
@@ -2133,7 +2762,21 @@ components:
     Approval:
       type: object
       additionalProperties: false
-      required: [id, upstreamId, source, fetchedAt, rawRef, eventType, phase, action, riskScore, matchedRules, status, createdAt]
+      required:
+        [
+          id,
+          upstreamId,
+          source,
+          fetchedAt,
+          rawRef,
+          eventType,
+          phase,
+          action,
+          riskScore,
+          matchedRules,
+          status,
+          createdAt,
+        ]
       properties:
         id: { type: string }
         upstreamId: { type: string }
@@ -2176,9 +2819,20 @@ components:
     ProtectMutationReceipt:
       type: object
       additionalProperties: false
-      required: [operation, status, source, target, requestId, completedAt, message]
+      required:
+        [operation, status, source, target, requestId, completedAt, message]
       properties:
-        operation: { type: string, enum: [publish-runtime-rule, delete-runtime-rule, approve-approval, deny-approval] }
+        operation:
+          {
+            type: string,
+            enum:
+              [
+                publish-runtime-rule,
+                delete-runtime-rule,
+                approve-approval,
+                deny-approval,
+              ],
+          }
         status: { type: string, enum: [succeeded] }
         source: { $ref: '#/components/schemas/GuardSource' }
         target: { type: string }
@@ -2264,7 +2918,19 @@ components:
     AuditSession:
       type: object
       additionalProperties: false
-      required: [id, upstreamId, agentId, agentUpstreamId, events, denies, lastSeen, status, source, rawRef]
+      required:
+        [
+          id,
+          upstreamId,
+          agentId,
+          agentUpstreamId,
+          events,
+          denies,
+          lastSeen,
+          status,
+          source,
+          rawRef,
+        ]
       properties:
         id: { type: string }
         upstreamId: { type: string }

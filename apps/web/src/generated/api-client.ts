@@ -124,6 +124,147 @@ export type GatewayModel = {
   targets?: Array<string>;
 };
 
+export type LlmProviderType =
+  | "openai"
+  | "anthropic"
+  | "gemini"
+  | "vertex"
+  | "bedrock"
+  | "azure"
+  | "copilot"
+  | "cohere"
+  | "ollama"
+  | "baseten"
+  | "cerebras"
+  | "deepinfra"
+  | "deepseek"
+  | "groq"
+  | "huggingface"
+  | "mistral"
+  | "openrouter"
+  | "togetherai"
+  | "xai"
+  | "fireworks"
+  | "custom";
+
+export type LlmProviderFormat = {
+  type:
+    | "completions"
+    | "messages"
+    | "responses"
+    | "embeddings"
+    | "anthropicTokenCount"
+    | "realtime"
+    | "rerank";
+  path?: string;
+};
+
+export type LlmProviderParams = {
+  model?: string;
+  baseUrl?: string;
+  awsRegion?: string;
+  vertexRegion?: string;
+  vertexProject?: string;
+  azureResourceName?: string;
+  azureResourceType?: "openAI" | "foundry";
+  azureApiVersion?: string;
+  azureProjectName?: string;
+};
+
+export type LlmCredentialState = { configured: boolean };
+
+export type LlmCredentialInput = {
+  mode: "preserve" | "ambient" | "environment" | "file";
+  reference?: string;
+};
+
+export type LlmProviderSetting = {
+  id: string;
+  upstreamId: string;
+  source: GatewaySource;
+  fetchedAt: string;
+  rawRef: RawRef;
+  name: string;
+  providerType: LlmProviderType;
+  params: LlmProviderParams;
+  formats: Array<LlmProviderFormat>;
+  credential: LlmCredentialState;
+  modelCount: number;
+  editable: boolean;
+};
+
+export type LlmModelSetting = {
+  id: string;
+  upstreamId: string;
+  source: GatewaySource;
+  fetchedAt: string;
+  rawRef: RawRef;
+  name: string;
+  providerMode: "builtin" | "custom" | "reference";
+  providerType?: LlmProviderType;
+  providerReference?: string;
+  params: LlmProviderParams;
+  formats: Array<LlmProviderFormat>;
+  visibility: "public" | "internal";
+  credential: LlmCredentialState;
+  editable: boolean;
+};
+
+export type LlmConfiguration = {
+  source: GatewaySource;
+  fetchedAt: string;
+  revisionToken: string;
+  providers: Array<LlmProviderSetting>;
+  models: Array<LlmModelSetting>;
+  virtualModels: Array<GatewayModel>;
+  links: ConsoleLinks;
+};
+
+export type LlmConfigurationEnvelope = { data: LlmConfiguration; meta: Meta };
+
+export type LlmProviderDraft = {
+  name: string;
+  providerType: LlmProviderType;
+  params: LlmProviderParams;
+  formats: Array<LlmProviderFormat>;
+  credential: LlmCredentialInput;
+};
+
+export type LlmModelDraft = {
+  name: string;
+  providerMode: "builtin" | "custom" | "reference";
+  providerType?: LlmProviderType;
+  providerReference?: string;
+  params: LlmProviderParams;
+  formats: Array<LlmProviderFormat>;
+  visibility: "public" | "internal";
+  credential: LlmCredentialInput;
+};
+
+export type LlmProviderMutationRequest = { revisionToken: string; provider: LlmProviderDraft };
+
+export type LlmModelMutationRequest = { revisionToken: string; model: LlmModelDraft };
+
+export type LlmDeleteRequest = { revisionToken: string; confirmed: boolean };
+
+export type LlmMutationReceipt = {
+  operation:
+    | "create-llm-provider"
+    | "update-llm-provider"
+    | "delete-llm-provider"
+    | "create-llm-model"
+    | "update-llm-model"
+    | "delete-llm-model";
+  status: "succeeded";
+  source: GatewaySource;
+  target: string;
+  requestId: string;
+  completedAt: string;
+  message: string;
+};
+
+export type LlmMutationEnvelope = { data: LlmMutationReceipt; meta: Meta };
+
 export type GatewayMCPServer = {
   id: string;
   upstreamId?: string;
@@ -554,6 +695,10 @@ export const implementedOperations = {
   approveTicket: { method: "POST", path: "/api/v1/protect/approvals/{ticketId}/approve" },
   checkRuntimeRule: { method: "POST", path: "/api/v1/protect/runtime-rules/check" },
   createAdminSession: { method: "POST", path: "/api/v1/auth/session" },
+  createLlmModel: { method: "POST", path: "/api/v1/connect/llm/models" },
+  createLlmProvider: { method: "POST", path: "/api/v1/connect/llm/providers" },
+  deleteLlmModel: { method: "DELETE", path: "/api/v1/connect/llm/models/{resourceId}" },
+  deleteLlmProvider: { method: "DELETE", path: "/api/v1/connect/llm/providers/{resourceId}" },
   deleteRuntimeRule: {
     method: "DELETE",
     path: "/api/v1/protect/agents/{agentId}/runtime-rules/{ruleId}",
@@ -570,6 +715,7 @@ export const implementedOperations = {
   getConnectSummary: { method: "GET", path: "/api/v1/connect/summary" },
   getGatewayMcpServer: { method: "GET", path: "/api/v1/connect/mcp/servers/{resourceId}" },
   getLiveness: { method: "GET", path: "/healthz" },
+  getLlmConfiguration: { method: "GET", path: "/api/v1/connect/llm/configuration" },
   getModel: { method: "GET", path: "/api/v1/connect/llm/models/{resourceId}" },
   getOverview: { method: "GET", path: "/api/v1/overview" },
   getProvider: { method: "GET", path: "/api/v1/connect/llm/providers/{resourceId}" },
@@ -590,6 +736,8 @@ export const implementedOperations = {
   listTrustScans: { method: "GET", path: "/api/v1/trust/scans" },
   publishRuntimeRule: { method: "POST", path: "/api/v1/protect/agents/{agentId}/runtime-rules" },
   streamEvents: { method: "GET", path: "/api/v1/stream" },
+  updateLlmModel: { method: "PATCH", path: "/api/v1/connect/llm/models/{resourceId}" },
+  updateLlmProvider: { method: "PATCH", path: "/api/v1/connect/llm/providers/{resourceId}" },
   updateToolLabels: { method: "PATCH", path: "/api/v1/trust/agents/{agentId}/tools/{tool}/labels" },
   verifyGatewaySetup: { method: "GET", path: "/api/v1/connect/setup" },
 } as const;
@@ -598,6 +746,10 @@ export interface OperationResponses {
   approveTicket: ProtectMutationEnvelope;
   checkRuntimeRule: RuntimeRuleCheckEnvelope;
   createAdminSession: undefined;
+  createLlmModel: LlmMutationEnvelope;
+  createLlmProvider: LlmMutationEnvelope;
+  deleteLlmModel: LlmMutationEnvelope;
+  deleteLlmProvider: LlmMutationEnvelope;
   deleteRuntimeRule: ProtectMutationEnvelope;
   denyTicket: ProtectMutationEnvelope;
   detectMcps: TrustScanEnvelope;
@@ -611,6 +763,7 @@ export interface OperationResponses {
   getConnectSummary: ConnectSummaryEnvelope;
   getGatewayMcpServer: MCPEnvelope;
   getLiveness: Liveness;
+  getLlmConfiguration: LlmConfigurationEnvelope;
   getModel: ModelEnvelope;
   getOverview: OverviewEnvelope;
   getProvider: ProviderEnvelope;
@@ -631,6 +784,8 @@ export interface OperationResponses {
   listTrustScans: TrustScanPageEnvelope;
   publishRuntimeRule: ProtectMutationEnvelope;
   streamEvents: string;
+  updateLlmModel: LlmMutationEnvelope;
+  updateLlmProvider: LlmMutationEnvelope;
   updateToolLabels: TrustResourceEnvelope;
   verifyGatewaySetup: ConnectSetupEnvelope;
 }
@@ -639,11 +794,17 @@ export interface OperationBodies {
   approveTicket: ConfirmedActionRequest;
   checkRuntimeRule: RuntimeRuleCheckRequest;
   createAdminSession: LoginRequest;
+  createLlmModel: LlmModelMutationRequest;
+  createLlmProvider: LlmProviderMutationRequest;
+  deleteLlmModel: LlmDeleteRequest;
+  deleteLlmProvider: LlmDeleteRequest;
   deleteRuntimeRule: ConfirmedActionRequest;
   denyTicket: ConfirmedActionRequest;
   detectMcps: MCPDetectionRequest;
   detectSkills: SkillDetectionRequest;
   publishRuntimeRule: RuntimeRulePublishRequest;
+  updateLlmModel: LlmModelMutationRequest;
+  updateLlmProvider: LlmProviderMutationRequest;
   updateToolLabels: LabelUpdate;
 }
 

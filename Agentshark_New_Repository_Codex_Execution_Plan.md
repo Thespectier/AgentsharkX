@@ -54,11 +54,11 @@ Agentshark 是 agentgateway 与 AgentGuard 之上的统一管理控制台，用�
 
 ### 1.4 上游能力边界
 
-| 能力来源 | 直接复用的能力 | Agentshark 的处理方式 |
-|---|---|---|
-| agentgateway | LLM、MCP、A2A、HTTP/gRPC 代理；Provider/Model/Route；认证、CEL、限流、Guardrail；日志、成本、延迟与分析 | Connect 和 Audit 的主要数据源；复杂配置跳转原生控制台 |
-| AgentGuard | LLM/Tool 前后拦截；Tools/Skills/MCP 资源；Rules、Plugins、Approvals、Traffic、Audit、扫描与标签 | Trust、Protect 和 Audit 的主要数据源；保留来源与作用阶段 |
-| Agentshark | 统一导航、聚合视图、标准化模型、状态流、动效与操作编排 | 不进入 Agent 的业务数据面 |
+| 能力来源     | 直接复用的能力                                                                                          | Agentshark 的处理方式                                    |
+| ------------ | ------------------------------------------------------------------------------------------------------- | -------------------------------------------------------- |
+| agentgateway | LLM、MCP、A2A、HTTP/gRPC 代理；Provider/Model/Route；认证、CEL、限流、Guardrail；日志、成本、延迟与分析 | Connect 和 Audit 的主要数据源；复杂配置跳转原生控制台    |
+| AgentGuard   | LLM/Tool 前后拦截；Tools/Skills/MCP 资源；Rules、Plugins、Approvals、Traffic、Audit、扫描与标签         | Trust、Protect 和 Audit 的主要数据源；保留来源与作用阶段 |
+| Agentshark   | 统一导航、聚合视图、标准化模型、状态流、动效与操作编排                                                  | 不进入 Agent 的业务数据面                                |
 
 已核实的 AgentGuard Console API 包括 tools、skills、mcps、rules、stats、traffic、audit、approvals，以及 approve/deny 等接口。agentgateway 的原生 UI 已包含 Models、Providers、Policies、Guardrails、Costs、Logs、Analytics、MCP Servers、Traffic Listeners/Gateways/Routes 等入口。
 
@@ -271,12 +271,12 @@ Agent 身份必须来自 AgentGuard 明确字段。agentgateway 日志中的客�
 
 必须在 UI 上始终显示 `Source + Scope + Phase + Action`：
 
-| 类型 | Source | Scope/Phase | 常见 Action |
-|---|---|---|---|
-| Gateway Policy | agentgateway | Gateway / Request | Allow、Deny、Route、Rate Limit |
-| Content Guardrail | agentgateway | Prompt / Response | Allow、Deny、Redact |
-| Runtime Rule | AgentGuard | LLM Before/After、Tool Before/After | Allow、Deny、Human Check、LLM Check |
-| Approval | AgentGuard | Runtime | Approve、Deny |
+| 类型              | Source       | Scope/Phase                         | 常见 Action                         |
+| ----------------- | ------------ | ----------------------------------- | ----------------------------------- |
+| Gateway Policy    | agentgateway | Gateway / Request                   | Allow、Deny、Route、Rate Limit      |
+| Content Guardrail | agentgateway | Prompt / Response                   | Allow、Deny、Redact                 |
+| Runtime Rule      | AgentGuard   | LLM Before/After、Tool Before/After | Allow、Deny、Human Check、LLM Check |
+| Approval          | AgentGuard   | Runtime                             | Approve、Deny                       |
 
 页面：
 
@@ -339,13 +339,13 @@ Agent 身份必须来自 AgentGuard 明确字段。agentgateway 日志中的客�
 
 ### 7.2 动效分层
 
-| 层级 | 场景 | 动效 | 约束 |
-|---|---|---|---|
-| Ambient | 首页背景、LiveFlow | 极慢网格漂移、低亮度流动粒子 | 8–16 秒循环；不抢夺注意力 |
-| Status | 健康、实时事件 | 呼吸点、边框扫光、新事件淡入 | 仅 active/pending 状态运动 |
-| Navigation | 路由、Tab、Drawer | 淡入上移、共享指示条、spring drawer | 180–420ms |
-| Data | 指标、图表、列表 | 数字滚动、路径补间、新行高亮 | 更新时触发，不持续循环 |
-| Action | 保存、审批、删除 | 按压、loading、成功确认、错误震动 | 必须与真实请求状态绑定 |
+| 层级       | 场景               | 动效                                | 约束                       |
+| ---------- | ------------------ | ----------------------------------- | -------------------------- |
+| Ambient    | 首页背景、LiveFlow | 极慢网格漂移、低亮度流动粒子        | 8–16 秒循环；不抢夺注意力  |
+| Status     | 健康、实时事件     | 呼吸点、边框扫光、新事件淡入        | 仅 active/pending 状态运动 |
+| Navigation | 路由、Tab、Drawer  | 淡入上移、共享指示条、spring drawer | 180–420ms                  |
+| Data       | 指标、图表、列表   | 数字滚动、路径补间、新行高亮        | 更新时触发，不持续循环     |
+| Action     | 保存、审批、删除   | 按压、loading、成功确认、错误震动   | 必须与真实请求状态绑定     |
 
 ### 7.3 核心动态组件
 
@@ -445,7 +445,12 @@ type UnifiedEvent = {
   kind: "traffic" | "decision" | "approval" | "audit" | "health";
   severity: "info" | "low" | "medium" | "high" | "critical";
   subject?: { agentId?: string; principalId?: string; sessionId?: string };
-  target?: { provider?: string; model?: string; tool?: string; resource?: string };
+  target?: {
+    provider?: string;
+    model?: string;
+    tool?: string;
+    resource?: string;
+  };
   phase?: string;
   action?: string;
   decision?: string;
@@ -697,6 +702,34 @@ AgentGuard 为 GPLv3，agentgateway 为 Apache-2.0。实现上保持独立进程
 - CI 包含 Go、Web、契约、E2E、容器构建和 secret scan。
 
 建议提交：`release: prepare reproducible agentshark preview`
+
+### Phase 8：Connect LLM 基础配置管理
+
+目标：把经过验证的 agentgateway Provider 和直连 Model 高频设置搬入
+`Connect / LLM`，同时保留上游高级编辑器的所有权和凭据边界。
+
+任务：
+
+1. 在 OpenAPI 中定义脱敏 LLM 配置、Provider/Model typed CRUD 和写入回执。
+2. BFF 读取整份 `/api/config`，只返回验证过的基础字段、格式和凭据配置状态。
+3. 写入使用短时一次性 revision token、进程内串行化、读改写、单次 POST 和回读验证。
+4. 不接收明文 API Key；仅支持保留、运行环境、环境变量名或文件引用。
+5. Connect UI 提供共享 Provider 和直连 Model 管理；Virtual Model 和高级策略只读并跳转原生控制台。
+6. 添加 adapter、service、BFF、Mock 和浏览器流程测试，并记录上游整份配置写入的并发限制。
+
+验收：
+
+- Provider 和直连 Model 可新增、编辑、删除，并显示来源与写入回执。
+- 响应、浏览器、日志不包含现有凭据值或新凭据引用内容。
+- 引用中的 Provider/Model 不可删除，陈旧或重复 revision token 不会触发上游 POST。
+- 一次成功操作只 POST 一次，写后回读验证目标状态且保留非 LLM、高级字段和现有凭据。
+- Virtual Model、Guardrail、负载/故障转移策略与原始 YAML 继续由 agentgateway 原生控制台编辑。
+
+已知上游限制：agentgateway v1.3.1 只提供整份配置 `POST /api/config`，没有 ETag
+或条件更新；AgentsharkX 能拒绝已检测到的陈旧 revision，但无法把外部原生控制台或
+YAML 写入与最后一次读取到 POST 之间的窗口变成原子操作。
+
+建议提交：`feat(connect): manage verified agentgateway llm settings`
 
 ---
 

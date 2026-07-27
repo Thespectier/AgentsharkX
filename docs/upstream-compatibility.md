@@ -1,10 +1,11 @@
 # Upstream compatibility
 
-Last verified: 2026-07-23.
+Last verified: 2026-07-27.
 
-Phase 7 still prevents direct browser contact with either upstream. The
-agentgateway adapter remains read-only and now also reads redacted request-log
-and Analytics contracts. The AgentGuard adapter reads Trust, Protect, and Audit
+Phase 8 still prevents direct browser contact with either upstream. The
+agentgateway adapter reads redacted request-log and Analytics contracts and now
+performs a typed, credential-safe subset of Provider/direct-Model configuration
+writes. The AgentGuard adapter reads Trust, Protect, and Audit
 resources and invokes
 verified label, detection, runtime-rule, and approval mutations with
 `X-Api-Key`, source-scoped errors, strict response bounds, and no automatic
@@ -13,10 +14,10 @@ because the selected upstream exposes no verified native admin-auth header.
 
 ## Pinned baseline
 
-| Upstream | Selected release | Immutable revision | Runtime artifact |
-|---|---|---|---|
-| agentgateway | `v1.3.1` | `dbaaf7ed73671e7aec9195e35e7f726c0b14b84a` | Default: official host binary verified by platform SHA-256; fallback: `cr.agentgateway.dev/agentgateway:v1.3.1@sha256:c3ce7b75da90fef70239befcc1c3adc05152d7b9dd21fcb8351178026a2c4381` |
-| AgentGuard | main snapshot (package `2.1`) | `4b755fb4a4a2763b7e817b3d0220fe5c22187b59` | Built from `https://github.com/WhitzardAgent/AgentGuard.git#4b755fb4a4a2763b7e817b3d0220fe5c22187b59` as local image `agentsharkx/agentguard:main-4b755fb` |
+| Upstream     | Selected release              | Immutable revision                         | Runtime artifact                                                                                                                                                                        |
+| ------------ | ----------------------------- | ------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| agentgateway | `v1.3.1`                      | `dbaaf7ed73671e7aec9195e35e7f726c0b14b84a` | Default: official host binary verified by platform SHA-256; fallback: `cr.agentgateway.dev/agentgateway:v1.3.1@sha256:c3ce7b75da90fef70239befcc1c3adc05152d7b9dd21fcb8351178026a2c4381` |
+| AgentGuard   | main snapshot (package `2.1`) | `4b755fb4a4a2763b7e817b3d0220fe5c22187b59` | Built from `https://github.com/WhitzardAgent/AgentGuard.git#4b755fb4a4a2763b7e817b3d0220fe5c22187b59` as local image `agentsharkx/agentguard:main-4b755fb`                              |
 
 The agentgateway GitHub release API reported `v1.4.0-alpha.2` as
 `prerelease=false`, even though the tag is explicitly an alpha. Phase 0
@@ -50,8 +51,9 @@ verified. Sanitized management responses are stored under
   configuration and normalized stores.
 - A populated `GET /api/config` was rechecked on 2026-07-27 and returned the
   accepted object discriminator `provider.custom` alongside model
-  `provider.reference`. The adapter exposes only `kind=custom` and does not
-  return custom formats, params, endpoints, or credentials.
+  `provider.reference`. Phase 8 exposes the verified custom format names/paths
+  and allow-listed base params but never returns credential values or unowned
+  provider fields.
 - `GET /api/costs/models` returned `loaded=false` and an empty provider list.
 - `GET :15020/metrics` returned Prometheus metrics.
 - The configured host-native LLM listener returned the explicit model from
@@ -103,9 +105,10 @@ Provider, Model, MCP Server, Listener, Route, Policy, or Guardrail read APIs.
 Adapters must use explicit fields from config/config-dump and treat missing
 sections as unavailable. Advanced workflows remain in the native console.
 
-The pinned native UI writes configuration through `POST /api/config`. Its
-implementation accepts only a file-backed `ConfigSource`, validates the proposed
-configuration, and writes the active YAML file. The default native process uses
+The pinned native UI writes the entire configuration through `POST /api/config`.
+Its implementation accepts only a file-backed `ConfigSource`, validates the
+proposed configuration, and writes the active YAML file. It exposes no ETag,
+revision, or conditional-update header. The default native process uses
 the explicit checkout file as the checkout user, so **Configure agentgateway**
 can save without container ownership translation; the admin port remains bound
 to loopback. The container fallback still mounts the file read-write and aligns
@@ -114,10 +117,27 @@ read-and-unchanged-write through `POST /api/config` returned 200; the same
 request under the image's default UID `65532` returned 500 permission denied
 against the checkout-owned mode-0644 file. The
 `make gateway-config-write-smoke` check keeps the potentially sensitive config
-in mode-0600 temporary files and never prints it. AgentsharkX still does not
-accept, inspect, or relay raw configuration or provider credentials.
+in mode-0600 temporary files and never prints it.
 
-For Phase 3, the populated config shape and UI routes were also checked against
+Phase 8 does not accept raw configuration or literal provider credentials from
+the browser. The BFF necessarily parses a bounded whole-document snapshot to
+preserve unowned fields and opaque existing credential values, but the public
+contract returns only allow-listed Provider/direct-Model settings plus
+`credential.configured`. New API-key inputs are ambient auth, an environment
+variable name, or a file reference; unmodeled structured cloud credentials are
+preserve/ambient only and otherwise stay native-console owned. Each write uses a bounded five-minute,
+one-use revision token, an in-process mutation lock, a fresh revision check, one
+upstream POST, and a refetch that verifies the requested result. Provider type
+and Model provider binding are immutable on update; referenced Provider/Model
+deletion is rejected.
+
+Because the upstream has no conditional update, a native-console or YAML write
+can still occur between the BFF's final read and whole-document POST. The BFF
+rejects detectable stale revisions but cannot make that external race atomic.
+It never retries an ambiguous write automatically.
+
+For Phase 3 and the Phase 8 typed-write round, the populated config shape, UI
+routes, client hook, and file-backed write implementation were checked against
 the exact pinned source revision. The sanitized
 `config-populated.response.json` freezes string, reference, and custom provider
 shapes plus direct and virtual models,

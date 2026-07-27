@@ -184,7 +184,7 @@ test("console text uses the enlarged readable scale", async ({ page }) => {
   );
 });
 
-test("Connect filters explicit resources, opens details, and reruns setup verification", async ({
+test("Connect manages verified LLM providers and direct models, then reruns setup verification", async ({
   page,
 }) => {
   await page.goto("/connect/overview");
@@ -195,15 +195,40 @@ test("Connect filters explicit resources, opens details, and reruns setup verifi
   );
 
   await page.goto("/connect/llm");
-  const modelFilter = page.getByPlaceholder("Filter explicit resources").nth(1);
-  await modelFilter.fill("fast");
-  const modelRow = page.getByRole("row", { name: /fast/ });
-  await expect(modelRow).toBeVisible();
-  await modelRow.click();
-  const drawer = page.getByRole("dialog");
-  await expect(drawer.getByRole("heading", { level: 2 })).toHaveText("fast");
-  await expect(drawer).toContainText("/mock/fast");
-  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: "Add provider" }).click();
+  let dialog = page.getByRole("dialog");
+  await dialog.getByLabel("Provider name").fill("anthropic-backup");
+  await dialog.getByLabel("Provider type").selectOption("anthropic");
+  await dialog.getByLabel("Credential mode").selectOption("environment");
+  await dialog.getByLabel("Environment variable").fill("ANTHROPIC_API_KEY");
+  await dialog.getByRole("button", { name: "Save provider" }).click();
+  await expect(page.getByText("Provider created in agentgateway.")).toBeVisible();
+  await expect(page.getByText("ANTHROPIC_API_KEY")).toHaveCount(0);
+
+  await page.getByRole("button", { name: "Add model" }).click();
+  dialog = page.getByRole("dialog");
+  await dialog.getByLabel("Model name").fill("backup-chat");
+  await dialog.getByLabel("Shared provider").selectOption("anthropic-backup");
+  await dialog.getByLabel("Target model").fill("claude-haiku-4-5");
+  await dialog.getByRole("button", { name: "Save model" }).click();
+  await expect(page.getByText("Model created in agentgateway.")).toBeVisible();
+
+  await page.getByLabel("Filter models").fill("backup-chat");
+  let row = page.getByRole("row", { name: /backup-chat/ });
+  await expect(row).toContainText("anthropic-backup");
+  await row.getByRole("button", { name: "Delete model" }).click();
+  dialog = page.getByRole("dialog");
+  await dialog.getByRole("checkbox").check();
+  await dialog.getByRole("button", { name: "Delete", exact: true }).click();
+  await expect(page.getByText("Model deleted from agentgateway.")).toBeVisible();
+
+  await page.getByLabel("Filter providers").fill("anthropic-backup");
+  row = page.getByRole("row", { name: /anthropic-backup/ });
+  await row.getByRole("button", { name: "Delete provider" }).click();
+  dialog = page.getByRole("dialog");
+  await dialog.getByRole("checkbox").check();
+  await dialog.getByRole("button", { name: "Delete", exact: true }).click();
+  await expect(page.getByText("Provider deleted from agentgateway.")).toBeVisible();
 
   await page.goto("/connect/setup");
   await expect(page.getByText("Connection verified")).toBeVisible();

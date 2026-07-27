@@ -40,6 +40,7 @@ import type {
 import { formatCount, formatTimeWithZone } from "../../lib/format";
 import { formatError, getScenario, requestOperation } from "../../lib/api";
 import { useI18n } from "../../lib/i18n";
+import { LlmManager } from "./llm-manager";
 
 type Selection =
   | { kind: "provider"; id: string }
@@ -87,7 +88,7 @@ export function ConnectPage() {
             </ExternalButton>
           ) : undefined
         }
-        description="Verified agentgateway configuration and traffic surfaces. Advanced editing stays in the native console."
+        description="Manage verified LLM providers and direct models here. Advanced routing and policy editing stay in the native console."
         eyebrow="Connect / agentgateway"
         title="Connect agents to every destination"
       />
@@ -95,7 +96,7 @@ export function ConnectPage() {
       {section === "overview" ? (
         <ConnectOverview summary={data} fetchedAt={meta.fetchedAt} />
       ) : null}
-      {section === "llm" ? <LlmView onOpen={open} /> : null}
+      {section === "llm" ? <LlmManager /> : null}
       {section === "mcp" ? <McpView onOpen={open} /> : null}
       {section === "traffic" ? <TrafficView onOpen={open} /> : null}
       {section === "setup" ? <SetupView /> : null}
@@ -180,127 +181,6 @@ function ConnectOverview({ summary, fetchedAt }: { summary: ConnectSummary; fetc
       </div>
       <NativeLinks links={summary.links} />
     </>
-  );
-}
-
-function LlmView({
-  onOpen,
-}: {
-  onOpen: (selection: Selection, trigger: HTMLTableRowElement) => void;
-}) {
-  return (
-    <div className="stack">
-      <ProviderTable onOpen={onOpen} />
-      <ModelTable onOpen={onOpen} />
-    </div>
-  );
-}
-
-function ProviderTable({
-  onOpen,
-}: {
-  onOpen: (selection: Selection, trigger: HTMLTableRowElement) => void;
-}) {
-  const pager = usePager();
-  const query = useQuery({
-    queryKey: ["connect-providers", pager.search, pager.cursor, getScenario()],
-    queryFn: ({ signal }) =>
-      requestOperation("listProviders", {
-        signal,
-        query: { q: pager.search, cursor: pager.cursor, limit: 10 },
-      }),
-    retry: false,
-  });
-  const columns: Column<GatewayProvider>[] = [
-    {
-      key: "name",
-      header: "Provider",
-      render: (item) => (
-        <Primary
-          icon={ServerCog}
-          title={item.name}
-          subtitle={item.upstreamId ?? "No upstream ID"}
-        />
-      ),
-    },
-    { key: "kind", header: "Kind", render: (item) => <StatusBadge status={item.kind} /> },
-    { key: "models", header: "Explicit references", render: (item) => item.modelCount },
-    { key: "source", header: "Source", render: (item) => <SourceBadge source={item.source} /> },
-    {
-      key: "fetched",
-      header: "Fetched",
-      render: (item) => formatTimeWithZone(item.fetchedAt),
-    },
-  ];
-  return (
-    <ResourceCard
-      title="Providers"
-      description="Providers explicitly present in agentgateway configuration."
-      query={query}
-      pager={pager}
-      render={(page) => (
-        <DataTable
-          columns={columns}
-          data={page.items}
-          label="LLM providers"
-          onRowClick={(item, trigger) => onOpen({ kind: "provider", id: item.id }, trigger)}
-        />
-      )}
-    />
-  );
-}
-
-function ModelTable({
-  onOpen,
-}: {
-  onOpen: (selection: Selection, trigger: HTMLTableRowElement) => void;
-}) {
-  const pager = usePager();
-  const query = useQuery({
-    queryKey: ["connect-models", pager.search, pager.cursor, getScenario()],
-    queryFn: ({ signal }) =>
-      requestOperation("listModels", {
-        signal,
-        query: { q: pager.search, cursor: pager.cursor, limit: 10 },
-      }),
-    retry: false,
-  });
-  const columns: Column<GatewayModel>[] = [
-    {
-      key: "name",
-      header: "Model",
-      render: (item) => (
-        <Primary icon={Network} title={item.name} subtitle={item.upstreamId ?? "No upstream ID"} />
-      ),
-    },
-    { key: "kind", header: "Kind", render: (item) => <StatusBadge status={item.kind} /> },
-    {
-      key: "provider",
-      header: "Provider / routing",
-      render: (item) => <code>{item.provider ?? item.routing ?? "Not provided"}</code>,
-    },
-    { key: "source", header: "Source", render: (item) => <SourceBadge source={item.source} /> },
-    {
-      key: "fetched",
-      header: "Fetched",
-      render: (item) => formatTimeWithZone(item.fetchedAt),
-    },
-  ];
-  return (
-    <ResourceCard
-      title="Models"
-      description="Direct and virtual models remain explicitly distinguished."
-      query={query}
-      pager={pager}
-      render={(page) => (
-        <DataTable
-          columns={columns}
-          data={page.items}
-          label="LLM models"
-          onRowClick={(item, trigger) => onOpen({ kind: "model", id: item.id }, trigger)}
-        />
-      )}
-    />
   );
 }
 

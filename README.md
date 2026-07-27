@@ -7,8 +7,14 @@ information architecture for connection management, trusted runtime context,
 protection workflows, and audit views without entering the agent data plane or
 reimplementing either upstream.
 
-The repository is at the **0.7.0 Phase 7 preview**. Connect reads explicit agentgateway
-providers, models, MCP targets, and routes. Trust now reads AgentGuard sessions,
+The repository is at the **0.7.0 Phase 7 preview** with the Phase 8 Connect LLM
+management round applied. Connect reads explicit agentgateway providers, models,
+MCP targets, and routes, and manages verified shared-provider and direct-model
+base settings through the BFF. Existing credentials are never returned to the
+browser; new API-key credentials use ambient auth, an environment-variable name,
+or a file reference rather than a literal value. Structured cloud credentials
+remain native-console only. Virtual models and advanced routing,
+policy, and raw configuration remain in the native agentgateway console. Trust now reads AgentGuard sessions,
 tools, skills, and MCP resources, builds Agents only from explicit AgentGuard
 identity fields, and supports tool-label updates plus polled Skill/MCP detection
 jobs. Protect now displays read-only agentgateway policy/guardrail summaries,
@@ -133,8 +139,10 @@ session cookie. The token is not persisted in browser storage. After a reload,
 the authenticated session endpoint restores only the in-memory CSRF value.
 Production
 deployments must keep `AGENTSHARK_COOKIE_SECURE=true` and terminate HTTPS before
-the BFF. Trust and Protect write requests additionally require the session CSRF
-token. Rule check tokens, scan jobs, and the Audit event window are bounded in
+the BFF. Trust, Protect, and Connect LLM write requests additionally require the
+session CSRF token. LLM configuration writes also require a short-lived, one-use
+revision token and are verified by a fresh upstream read. Rule check tokens,
+scan jobs, and the Audit event window are bounded in
 memory and are lost when the BFF restarts. AgentGuard mutations are never
 automatically retried. Request-log payloads and attributes are never requested
 by the Audit poller; event detail is an allow-listed redacted projection.

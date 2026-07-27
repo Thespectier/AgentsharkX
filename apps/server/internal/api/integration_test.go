@@ -538,6 +538,81 @@ func TestConnectResourcesFlowThroughBFFWithFilteringAndDetails(t *testing.T) {
 	}
 }
 
+func TestConnectLLMConfigurationWritesThroughBFFWithoutExposingCredentials(t *testing.T) {
+	t.Parallel()
+
+	const upstreamCredential = "never-return-literal-api-key"
+	var mu sync.Mutex
+	configuration := []byte(`{"llm":{"providers":[{"name":"shared","provider":"openAI","params":{"apiKey":"` + upstreamCredential + `","model":"gpt-5.4-nano"}}],"models":[]},"binds":[]}`)
+	mutationCalls := 0
+	gatewayServer := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		writer.Header().Set("Content-Type", "application/json")
+		if request.URL.Path != "/api/config" {
+			http.NotFound(writer, request)
+			return
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		if request.Method == http.MethodPost {
+			body, err := io.ReadAll(request.Body)
+			if err != nil {
+				t.Error(err)
+				http.Error(writer, "read failed", http.StatusInternalServerError)
+				return
+			}
+			configuration = body
+			mutationCalls++
+			_, _ = io.WriteString(writer, `{"status":"success"}`)
+			return
+		}
+		_, _ = writer.Write(configuration)
+	}))
+	defer gatewayServer.Close()
+
+	gatewayClient, err := gateway.New(gatewayServer.URL, gatewayServer.Client(), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(New(ServerConfig{
+		Connect: connect.New(gatewayClient, "http://localhost:15000/ui"),
+		Logger:  slog.New(slog.DiscardHandler), AuthEnabled: false,
+	}))
+	defer server.Close()
+
+	var current model.LLMConfigurationEnvelope
+	protectJSON(t, server.Client(), http.MethodGet, server.URL+"/api/v1/connect/llm/configuration", "", http.StatusOK, &current)
+	encoded, _ := json.Marshal(current)
+	if strings.Contains(string(encoded), upstreamCredential) || strings.Contains(string(encoded), "apiKey") {
+		t.Fatalf("sanitized LLM configuration exposed upstream credential material: %s", encoded)
+	}
+	if len(current.Data.Providers) != 1 || !current.Data.Providers[0].Credential.Configured || current.Data.RevisionToken == "" {
+		t.Fatalf("unexpected sanitized LLM configuration: %#v", current.Data)
+	}
+
+	requestBody, err := json.Marshal(model.LLMProviderMutationRequest{
+		RevisionToken: current.Data.RevisionToken,
+		Provider: model.LLMProviderDraft{
+			Name: "anthropic-backup", ProviderType: "anthropic",
+			Credential: model.LLMCredentialInput{Mode: "ambient"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var receipt model.LLMMutationEnvelope
+	protectJSON(t, server.Client(), http.MethodPost, server.URL+"/api/v1/connect/llm/providers", string(requestBody), http.StatusCreated, &receipt)
+	if receipt.Data.Operation != "create-llm-provider" || receipt.Data.Target != "anthropic-backup" {
+		t.Fatalf("unexpected LLM mutation receipt: %#v", receipt.Data)
+	}
+	mu.Lock()
+	written := append([]byte(nil), configuration...)
+	writes := mutationCalls
+	mu.Unlock()
+	if writes != 1 || !bytes.Contains(written, []byte(upstreamCredential)) || !bytes.Contains(written, []byte("anthropic-backup")) {
+		t.Fatalf("unexpected upstream write: calls=%d body=%s", writes, written)
+	}
+}
+
 func TestTrustResourcesLabelsAndScanFlowThroughAuthenticatedBFF(t *testing.T) {
 	t.Parallel()
 
