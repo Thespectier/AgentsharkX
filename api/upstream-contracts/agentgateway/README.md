@@ -18,6 +18,7 @@ management surface without configuring or sending business traffic.
 | `cost-models.response.json`            | `GET :15000/api/costs/models`            | 200                                                                       |
 | `logs-unconfigured.response.json`      | `POST :15000/api/logs/search`            | 500, no request-log DB                                                    |
 | `logs-populated.response.json`         | `POST :15000/api/logs/search`            | Sanitized populated shape from the pinned log-store source contract       |
+| `log-detail.response.json`             | `POST :15000/api/logs/get`               | Synthetic complete shape verified from the pinned source and UI contract  |
 | `analytics-unconfigured.response.json` | `POST :15000/api/logs/analytics/summary` | 500, no request-log DB                                                    |
 | `metrics.sample.txt`                   | `GET :15020/metrics`                     | 200, truncated non-sensitive sample                                       |
 
@@ -41,8 +42,10 @@ pinned literal API-key, AWS static, GCP credential-file, and Azure managed
 identity shapes; no credential value is returned by the public read contract.
 The Phase 6 log and Analytics adapters send the same exact rolling 60-minute
 `timeRange`. Search always sends `includeAttributes=false`; Analytics requests
-`bucketSeconds=300`. The BFF does not call `/api/logs/get` and rejects
-unexpected attributes or payload fields. The pinned UI route `/ui/llm/logs`
-accepts an exact upstream log ID in the `log` query parameter and its native
-detail loader calls `/api/logs/get` with `includePayload=true`; Audit links to
-that source-owned flow without adding it to the BFF contract.
+`bucketSeconds=300`. Search rejects unexpected attributes or payload fields so
+polling, lists, trends, and SSE remain bounded summaries. When an authenticated
+administrator opens one event, the BFF calls `/api/logs/get` with the exact
+`{ id, includePayload: true }` body and returns the complete source record,
+including arbitrary attributes and payload values. The pinned UI route
+`/ui/llm/logs` accepts the same exact upstream log ID in the `log` query
+parameter.

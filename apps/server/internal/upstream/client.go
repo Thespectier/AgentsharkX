@@ -62,6 +62,12 @@ func (client *Client) GetJSON(ctx context.Context, path string, destination any)
 	return client.doJSONQuery(ctx, http.MethodGet, path, nil, nil, destination, true)
 }
 
+// GetJSONFull performs an unbounded side-effect-free upstream read for an
+// authenticated detail workflow.
+func (client *Client) GetJSONFull(ctx context.Context, path string, destination any) (time.Duration, error) {
+	return client.doJSONQueryFull(ctx, http.MethodGet, path, nil, nil, destination, true)
+}
+
 // GetJSONQuery performs a bounded read with query parameters encoded by
 // net/url. Adapters must use this instead of interpolating query strings into
 // upstream paths.
@@ -69,10 +75,41 @@ func (client *Client) GetJSONQuery(ctx context.Context, path string, query url.V
 	return client.doJSONQuery(ctx, http.MethodGet, path, query, nil, destination, true)
 }
 
+// GetJSONQueryFull performs an unbounded side-effect-free upstream read for an
+// authenticated detail contract that has no dedicated single-record endpoint.
+func (client *Client) GetJSONQueryFull(ctx context.Context, path string, query url.Values, destination any) (time.Duration, error) {
+	return client.doJSONQueryFull(ctx, http.MethodGet, path, query, nil, destination, true)
+}
+
 // PostJSON performs a bounded JSON POST which callers must use only for verified,
 // side-effect-free upstream read contracts.
 func (client *Client) PostJSON(ctx context.Context, path string, body, destination any) (time.Duration, error) {
 	return client.writeJSON(ctx, http.MethodPost, path, body, destination, true)
+}
+
+// PostJSONFull performs a side-effect-free upstream read without applying the
+// shared projection response limit. It is reserved for authenticated detail
+// endpoints whose contract requires returning the complete source record.
+func (client *Client) PostJSONFull(ctx context.Context, path string, body, destination any) (time.Duration, error) {
+	encoded, err := json.Marshal(body)
+	if err != nil {
+		return 0, &Error{Source: client.source, Method: http.MethodPost, Path: path, Kind: "request encoding failed"}
+	}
+	return client.doJSONQueryFull(ctx, http.MethodPost, path, nil, encoded, destination, true)
+}
+
+func (client *Client) doJSONQueryFull(ctx context.Context, method, path string, query url.Values, body []byte, destination any, retrySafe bool) (time.Duration, error) {
+	started := time.Now()
+	response, err := client.do(ctx, method, path, query, body, retrySafe)
+	duration := time.Since(started)
+	if err != nil {
+		return duration, err
+	}
+	defer response.Body.Close()
+	if err := json.NewDecoder(response.Body).Decode(destination); err != nil {
+		return duration, &Error{Source: client.source, Method: method, Path: path, Kind: "invalid JSON response"}
+	}
+	return duration, nil
 }
 
 // PostMutationJSON performs a non-retried mutation against a verified upstream

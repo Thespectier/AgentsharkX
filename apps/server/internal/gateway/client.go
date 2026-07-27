@@ -62,7 +62,7 @@ func (client *Client) Capabilities(ctx context.Context) []model.Capability {
 	}
 
 	requestLogsStatus := model.CapabilitySupported
-	requestLogsReason := "live redacted /api/logs/search probe succeeded"
+	requestLogsReason := "live summary /api/logs/search probe succeeded"
 	if requestLogsErr != nil {
 		requestLogsStatus = model.CapabilityUnavailable
 		requestLogsReason = "live request-log probe failed"

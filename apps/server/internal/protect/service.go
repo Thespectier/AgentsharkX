@@ -53,7 +53,7 @@ type Guard interface {
 }
 
 type ApprovalRecorder interface {
-	RecordApprovalResolution(model.Approval, string, time.Time)
+	RecordApprovalResolution(model.Approval, string, string, time.Time)
 }
 
 type checkedSource struct {
@@ -271,7 +271,7 @@ func (service *Service) ResolveApproval(ctx context.Context, ticketID, decision 
 	}
 	envelope := mutationEnvelope(decision+"-approval", ticketID, message)
 	if service.recorder != nil {
-		service.recorder.RecordApprovalResolution(selected, decision, envelope.Data.CompletedAt)
+		service.recorder.RecordApprovalResolution(selected, decision, strings.TrimSpace(request.Note), envelope.Data.CompletedAt)
 	}
 	return envelope, nil
 }

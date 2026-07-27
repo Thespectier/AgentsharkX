@@ -491,8 +491,8 @@ const zhCN: Record<string, string> = {
   "Latency trend": "延迟趋势",
   "Last 60 minutes; verified request volume and explicit denies use independent axes.":
     "最近 60 分钟；已验证请求量和明确拒绝使用独立坐标轴。",
-  "Nearest-rank P95 from the bounded redacted request-log sample; tooltips show sample size and gaps mean no samples.":
-    "基于有界脱敏请求日志样本计算 nearest-rank P95；提示框显示样本量，缺口表示没有样本。",
+  "Nearest-rank P95 from the bounded request-log summary sample; tooltips show sample size and gaps mean no samples.":
+    "基于有界请求日志摘要样本计算 nearest-rank P95；提示框显示样本量，缺口表示没有样本。",
   "Unified activity": "统一活动",
   "Runtime sessions": "运行时会话",
   "No sessions found": "未找到会话",
@@ -512,12 +512,14 @@ const zhCN: Record<string, string> = {
   "Event not found": "未找到事件",
   "Gateway request evidence": "网关请求证据",
   "Guard evidence": "防护证据",
-  "Sensitive content boundary": "敏感内容边界",
   "agentgateway source log": "agentgateway 源日志",
-  "Prompt / completion": "提示词 / 补全内容",
-  "Retained upstream and available in the source log": "上游已留存，可在源日志中查看",
-  "Not retained upstream for this event": "此事件未在上游留存相关内容",
   "Open exact source log": "打开精确匹配的源日志",
+  "Loading complete upstream detail": "正在加载完整上游详情",
+  "Complete event detail unavailable": "无法获取完整事件详情",
+  "Request prompt": "请求提示词",
+  "Response completion": "响应补全内容",
+  Attributes: "属性",
+  "Complete upstream JSON": "完整上游 JSON",
   "Started at": "开始时间",
   "Completed at": "完成时间",
   Duration: "持续时间",
@@ -539,17 +541,8 @@ const zhCN: Record<string, string> = {
   "Matched rules": "命中规则",
   "Rule version": "规则版本",
   "Resolved at": "处理时间",
-  Prompt: "提示词",
-  Payload: "载荷",
-  Authorization: "授权信息",
-  "Tool arguments": "工具参数",
-  "Not collected by AgentsharkX": "AgentsharkX 不采集",
-  "Retained upstream; content not retrieved": "上游已留存；AgentsharkX 未读取内容",
-  "Credential values are never collected": "凭据值永不采集",
   Yes: "是",
   No: "否",
-  "AgentsharkX keeps its BFF projection redacted. Prompt or completion content retained upstream is available through the exact agentgateway source log and is not copied into this API.":
-    "AgentsharkX 的 BFF 投影保持脱敏；上游留存的提示词或补全内容可通过精确匹配的 agentgateway 源日志查看，不会复制到此 API。",
   "No request samples": "没有请求样本",
   "P95 latency": "P95 延迟",
   "5-minute bucket": "5 分钟桶",
@@ -558,14 +551,13 @@ const zhCN: Record<string, string> = {
   "No gateway traffic or AgentGuard security records exist in this time range.":
     "此时间范围内没有网关流量或 AgentGuard 安全记录。",
   "No audit data yet": "暂无审计数据",
-  "Select a record for redacted detail. Source IDs remain intact.":
-    "选择记录以查看脱敏详情；数据源 ID 保持不变。",
+  "Select a record for complete source detail. Source IDs remain intact.":
+    "选择记录以查看完整来源详情；数据源 ID 保持不变。",
   "No records from this source are present in the selected time range.":
     "所选时间范围内没有来自该数据源的记录。",
   "AgentGuard sessions only; counts use exact session-ID matches and do not imply a task DAG.":
     "仅显示 AgentGuard 会话；计数基于精确会话 ID 匹配，不代表任务 DAG。",
   "AgentGuard has not reported any runtime sessions.": "AgentGuard 尚未上报运行时会话。",
-  "Redacted raw JSON": "脱敏原始 JSON",
 
   "System / Diagnostics": "系统 / 诊断",
   "Sources, versions & capabilities": "数据源、版本与能力",

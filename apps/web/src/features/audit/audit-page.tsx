@@ -8,7 +8,6 @@ import {
   Filter,
   ListFilter,
   Radio,
-  ShieldAlert,
 } from "lucide-react";
 import { useCallback, useMemo, useRef, useState } from "react";
 
@@ -24,6 +23,7 @@ import {
   EmptyState,
   ErrorState,
   ExternalButton,
+  InlineLoading,
   MetricCard,
   PageHeader,
   PageSkeleton,
@@ -166,8 +166,19 @@ export function AuditPage() {
         returnFocusRef={triggerRef}
         title={selectedDetail?.summary ?? "Event not found"}
       >
-        {selectedDetail ? (
-          <EventDetail event={selectedDetail} gatewayLogs={data.links.gatewayLogs} />
+        {detailQuery.isError ? (
+          <ErrorState
+            description={formatError(detailQuery.error)}
+            onRetry={() => void detailQuery.refetch()}
+            title="Complete event detail unavailable"
+          />
+        ) : selectedDetail ? (
+          <EventDetail
+            detailReady={Boolean(detailQuery.data)}
+            event={selectedDetail}
+            gatewayLogs={data.links.gatewayLogs}
+            loading={detailQuery.isFetching}
+          />
         ) : null}
       </DetailDrawer>
     </PageFrame>
@@ -304,7 +315,7 @@ function AnalyticsView({
         </Card>
         <Card className="chart-card">
           <CardHeader
-            description="Nearest-rank P95 from the bounded redacted request-log sample; tooltips show sample size and gaps mean no samples."
+            description="Nearest-rank P95 from the bounded request-log summary sample; tooltips show sample size and gaps mean no samples."
             title="Latency trend"
           />
           <RequestTrendChart data={data.trend} mode="latency" />
@@ -381,7 +392,7 @@ function EventsView({
             <ListFilter size={13} /> {events.length} {t("records")}
           </span>
         }
-        description="Select a record for redacted detail. Source IDs remain intact."
+        description="Select a record for complete source detail. Source IDs remain intact."
         title={title}
       />
       <DataTable columns={eventColumns} data={events} label={title} onRowClick={onOpen} />
@@ -458,12 +469,21 @@ function SessionsView({ data }: { data: AuditData }) {
   );
 }
 
-function EventDetail({ event, gatewayLogs }: { event: UnifiedEvent; gatewayLogs?: string }) {
+function EventDetail({
+  event,
+  gatewayLogs,
+  detailReady,
+  loading,
+}: {
+  event: UnifiedEvent;
+  gatewayLogs?: string;
+  detailReady: boolean;
+  loading: boolean;
+}) {
   const { t } = useI18n();
-  const evidence = sourceEvidenceRows(event);
-  const sensitiveBoundary = sensitiveContentRows(event);
+  const evidence = detailReady ? sourceEvidenceRows(event) : [];
+  const payloadSections = detailReady ? gatewayPayloadSections(event) : [];
   const sourceLogHref = gatewayLogHref(gatewayLogs, event);
-  const hasPayload = objectValue(event.raw).hasPayload === true;
   return (
     <div className="event-detail">
       <div className="event-detail__badges">
@@ -500,6 +520,11 @@ function EventDetail({ event, gatewayLogs }: { event: UnifiedEvent; gatewayLogs?
           },
         ]}
       />
+      {loading && !detailReady ? (
+        <div className="event-detail__loading">
+          <InlineLoading label="Loading complete upstream detail" />
+        </div>
+      ) : null}
       {evidence.length ? (
         <section className="event-detail__section">
           <h3>
@@ -511,42 +536,15 @@ function EventDetail({ event, gatewayLogs }: { event: UnifiedEvent; gatewayLogs?
       {sourceLogHref ? (
         <section className="event-detail__section">
           <h3>{t("agentgateway source log")}</h3>
-          <DefinitionList
-            items={[
-              {
-                label: "Prompt / completion",
-                value: t(
-                  hasPayload
-                    ? "Retained upstream and available in the source log"
-                    : "Not retained upstream for this event",
-                ),
-              },
-            ]}
-          />
           <div className="event-detail__source-action">
             <ExternalButton href={sourceLogHref}>{t("Open exact source log")}</ExternalButton>
           </div>
         </section>
       ) : null}
-      <section className="event-detail__section">
-        <h3>{t("Sensitive content boundary")}</h3>
-        <DefinitionList items={sensitiveBoundary} />
-      </section>
-      <div className="raw-json">
-        <header>
-          <Braces size={15} />
-          <strong>{t("Redacted raw JSON")}</strong>
-        </header>
-        <pre>
-          <code>{JSON.stringify(event.raw ?? { redacted: true }, null, 2)}</code>
-        </pre>
-      </div>
-      <div className="redaction-note">
-        <ShieldAlert size={15} />{" "}
-        {t(
-          "AgentsharkX keeps its BFF projection redacted. Prompt or completion content retained upstream is available through the exact agentgateway source log and is not copied into this API.",
-        )}
-      </div>
+      {payloadSections.map((section) => (
+        <RawJSONBlock key={section.label} title={section.label} value={section.value} />
+      ))}
+      {detailReady ? <RawJSONBlock title="Complete upstream JSON" value={event.raw ?? {}} /> : null}
     </div>
   );
 }
@@ -573,44 +571,99 @@ export function sourceEvidenceRows(event: UnifiedEvent): EvidenceRow[] {
       ["Estimated cost", currencyValue(raw.cost)],
       ["Trace ID", displayValue(raw.traceId) || event.correlation?.traceId],
       ["Span ID", displayValue(raw.spanId)],
-      ["Error present", booleanValue(raw.errorPresent)],
+      ["Error", displayValue(raw.error)],
     ]);
   }
   const guardEvent = objectValue(raw.event);
   const tool = objectValue(guardEvent.tool);
+  const toolCall = objectValue(guardEvent.tool_call);
   const decision = objectValue(raw.decision);
   const approval = objectValue(raw.approval);
   return compactRows([
-    ["Guard event ID", displayValue(guardEvent.eventId) || displayValue(approval.eventId)],
-    ["Guard event type", displayValue(guardEvent.eventType) || displayValue(approval.eventType)],
-    ["Tool", displayValue(tool.name) || event.target?.tool],
-    ["Framework source", displayValue(tool.source)],
-    ["MCP server", displayValue(tool.mcpName)],
-    ["MCP tool", displayValue(tool.mcpToolName)],
-    ["MCP transport", displayValue(tool.mcpTransport)],
-    ["Risk score", displayValue(decision.riskScore)],
-    ["Matched rules", listValue(decision.matchedRules)],
-    ["Policy", displayValue(decision.policyId)],
-    ["Rule version", displayValue(decision.ruleVersion)],
+    [
+      "Guard event ID",
+      displayValue(guardEvent.eventId) ||
+        displayValue(guardEvent.event_id) ||
+        displayValue(approval.eventId),
+    ],
+    [
+      "Guard event type",
+      displayValue(guardEvent.eventType) ||
+        displayValue(guardEvent.event_type) ||
+        displayValue(approval.eventType),
+    ],
+    ["Tool", displayValue(tool.name) || displayValue(toolCall.tool_name) || event.target?.tool],
+    ["Framework source", displayValue(tool.source) || displayValue(toolCall.source)],
+    ["MCP server", displayValue(tool.mcpName) || displayValue(objectValue(toolCall.mcp).mcp_name)],
+    [
+      "MCP tool",
+      displayValue(tool.mcpToolName) || displayValue(objectValue(toolCall.mcp).mcp_tool_name),
+    ],
+    [
+      "MCP transport",
+      displayValue(tool.mcpTransport) || displayValue(objectValue(toolCall.mcp).mcp_transport),
+    ],
+    ["Risk score", displayValue(decision.riskScore) || displayValue(decision.risk_score)],
+    ["Matched rules", listValue(decision.matchedRules) || listValue(decision.matched_rules)],
+    ["Policy", displayValue(decision.policyId) || displayValue(decision.policy_id)],
+    ["Rule version", displayValue(decision.ruleVersion) || displayValue(decision.rule_version)],
+    ["Operator note", displayValue(decision.operatorNote)],
     ["Resolved at", displayValue(decision.resolvedAt)],
   ]);
 }
 
-export function sensitiveContentRows(event: UnifiedEvent): EvidenceRow[] {
+type RawSection = { label: string; value: unknown };
+
+export function gatewayPayloadSections(event: UnifiedEvent): RawSection[] {
+  if (event.source !== "agentgateway") return [];
   const raw = objectValue(event.raw);
-  const hasPayload = raw.hasPayload === true;
+  const payload = objectValue(raw.payload);
+  const attributes = objectValue(raw.attributes);
   return [
-    { label: "Prompt", value: "Not collected by AgentsharkX" },
-    {
-      label: "Payload",
-      value:
-        event.source === "agentgateway" && hasPayload
-          ? "Retained upstream; content not retrieved"
-          : "Not collected by AgentsharkX",
-    },
-    { label: "Authorization", value: "Credential values are never collected" },
-    { label: "Tool arguments", value: "Not collected by AgentsharkX" },
-  ];
+    rawSection(
+      "Request prompt",
+      payload.requestPrompt ?? attributeValue(attributes, "gen_ai.prompt"),
+    ),
+    rawSection(
+      "Response completion",
+      payload.responseCompletion ?? attributeValue(attributes, "gen_ai.completion"),
+    ),
+    rawSection("Attributes", raw.attributes),
+  ].filter((section): section is RawSection => Boolean(section));
+}
+
+function rawSection(label: string, value: unknown): RawSection | undefined {
+  return value === undefined ? undefined : { label, value };
+}
+
+function attributeValue(attributes: Record<string, unknown>, key: string): unknown {
+  if (key in attributes) return attributes[key];
+  let current: unknown = attributes;
+  for (const part of key.split(".")) {
+    if (!current || typeof current !== "object" || Array.isArray(current)) return undefined;
+    current = (current as Record<string, unknown>)[part];
+  }
+  return current;
+}
+
+function RawJSONBlock({ title, value }: { title: string; value: unknown }) {
+  const { t } = useI18n();
+  return (
+    <section className="raw-json event-detail__raw-section">
+      <header>
+        <Braces size={15} />
+        <strong>{t(title)}</strong>
+      </header>
+      <pre>
+        <code>{formatRawValue(value)}</code>
+      </pre>
+    </section>
+  );
+}
+
+function formatRawValue(value: unknown): string {
+  if (typeof value === "string") return value;
+  return JSON.stringify(value, null, 2) ?? String(value);
 }
 
 export function gatewayLogHref(
@@ -659,10 +712,6 @@ function durationValue(value: unknown): string | undefined {
 
 function currencyValue(value: unknown): string | undefined {
   return typeof value === "number" && Number.isFinite(value) ? `$${value.toFixed(6)}` : undefined;
-}
-
-function booleanValue(value: unknown): string | undefined {
-  return typeof value === "boolean" ? (value ? "Yes" : "No") : undefined;
 }
 
 function listValue(value: unknown): string | undefined {

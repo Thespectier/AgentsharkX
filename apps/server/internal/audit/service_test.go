@@ -19,6 +19,16 @@ type fakeGateway struct {
 	err       error
 }
 
+type fakeGatewayWithDetail struct {
+	fakeGateway
+	detail    map[string]any
+	detailErr error
+}
+
+func (fake fakeGatewayWithDetail) TrafficDetail(context.Context, string) (map[string]any, error) {
+	return fake.detail, fake.detailErr
+}
+
 func (fake fakeGateway) TrafficWindow(context.Context, int, model.TrendWindow) (model.AuditFeed, error) {
 	return fake.feed, fake.err
 }
@@ -79,7 +89,7 @@ func TestRefreshPreservesSourcesVerifiesExactIDsAndPublishesAfterSnapshot(t *tes
 	}
 	detail, ok := service.Find(model.SourceAgentGateway, "one")
 	if !ok || detail.Raw == nil {
-		t.Fatalf("redacted detail not retained: %#v ok=%t", detail, ok)
+		t.Fatalf("normalized internal detail not retained: %#v ok=%t", detail, ok)
 	}
 	_, replay, unsubscribe := hub.Subscribe(0)
 	defer unsubscribe()
@@ -114,6 +124,37 @@ func TestRefreshPreservesEmptyArrayContract(t *testing.T) {
 	snapshot := service.Refresh(t.Context())
 	if snapshot.Data.Metrics == nil || snapshot.Data.Trend == nil || snapshot.Data.Events == nil || snapshot.Data.Sessions == nil {
 		t.Fatalf("empty audit collections must serialize as arrays: %#v", snapshot.Data)
+	}
+}
+
+func TestDetailFetchesCompleteGatewayPayloadOnlyOnDemand(t *testing.T) {
+	t.Parallel()
+	now := time.Now().UTC()
+	event := auditEvent(model.SourceAgentGateway, "gateway:log-full", now, "", "")
+	event.RawRef.ID = "log-full"
+	service := New(fakeGatewayWithDetail{
+		fakeGateway: fakeGateway{feed: model.AuditFeed{Status: "available", Events: []model.UnifiedEvent{event}}},
+		detail: map[string]any{
+			"id":         "log-full",
+			"attributes": map[string]any{"authorization": "synthetic-admin-visible-value"},
+			"payload":    map[string]any{"requestPrompt": "complete prompt", "responseCompletion": "complete completion"},
+		},
+	}, fakeGuard{}, nil)
+	service.Refresh(t.Context())
+
+	snapshot := service.Snapshot()
+	if snapshot.Data.Events[0].Raw != nil {
+		t.Fatalf("list snapshot retained detail payload: %#v", snapshot.Data.Events[0].Raw)
+	}
+	detail, err := service.Detail(t.Context(), model.SourceAgentGateway, "log-full")
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, _ := json.Marshal(detail.Raw)
+	for _, expected := range []string{"synthetic-admin-visible-value", "complete prompt", "complete completion"} {
+		if !strings.Contains(string(encoded), expected) {
+			t.Fatalf("complete detail omitted %q: %s", expected, encoded)
+		}
 	}
 }
 
@@ -254,12 +295,12 @@ func TestDeniedApprovalBecomesAuditEvidenceAndUpdatesDenyMetrics(t *testing.T) {
 		CreatedAt:       now.Add(-2 * time.Second),
 	}
 
-	service.RecordApprovalResolution(approval, "deny", resolvedAt)
+	service.RecordApprovalResolution(approval, "deny", "operator explanation", resolvedAt)
 
 	snapshot := service.Snapshot()
 	if len(snapshot.Data.Events) != 2 || snapshot.Data.Events[0].Kind != "approval" ||
 		snapshot.Data.Events[0].Decision != "DENY" || snapshot.Data.Events[0].Raw != nil {
-		t.Fatalf("denied approval was not exposed as redacted list evidence: %#v", snapshot.Data.Events)
+		t.Fatalf("denied approval was not exposed as list evidence: %#v", snapshot.Data.Events)
 	}
 	if len(snapshot.Data.Sessions) != 1 || snapshot.Data.Sessions[0].Events != 2 ||
 		snapshot.Data.Sessions[0].Denies != 1 {
@@ -275,14 +316,14 @@ func TestDeniedApprovalBecomesAuditEvidenceAndUpdatesDenyMetrics(t *testing.T) {
 	if deniedPoints != 1 {
 		t.Fatalf("denied approval did not update the trend: %#v", snapshot.Data.Trend)
 	}
-	detail, ok := service.Find(model.SourceAgentGuard, "guard:approval:approval-opaque")
-	if !ok || detail.Raw == nil || detail.RawRef.ID != "ticket-upstream" {
-		t.Fatalf("approval detail did not preserve its upstream reference: %#v ok=%t", detail, ok)
+	detail, err := service.Detail(t.Context(), model.SourceAgentGuard, "guard:approval:approval-opaque")
+	if err != nil || detail.Raw == nil || detail.RawRef.ID != "ticket-upstream" {
+		t.Fatalf("approval detail did not preserve its upstream reference: %#v err=%v", detail, err)
 	}
 	encoded, _ := json.Marshal(detail)
-	for _, forbidden := range []string{"never-return-free-form-reason", "operator explanation"} {
-		if strings.Contains(string(encoded), forbidden) {
-			t.Fatalf("approval evidence leaked %q: %s", forbidden, encoded)
+	for _, expected := range []string{"never-return-free-form-reason", "operator explanation"} {
+		if !strings.Contains(string(encoded), expected) {
+			t.Fatalf("approval detail omitted %q: %s", expected, encoded)
 		}
 	}
 

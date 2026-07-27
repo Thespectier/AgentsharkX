@@ -1,7 +1,9 @@
 package guard
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/url"
 	"strconv"
@@ -48,8 +50,8 @@ type rawAuditEntry struct {
 	} `json:"decision"`
 }
 
-// Traffic returns only the scalar fields needed for aggregate metrics. The
-// upstream plugin result and reason fields are deliberately never projected.
+// Traffic supplies the scalar records used by aggregate metrics. Complete
+// event details come from the source Audit records below.
 func (client *Client) Traffic(ctx context.Context, limit int) (model.AuditFeed, error) {
 	var response []rawTrafficEntry
 	path := "/v1/backend/traffic"
@@ -74,21 +76,24 @@ func (client *Client) Traffic(ctx context.Context, limit int) (model.AuditFeed, 
 	return model.AuditFeed{Status: "available", Traffic: records}, nil
 }
 
-// Audit returns a redacted projection of AgentGuard's recent audit records.
-// Runtime state, tool arguments/results, plugin results, and free-form reasons
-// are intentionally not represented by the adapter types.
+// Audit normalizes AgentGuard's recent audit records and retains each complete
+// source object for authenticated event detail reads.
 func (client *Client) Audit(ctx context.Context, limit int) (model.AuditFeed, error) {
-	var response []rawAuditEntry
+	var response []json.RawMessage
 	path := "/v1/backend/audit/recent"
 	query := url.Values{"n": []string{strconv.Itoa(clampAuditLimit(limit))}}
-	if _, err := client.upstream.GetJSONQuery(ctx, path, query, &response); err != nil {
+	if _, err := client.upstream.GetJSONQueryFull(ctx, path, query, &response); err != nil {
 		return model.AuditFeed{}, err
 	}
 	if response == nil {
 		return model.AuditFeed{}, &ContractError{Field: path, Problem: "expected an array"}
 	}
 	events := make([]model.UnifiedEvent, 0, len(response))
-	for index, entry := range response {
+	for index, document := range response {
+		var entry rawAuditEntry
+		if err := json.Unmarshal(document, &entry); err != nil {
+			return model.AuditFeed{}, &ContractError{Field: fmt.Sprintf("%s/%d", path, index), Problem: "expected an object"}
+		}
 		field := fmt.Sprintf("%s/%d/event", path, index)
 		if entry.Event.EventID == "" {
 			return model.AuditFeed{}, &ContractError{Field: field + "/event_id", Problem: "required field is missing"}
@@ -99,7 +104,13 @@ func (client *Client) Audit(ctx context.Context, limit int) (model.AuditFeed, er
 		if entry.Event.EventType == "" {
 			return model.AuditFeed{}, &ContractError{Field: field + "/event_type", Problem: "required field is missing"}
 		}
-		events = append(events, normalizeAudit(entry))
+		decoder := json.NewDecoder(bytes.NewReader(document))
+		decoder.UseNumber()
+		var raw map[string]any
+		if err := decoder.Decode(&raw); err != nil || raw == nil {
+			return model.AuditFeed{}, &ContractError{Field: fmt.Sprintf("%s/%d", path, index), Problem: "expected an object"}
+		}
+		events = append(events, normalizeAudit(entry, raw))
 	}
 	return model.AuditFeed{Status: "available", Events: events}, nil
 }
@@ -121,7 +132,7 @@ func (client *Client) AuditSessions(ctx context.Context) ([]model.AuditSession, 
 	return items, nil
 }
 
-func normalizeAudit(entry rawAuditEntry) model.UnifiedEvent {
+func normalizeAudit(entry rawAuditEntry, raw map[string]any) model.UnifiedEvent {
 	timestamp := time.UnixMilli(entry.Event.Timestamp).UTC()
 	action := strings.ToUpper(entry.Decision.Action)
 	severity := severityForAction(action, entry.Decision.RiskScore)
@@ -132,26 +143,6 @@ func normalizeAudit(entry rawAuditEntry) model.UnifiedEvent {
 	}
 	if action != "" {
 		summary += " was " + strings.ToLower(action)
-	}
-	raw := map[string]any{
-		"event": map[string]any{
-			"eventId": entry.Event.EventID, "timestamp": timestamp, "eventType": entry.Event.EventType,
-			"principal": map[string]any{
-				"agentId": entry.Event.Principal.AgentID, "sessionId": entry.Event.Principal.SessionID,
-				"userId": entry.Event.Principal.UserID,
-			},
-			"tool": map[string]any{
-				"name": tool, "source": entry.Event.ToolCall.Source,
-				"mcpUniqueId": entry.Event.ToolCall.MCP.UniqueID, "mcpName": entry.Event.ToolCall.MCP.Name,
-				"mcpToolName": entry.Event.ToolCall.MCP.ToolName, "mcpTransport": entry.Event.ToolCall.MCP.Transport,
-			},
-		},
-		"decision": map[string]any{
-			"action": action, "riskScore": entry.Decision.RiskScore,
-			"matchedRules": append([]string(nil), entry.Decision.MatchedRules...),
-			"ruleVersion":  entry.Decision.RuleVersion, "policyId": entry.Decision.PolicyID,
-		},
-		"redacted": []string{"tool arguments", "tool result", "runtime state", "plugin result", "reason"},
 	}
 	correlation := (*model.EventCorrelation)(nil)
 	if entry.Event.Principal.SessionID != "" {

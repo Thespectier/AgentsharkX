@@ -70,7 +70,6 @@ source-specific recovery guidance.
   AgentsharkX/AgentGuard tokens are rejected before the listener opens.
 - Disabled authentication and non-Secure cookies are accepted only for an
   explicit `local`/`development` environment bound to a loopback listener.
-- `AGENTSHARK_REDACT_PAYLOADS=false` is always rejected.
 
 Run `make preview-bootstrap` to create a safe local `.env`; it never overwrites
 an existing file.
@@ -92,7 +91,11 @@ agentgateway's SQLite request-log store at
 `.cache/agentgateway-standalone/data/request-logs.db`; zero traffic must return
 successful empty Logs/Analytics responses. Then configure routes/provider
 credentials, send one request through a gateway business listener, and repeat
-the smoke test.
+the smoke test. In Audit, open an individual Traffic event to make the BFF fetch
+that log with `includePayload=true`; the authenticated detail includes the
+complete upstream payload and attributes. Lists, trends, and the live stream
+remain summary-only so routine polling does not repeatedly transfer large
+records.
 
 If the error is `request log database is not configured`, confirm
 `config.database.url` remains in Raw Configuration and restart agentgateway

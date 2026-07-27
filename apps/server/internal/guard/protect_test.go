@@ -56,6 +56,12 @@ func TestProtectReadsNormalizeVerifiedFieldsAndDropSensitiveBodies(t *testing.T)
 	if approvals[0].Tool != "send_email" || approvals[0].Phase != "Tool Before" || approvals[0].AgentUpstreamID != "agent-a" {
 		t.Fatalf("unexpected normalized approval: %#v", approvals[0])
 	}
+	completeApproval, _ := json.Marshal(approvals[0].Raw)
+	for _, expected := range []string{"never-return-approval-body", "never-return-target", "never-return-obligation"} {
+		if !strings.Contains(string(completeApproval), expected) {
+			t.Fatalf("complete approval context omitted %q: %s", expected, completeApproval)
+		}
+	}
 	plugins, err := client.ProtectPlugins(t.Context())
 	if err != nil || len(plugins.Items) != 4 {
 		t.Fatalf("unexpected plugins: %#v err=%v", plugins, err)

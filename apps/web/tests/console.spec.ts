@@ -462,7 +462,7 @@ test("an audit detail drawer is recoverable from its URL", async ({ page }) => {
   await expect(page.getByRole("dialog").getByRole("heading", { level: 2 })).toHaveText(title ?? "");
 });
 
-test("gateway audit detail links to the exact native agentgateway log", async ({ page }) => {
+test("gateway audit detail exposes complete BFF payload and exact native log", async ({ page }) => {
   await page.goto("/audit/traffic");
   await page.getByText("Chat completion routed through the primary OpenAI backend.").click();
 
@@ -474,6 +474,16 @@ test("gateway audit detail links to the exact native agentgateway log", async ({
     "http://127.0.0.1:15000/ui/llm/logs?log=log-73b1",
   );
   await expect(sourceLog).toHaveAttribute("target", "_blank");
+  const dialog = page.getByRole("dialog");
+  const requestPrompt = dialog.getByText("Request prompt", { exact: true }).locator("../..");
+  const responseCompletion = dialog
+    .getByText("Response completion", { exact: true })
+    .locator("../..");
+  const attributes = dialog.getByText("Attributes", { exact: true }).locator("../..");
+  await expect(requestPrompt).toContainText("Show the full retained request.");
+  await expect(responseCompletion).toContainText("This is the complete retained completion.");
+  await expect(attributes).toContainText("Bearer synthetic-mock-value");
+  await expect(dialog.getByText("Complete upstream JSON", { exact: true })).toBeVisible();
 });
 
 test("real-time events reach Home and Audit within three seconds", async ({ page }) => {

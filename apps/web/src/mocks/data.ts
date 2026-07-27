@@ -26,11 +26,6 @@ export const baseEvents: UnifiedEvent[] = [
     decision: "PENDING",
     summary: "External recipient requires operator approval before document delivery.",
     rawRef: { source: "agentguard", id: "audit-9017" },
-    raw: {
-      notice: "Phase 1 mock; no upstream raw schema is asserted.",
-      mockId: "audit-9017",
-      redacted: true,
-    },
   },
   {
     id: "gateway-log-73b1",
@@ -43,12 +38,6 @@ export const baseEvents: UnifiedEvent[] = [
     decision: "200",
     summary: "Chat completion routed through the primary OpenAI backend.",
     rawRef: { source: "agentgateway", id: "log-73b1" },
-    raw: {
-      notice: "Phase 1 mock; no upstream raw schema is asserted.",
-      mockId: "log-73b1",
-      hasPayload: true,
-      redacted: true,
-    },
   },
   {
     id: "guard-audit-9013",
@@ -63,11 +52,6 @@ export const baseEvents: UnifiedEvent[] = [
     decision: "DENY",
     summary: "Runtime rule blocked a shell invocation outside the workspace boundary.",
     rawRef: { source: "agentguard", id: "audit-9013" },
-    raw: {
-      notice: "Phase 1 mock; no upstream raw schema is asserted.",
-      mockId: "audit-9013",
-      redacted: true,
-    },
   },
   {
     id: "gateway-log-72ff",
@@ -80,11 +64,6 @@ export const baseEvents: UnifiedEvent[] = [
     decision: "429 → 200",
     summary: "Rate-limited request recovered on the secondary backend.",
     rawRef: { source: "agentgateway", id: "log-72ff" },
-    raw: {
-      notice: "Phase 1 mock; no upstream raw schema is asserted.",
-      mockId: "log-72ff",
-      redacted: true,
-    },
   },
   {
     id: "guard-audit-9008",
@@ -99,11 +78,6 @@ export const baseEvents: UnifiedEvent[] = [
     decision: "ALLOW",
     summary: "Trace risk summary completed with no blocking findings.",
     rawRef: { source: "agentguard", id: "audit-9008" },
-    raw: {
-      notice: "Phase 1 mock; no upstream raw schema is asserted.",
-      mockId: "audit-9008",
-      redacted: true,
-    },
   },
   {
     id: "gateway-log-72d8",
@@ -116,11 +90,6 @@ export const baseEvents: UnifiedEvent[] = [
     decision: "200",
     summary: "Inventory lookup completed through the federated MCP route.",
     rawRef: { source: "agentgateway", id: "log-72d8" },
-    raw: {
-      notice: "Phase 1 mock; no upstream raw schema is asserted.",
-      mockId: "log-72d8",
-      redacted: true,
-    },
   },
 ];
 

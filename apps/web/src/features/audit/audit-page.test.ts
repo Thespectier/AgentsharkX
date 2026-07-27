@@ -5,7 +5,7 @@ import type { UnifiedEvent } from "../../types";
 import {
   filterAuditEvents,
   gatewayLogHref,
-  sensitiveContentRows,
+  gatewayPayloadSections,
   sourceEvidenceRows,
 } from "./audit-page";
 
@@ -49,6 +49,14 @@ describe("audit event detail", () => {
         responseModel: "deepseek-chat",
       },
       usage: { inputTokens: 12, outputTokens: 5, totalTokens: 17 },
+      attributes: {
+        "request.authorization": "Bearer complete-test-value",
+        nested: { retained: true },
+      },
+      payload: {
+        requestPrompt: [{ role: "user", content: "complete prompt" }],
+        responseCompletion: { choices: [{ message: { content: "complete response" } }] },
+      },
     },
   };
 
@@ -64,14 +72,24 @@ describe("audit event detail", () => {
     );
   });
 
-  it("reports upstream payload retention without exposing sensitive content", () => {
-    expect(sensitiveContentRows(gatewayEvent)).toEqual([
-      { label: "Prompt", value: "Not collected by AgentsharkX" },
-      { label: "Payload", value: "Retained upstream; content not retrieved" },
-      { label: "Authorization", value: "Credential values are never collected" },
-      { label: "Tool arguments", value: "Not collected by AgentsharkX" },
+  it("returns every complete payload section supplied by the source detail", () => {
+    expect(gatewayPayloadSections(gatewayEvent)).toEqual([
+      {
+        label: "Request prompt",
+        value: [{ role: "user", content: "complete prompt" }],
+      },
+      {
+        label: "Response completion",
+        value: { choices: [{ message: { content: "complete response" } }] },
+      },
+      {
+        label: "Attributes",
+        value: {
+          "request.authorization": "Bearer complete-test-value",
+          nested: { retained: true },
+        },
+      },
     ]);
-    expect(JSON.stringify(sourceEvidenceRows(gatewayEvent))).not.toContain("authorization");
   });
 
   it("builds an exact native Logs link from the verified upstream log ID", () => {

@@ -510,7 +510,6 @@ AGENTGUARD_ADMIN_TOKEN=
 AGENTGUARD_CONSOLE_URL=http://localhost:8000
 
 AGENTSHARK_POLL_INTERVAL=2s
-AGENTSHARK_REDACT_PAYLOADS=true
 ```
 
 版本策略：
@@ -667,7 +666,7 @@ AgentGuard 为 GPLv3，agentgateway 为 Apache-2.0。实现上保持独立进程
 
 1. 接入 agentgateway Traffic/Analytics。
 2. 接入 AgentGuard Traffic/Audit/Sessions。
-3. 实现 Unified Activity、详情抽屉和 Raw JSON 脱敏。
+3. 实现 Unified Activity、详情抽屉和仅对已认证管理员开放的完整上游 Raw JSON。
 4. 完成 poller、去重、ring buffer 和 SSE resume。
 5. LiveFlow、ActivityRail、MetricTicker 改用真实 SSE。
 6. 仅对经过验证的共同 ID 显示 Correlated。

@@ -46,6 +46,7 @@ After an agent run:
 3. **Audit → Traffic** shows gateway log records only when upstream storage is
    configured.
 4. **Audit → Security events** shows AgentGuard events with their upstream ID,
-   source, phase, action, and redacted detail reference.
+   source, phase, action, and complete upstream detail for an authenticated
+   administrator.
 5. A cross-source event is marked correlated only when both sources provide the
    same verified non-empty trace or session identifier.

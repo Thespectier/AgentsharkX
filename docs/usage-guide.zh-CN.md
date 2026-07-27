@@ -350,22 +350,23 @@ AgentsharkX 只在两个来源提供完全相同且非空的 Trace ID 或 Sessio
 它不会按时间窗口猜测关联关系。
 
 审计事件列表和 SSE 使用有界内存窗口，最多保留 1000 条事件，并支持恢复和去重。
-BFF 重启后，事件窗口会清空。Audit 不请求网关日志的原始 Payload 或 Attributes，
-事件详情仅返回白名单字段和脱敏投影。对于 agentgateway 流量，详情会单独展示请求
-起止时间、延迟、HTTP 状态、操作类型、Provider/Model、Token、成本以及
-Trace/Span ID。`hasPayload=true` 只表示上游日志库保存了载荷；AgentsharkX 不会读取
-载荷内容、完整 Prompt、Authorization 值或工具参数。
+BFF 重启后，事件窗口会清空。列表、趋势和 SSE 只传输网关摘要；当已登录管理员打开
+单条 agentgateway 事件时，BFF 会按日志 ID 调用 `/api/logs/get` 并请求
+`includePayload=true`，详情返回上游提供的完整 Attributes、请求 Prompt、响应
+Completion、工具调用以及其他任意源字段。该详情同时保留请求起止时间、延迟、HTTP
+状态、操作类型、Provider/Model、Token、成本和 Trace/Span ID。
 
 AgentGuard 的审批接口成功时只返回确认结果，不会把最终 approve/deny 追加到其
 Traffic 或 Audit 接口。AgentsharkX 会在上游明确确认成功后，将这次审批处理保存为
 一条来源为 AgentGuard 的有界内存审计事件。拒绝审批会立即计入 Audit 的 deny rate、
-Traffic trend 和对应 Session 计数；超时、失败或 404 不会生成成功审计事件。操作备注、
-工具参数和自由文本原因仍不会写入审计详情。
+Traffic trend 和对应 Session 计数；超时、失败或 404 不会生成成功审计事件。对于
+AgentGuard 原生 Audit 记录，已登录管理员查看详情时会获得上游返回的完整原始对象，
+包括工具参数、结果、原因、插件和运行时字段。由 AgentsharkX 确认成功后补充的审批
+处理事件，其详情也会保留 AgentGuard 审批上下文和管理员操作备注。
 
 该 SQLite 文件属于 agentgateway 上游持久化状态，不是 AgentsharkX 新增的数据库。
-agentgateway v1.3.1 会在请求日志库中保留 LLM prompt/completion payload；虽然
-AgentsharkX 不读取或返回这些字段，仍应把整个数据目录视为敏感数据，只允许检出
-用户访问，并按组织的数据保留要求管理。
+agentgateway v1.3.1 会在请求日志库中保留 LLM prompt/completion payload；
+AgentsharkX 会把这些字段完整返回给已登录管理员，但不会把它们写入 BFF 访问日志。
 
 ### 4.5 System：状态和诊断
 
@@ -427,7 +428,7 @@ export AGENTGUARD_API_KEY='<AgentGuard API Key>'
 
 1. **System** 中相关来源健康；
 2. **Trust** 中出现 AgentGuard 明确上报的身份和资源；
-3. **Audit → Security events** 中出现来源、阶段、动作和脱敏详情引用；
+3. **Audit → Security events** 中出现来源、阶段、动作和完整上游详情；
 4. 通过默认请求日志数据库确认 **Audit → Traffic** 出现网关记录；
 5. 只有共享标识完全一致时，跨来源事件才显示为已关联。
 
@@ -438,12 +439,12 @@ trend** 使用同一份 BFF 快照，范围为精确的滚动最近 60 分钟，
 5 分钟桶。
 
 - Requests 来自 agentgateway Analytics 的对应时间桶；Analytics 不可用时才退化为同一
-  时间范围内的脱敏请求日志计数。
+  时间范围内的请求日志摘要计数。
 - Denied 统计 AgentGuard Traffic 中显式的 `DENY`，以及由 AgentGuard 明确确认成功的
   审批拒绝；不根据错误、风险分数或时间接近关系推断。
 - Traffic 图为 Requests 和 Denied 使用独立纵轴，悬停提示显示精确桶起始时间与原始
   计数，不能直接按两条线的视觉高度比较数量。
-- Latency 图基于 agentgateway 最近最多 500 条脱敏请求日志计算每个桶的
+- Latency 图基于 agentgateway 最近最多 500 条请求日志摘要计算每个桶的
   nearest-rank P95，单位为毫秒；悬停提示会显示该桶的样本数。没有请求样本的桶显示
   为缺口，不会伪造为 `0 ms`。高流量环境中它是有明确样本上限的观测值，不应误读为
   全量延迟直方图。
@@ -709,7 +710,6 @@ BFF 会拒绝：
 - 空值、占位值或短于 16 个字符的 AgentsharkX/AgentGuard 令牌；
 - 在非本地环境关闭认证；
 - 在非本地或非回环环境关闭 Secure Cookie；
-- `AGENTSHARK_REDACT_PAYLOADS=false`。
 
 使用 `make preview-bootstrap` 创建安全的本地 `.env`，不要绕过校验。
 
@@ -721,7 +721,8 @@ BFF 会拒绝：
   生产环境仍建议使用 `.agentgateway.env`、文件/Secret Store 或其他服务端密钥存储；
 - 生产环境必须使用 HTTPS 和 Secure Cookie；
 - agentgateway 管理端口和 AgentGuard 管理 API 应位于私有管理网络；
-- AgentsharkX 不请求或展示原始网关 Payload、工具参数、运行时结果和上游密钥；
+- 已登录管理员可在 Audit 单条事件详情中查看上游返回的完整 Payload、Attributes、
+  工具参数和运行时结果；这些内容不会进入列表、SSE 或 BFF 访问日志；
 - 高风险写操作超时后，先确认上游状态再手动重试；
 - AgentsharkX、AgentGuard 和 agentgateway 是独立进程，升级时需要分别核对版本和
   兼容性。

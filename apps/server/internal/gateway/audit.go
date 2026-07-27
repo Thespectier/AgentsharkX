@@ -1,7 +1,9 @@
 package gateway
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -11,6 +13,8 @@ import (
 	"github.com/Thespectier/AgentsharkX/apps/server/internal/model"
 	"github.com/Thespectier/AgentsharkX/apps/server/internal/upstream"
 )
+
+var ErrLogNotFound = errors.New("request log was not found")
 
 type rawLogSearch struct {
 	Logs       []rawLogEntry `json:"logs"`
@@ -62,6 +66,46 @@ func (client *Client) Traffic(ctx context.Context, limit int) (model.AuditFeed, 
 	return client.TrafficWindow(ctx, limit, model.CurrentTrendWindow(time.Now()))
 }
 
+// TrafficDetail returns the complete source-owned log object for an
+// authenticated, explicit detail request. The pinned contract allows
+// attributes and payload values to contain arbitrary JSON.
+func (client *Client) TrafficDetail(ctx context.Context, id string) (map[string]any, error) {
+	if strings.TrimSpace(id) == "" {
+		return nil, &ContractError{Field: "/api/logs/get/id", Problem: "required field is missing"}
+	}
+	var response struct {
+		Log json.RawMessage `json:"log"`
+	}
+	if _, err := client.upstream.PostJSONFull(ctx, "/api/logs/get", struct {
+		ID             string `json:"id"`
+		IncludePayload bool   `json:"includePayload"`
+	}{ID: id, IncludePayload: true}, &response); err != nil {
+		return nil, err
+	}
+	if len(response.Log) == 0 || bytes.Equal(bytes.TrimSpace(response.Log), []byte("null")) {
+		return nil, ErrLogNotFound
+	}
+	var identity struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal(response.Log, &identity); err != nil {
+		return nil, &ContractError{Field: "/api/logs/get/log", Problem: "expected an object"}
+	}
+	if identity.ID == "" {
+		return nil, &ContractError{Field: "/api/logs/get/log/id", Problem: "required field is missing"}
+	}
+	if identity.ID != id {
+		return nil, &ContractError{Field: "/api/logs/get/log/id", Problem: "response does not match requested log"}
+	}
+	decoder := json.NewDecoder(bytes.NewReader(response.Log))
+	decoder.UseNumber()
+	var detail map[string]any
+	if err := decoder.Decode(&detail); err != nil || detail == nil {
+		return nil, &ContractError{Field: "/api/logs/get/log", Problem: "expected an object"}
+	}
+	return detail, nil
+}
+
 // TrafficWindow constrains the verified request-log search to the same window
 // used by the analytics request and the BFF trend buckets.
 func (client *Client) TrafficWindow(ctx context.Context, limit int, window model.TrendWindow) (model.AuditFeed, error) {
@@ -109,10 +153,10 @@ func (client *Client) TrafficWindow(ctx context.Context, limit int, window model
 			return model.AuditFeed{}, &ContractError{Field: field + "/startedAt", Problem: "required timestamp is missing"}
 		}
 		if entry.Attributes.Present {
-			return model.AuditFeed{}, &ContractError{Field: field + "/attributes", Problem: "redacted search unexpectedly returned attributes"}
+			return model.AuditFeed{}, &ContractError{Field: field + "/attributes", Problem: "summary search unexpectedly returned attributes"}
 		}
 		if entry.Payload.Present {
-			return model.AuditFeed{}, &ContractError{Field: field + "/payload", Problem: "redacted search unexpectedly returned payload"}
+			return model.AuditFeed{}, &ContractError{Field: field + "/payload", Problem: "summary search unexpectedly returned payload"}
 		}
 		events = append(events, normalizeLog(entry))
 		action := "OK"

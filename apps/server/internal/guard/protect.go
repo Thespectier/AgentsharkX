@@ -1,6 +1,7 @@
 package guard
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -200,8 +201,8 @@ func (client *Client) DeleteRuntimeRule(ctx context.Context, agentID, ruleID str
 
 func (client *Client) Approvals(ctx context.Context) ([]model.Approval, time.Time, error) {
 	const path = "/v1/backend/approvals"
-	var response []rawApproval
-	if _, err := client.upstream.GetJSON(ctx, path, &response); err != nil {
+	var response []json.RawMessage
+	if _, err := client.upstream.GetJSONFull(ctx, path, &response); err != nil {
 		return nil, time.Time{}, err
 	}
 	if response == nil {
@@ -212,9 +213,19 @@ func (client *Client) Approvals(ctx context.Context) ([]model.Approval, time.Tim
 	}
 	fetchedAt := time.Now().UTC()
 	items := make([]model.Approval, 0, len(response))
-	for index, raw := range response {
+	for index, document := range response {
 		field := fmt.Sprintf("%s/%d", path, index)
-		item, err := normalizeApproval(raw, field, fetchedAt)
+		var raw rawApproval
+		if err := json.Unmarshal(document, &raw); err != nil {
+			return nil, time.Time{}, &ContractError{Field: field, Problem: "expected an object"}
+		}
+		decoder := json.NewDecoder(bytes.NewReader(document))
+		decoder.UseNumber()
+		var complete map[string]any
+		if err := decoder.Decode(&complete); err != nil || complete == nil {
+			return nil, time.Time{}, &ContractError{Field: field, Problem: "expected an object"}
+		}
+		item, err := normalizeApproval(raw, complete, field, fetchedAt)
 		if err != nil {
 			return nil, time.Time{}, err
 		}
@@ -421,7 +432,7 @@ func normalizeCheckMessages(raw []rawCheckMessage, field string) ([]model.RuleCh
 	return items, nil
 }
 
-func normalizeApproval(raw rawApproval, field string, fetchedAt time.Time) (model.Approval, error) {
+func normalizeApproval(raw rawApproval, complete map[string]any, field string, fetchedAt time.Time) (model.Approval, error) {
 	if raw.TicketID == "" || raw.Created == nil || raw.Status != "pending" || raw.Event.EventType == "" || raw.Decision.Action == "" || raw.Decision.MatchedRules == nil {
 		return model.Approval{}, &ContractError{Field: field, Problem: "pending ticket identity, event, and decision fields are required"}
 	}
@@ -442,6 +453,7 @@ func normalizeApproval(raw rawApproval, field string, fetchedAt time.Time) (mode
 		Phase: eventPhase(raw.Event.EventType), Action: raw.Decision.Action,
 		Reason: boundedText(raw.Decision.Reason), RiskScore: raw.Decision.RiskScore,
 		MatchedRules: append([]string{}, raw.Decision.MatchedRules...), Status: raw.Status, CreatedAt: createdAt,
+		Raw: complete,
 	}, nil
 }
 

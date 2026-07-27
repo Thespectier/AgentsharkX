@@ -561,9 +561,27 @@ func (server *server) auditEvent(writer http.ResponseWriter, request *http.Reque
 		server.writeError(writer, request, http.StatusNotFound, "NOT_FOUND", "audit event was not found", nil, false)
 		return
 	}
-	event, ok := server.config.Audit.Find(sourceValue, request.PathValue("eventId"))
-	if !ok {
+	event, err := server.config.Audit.Detail(request.Context(), sourceValue, request.PathValue("eventId"))
+	if errors.Is(err, audit.ErrEventNotFound) {
 		server.writeError(writer, request, http.StatusNotFound, "NOT_FOUND", "audit event was not found", source(sourceValue), false)
+		return
+	}
+	if errors.Is(err, audit.ErrDetailUnavailable) {
+		server.writeError(writer, request, http.StatusServiceUnavailable, "DETAIL_UNAVAILABLE", "complete upstream audit detail is unavailable", source(sourceValue), true)
+		return
+	}
+	var gatewayContract *gateway.ContractError
+	if errors.As(err, &gatewayContract) {
+		server.writeError(writer, request, http.StatusBadGateway, "UPSTREAM_CONTRACT_MISMATCH", gatewayContract.Error(), source(sourceValue), false)
+		return
+	}
+	var upstreamError *upstream.Error
+	if errors.As(err, &upstreamError) {
+		server.writeError(writer, request, http.StatusServiceUnavailable, "UPSTREAM_UNAVAILABLE", "complete upstream audit detail is unavailable", source(sourceValue), upstreamError.Retryable)
+		return
+	}
+	if err != nil {
+		server.writeError(writer, request, http.StatusInternalServerError, "INTERNAL_ERROR", "the request could not be completed", source(sourceValue), true)
 		return
 	}
 	snapshot := server.config.Audit.Snapshot()

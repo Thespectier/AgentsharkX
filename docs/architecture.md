@@ -49,8 +49,9 @@ The Go BFF is organized into the following packages:
 - `protect`: independent gateway policy and AgentGuard rule/plugin aggregation,
   short-lived rule-check tokens, guarded mutations, approval pagination, and
   duplicate-operation locks.
-- `audit`: independent polling, source-scoped failures, redacted normalization,
-  exact-ID session counts, metrics, trends, and a bounded activity snapshot.
+- `audit`: independent polling, source-scoped failures, normalized summaries,
+  authenticated complete source detail, exact-ID session counts, metrics,
+  trends, and a bounded activity snapshot.
 - `aggregate`: source-preserving view models and partial-result handling.
 - `stream`: 1000-record in-memory ring, source/ID dedupe, monotonic SSE
   sequence IDs, replay after `Last-Event-ID`, and non-blocking fan-out.
@@ -171,11 +172,12 @@ source digest, expires after five minutes, is consumed once, and is held in a
 and explicit confirmation; approval/rule locks prevent concurrent duplicate
 actions in one BFF process. Upstream mutations are not automatically retried.
 
-The Audit poller requests agentgateway logs with `includeAttributes=false` and
-never requests payload detail. Log search and Analytics receive one shared,
+The Audit poller requests agentgateway summary logs with
+`includeAttributes=false`; it does not pull payloads into periodic list or SSE
+traffic. Log search and Analytics receive one shared,
 rolling 60-minute window with twelve five-minute buckets. The BFF maps
 explicit AgentGuard decisions into those same buckets and calculates
-nearest-rank P95 latency from the bounded 500-record redacted gateway log
+nearest-rank P95 latency from the bounded 500-record gateway summary
 sample; every point exposes its sample count, and a bucket with no latency
 samples remains null rather than becoming a fabricated zero.
 AgentGuard records the initial `HUMAN_CHECK` in Traffic/Audit but its approval
@@ -185,16 +187,15 @@ context to Audit, which retains a source-labelled approval-resolution event in
 the same bounded in-memory window. A denied approval contributes to the deny
 rate and deny trend immediately and remains present across later polls; failed
 or timed-out mutations do not create evidence.
-AgentGuard runtime state, tool arguments/results, plugin results, and free-form
-reasons are not decoded into the public model. Detail responses are built from
-an allow-listed redacted projection; list, overview, and SSE events omit that
-projection. Gateway detail presents verified scalar request metadata such as
-duration, HTTP status, provider/model, token usage, cost, and trace/span IDs.
-It also reports the upstream `hasPayload` flag, but never retrieves payload
-contents, complete prompts, authorization values, or tool arguments. Audit
-exposes the validated native Logs base URL and builds a source-console deep
-link from the event's preserved upstream log ID. The pinned agentgateway UI,
-not the BFF, owns the resulting payload-detail request.
+AgentGuard normalization derives list fields from verified IDs and scalars while
+retaining the complete source audit object in the bounded event window. List,
+overview, and SSE responses omit `raw`. An authenticated detail request for an
+AgentGuard event returns that complete object. For agentgateway, the detail
+request uses the preserved upstream ID with `POST /api/logs/get` and
+`includePayload=true`; its complete log object, including arbitrary attributes,
+prompt, completion, error, and tool-call content, crosses the BFF only in that
+response and is not added to the event ring. The native Logs deep link remains
+available as an alternate source view.
 
 `/overview` is `mode=operational` when the Audit service is attached. Gateway
 log/Analytics failures and AgentGuard Traffic/Audit/Sessions failures are
@@ -207,9 +208,9 @@ No Audit state is durable. SSE resume covers only the retained ring, and
 long-term logs remain in their upstream systems. The bundled preview configures
 agentgateway's upstream-owned SQLite request-log store under ignored
 `.cache/agentgateway-standalone/data/`; this does not make AgentsharkX the
-database owner. The BFF requests neither payload nor attributes from that
-store. AgentsharkX still provides no task model, DAG, payload vault, replay
-engine, or traffic collector.
+database owner. Complete gateway payloads are fetched on demand and are not
+stored by AgentsharkX. AgentsharkX still provides no task model, DAG, payload
+vault, replay engine, or traffic collector.
 
 ## Security baseline
 
@@ -219,11 +220,12 @@ engine, or traffic collector.
   cookie; write requests also require a CSRF token.
 - A non-Secure cookie or disabled authentication is accepted only when both the
   environment is explicitly local/development and the listener is loopback.
-- Upstream keys are server-only and never appear in a frontend bundle, API
-  response, structured log, or error message.
-- Full prompts, rule source, operator notes, approval arguments, authorization
-  headers, and raw sensitive payloads are denied by
-  default. Raw event views use a redacted copy.
+- The BFF's configured upstream management credentials are server-only and
+  never appear in a frontend bundle, API response, structured log, or error
+  message.
+- Authenticated Audit detail returns complete verified upstream event records.
+  Application access logs record method/path/status only and do not copy event
+  bodies; list, overview, and SSE responses omit raw detail.
 - The default Phase 7 preview runs the pinned agentgateway binary on the host
   and publishes the remaining management services on loopback. It is a
   development topology, not an internet-facing deployment.

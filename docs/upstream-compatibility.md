@@ -3,7 +3,7 @@
 Last verified: 2026-07-27.
 
 Phase 8 still prevents direct browser contact with either upstream. The
-agentgateway adapter reads redacted request-log and Analytics contracts and now
+agentgateway adapter reads request-log summary, complete detail, and Analytics contracts and now
 performs the typed Provider/direct-Model main-form configuration workflow. The
 AgentGuard adapter reads Trust, Protect, and Audit
 resources and invokes
@@ -64,7 +64,7 @@ verified. Sanitized management responses are stored under
   enables WAL automatically.
 - The bundled preview SQLite store made `POST /api/logs/search` and
   `POST /api/logs/analytics/summary` return HTTP 200. After one real DeepSeek
-  proxy request, redacted search returned one HTTP-200 record and Analytics
+  proxy request, summary search returned one HTTP-200 record and Analytics
   returned one request with its token count.
 
 The default Linux preview starts the official binary with an explicit file
@@ -80,11 +80,12 @@ repository-relative SQLite URL
 launcher and fallback container run from the repository root and keep that
 directory persistent and owner-only. This store is owned by agentgateway, not
 AgentsharkX. The pinned upstream retains LLM prompt/completion payload rows when
-available; AgentsharkX searches with `includeAttributes=false` and never calls
-payload detail, so those fields do not cross the BFF contract. The pinned
-v1.3.1 UI route `/ui/llm/logs?log=<id>` loads the exact source record and asks
-agentgateway for its own retained payload detail. Audit exposes this native
-deep link from the preserved upstream log ID. The pinned v1.3.1 request types
+available. AgentsharkX periodic search uses `includeAttributes=false`; an
+authenticated single-event detail request calls `/api/logs/get` with
+`includePayload=true` and returns the complete source object without placing it
+in the polling ring or SSE. The pinned v1.3.1 UI route
+`/ui/llm/logs?log=<id>` remains an alternate view of that exact record. The
+pinned v1.3.1 request types
 also verify explicit `timeRange` on log search and
 `timeRange` plus `bucketSeconds` on Analytics; AgentsharkX uses one exact
 rolling 60-minute range and 300-second buckets for both Home and Audit.
@@ -215,24 +216,27 @@ port-38008 root-page check. This is why an unmodified upstream image can appear
 
 For Phase 6, request-log search, Analytics, AgentGuard Traffic/Audit/Sessions,
 and their exact populated shapes were cross-checked against the pinned source.
-The gateway requests share an explicit 60-minute `timeRange`; search always
-sets `includeAttributes=false`, Analytics sets `bucketSeconds=300`, and the BFF
-never calls payload detail. The pinned native Logs route accepts the preserved
-log ID through its `log` query parameter and loads payload detail within the
-agentgateway console. The AgentGuard audit projection does not decode
-runtime state, arguments/results, plugin results, or free-form reasons.
-Contract tests include sentinel secrets in those omitted fields and fail if
-they reach normalized JSON. AgentGuard Traffic supplies aggregate scalars only
+The gateway summary and Analytics requests share an explicit 60-minute
+`timeRange`; search sets `includeAttributes=false` and Analytics sets
+`bucketSeconds=300`. Authenticated detail calls the source-verified
+`/api/logs/get` contract with `includePayload=true` and preserves arbitrary
+attribute/payload JSON. AgentGuard normalized rows use verified typed fields,
+while their authenticated detail retains the complete source object including
+runtime state, arguments/results, plugin results, and free-form reasons.
+AgentGuard Traffic supplies aggregate scalars only
 because its records do not contain a stable upstream event ID; normalized
 security events come from Audit's explicit `event_id` instead.
 
 AgentGuard's approval mutation contract returns only `{"ok": true}` and does
 not append the resolved decision to `/traffic` or `/audit/recent`. AgentsharkX
 now retains the confirmed approve/deny transition as bounded, source-labelled
-management evidence after a successful mutation. This uses the verified ticket
-and event IDs captured before resolution; it does not infer an outcome from
-timing, and failures or timeouts are not recorded as decisions. Denied
-approvals are included in Audit deny metrics and trend buckets.
+management evidence after a successful mutation. The exact source ticket JSON
+is retained internally for this authenticated Audit detail, together with the
+operator note and confirmed decision, while list and SSE projections omit it.
+This uses the verified ticket and event IDs captured before resolution; it does
+not infer an outcome from timing, and failures or timeouts are not recorded as
+decisions. Denied approvals are included in Audit deny metrics and trend
+buckets.
 
 The BFF polls every two seconds by default, keeps at most 1000 normalized events
 in memory, and uses independent source failures. SSE sequence IDs are owned by

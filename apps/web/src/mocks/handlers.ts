@@ -192,6 +192,85 @@ const emptyAudit: AuditData = {
   links: auditData.links,
 };
 
+function completeAuditEvent(event: UnifiedEvent): UnifiedEvent {
+  if (event.id === "gateway-log-73b1") {
+    return {
+      ...event,
+      raw: {
+        id: "log-73b1",
+        startedAt: "2026-07-21T12:41:31.680Z",
+        completedAt: "2026-07-21T12:41:32Z",
+        durationMs: 320,
+        traceId: "trace-mock-73b1",
+        spanId: "span-mock-73b1",
+        httpStatus: 200,
+        error: null,
+        genAi: {
+          operationName: "chat",
+          providerName: "openai-compatible",
+          requestModel: "chat-primary-v1",
+          responseModel: "chat-primary-v1",
+        },
+        usage: { inputTokens: 18, outputTokens: 9, totalTokens: 27 },
+        cost: 0.00027,
+        hasPayload: true,
+        attributes: {
+          "agentgateway.user": "administrator-visible-user",
+          "request.authorization": "Bearer synthetic-mock-value",
+          "fixture.nested": { retained: true },
+        },
+        payload: {
+          requestPrompt: [
+            { role: "system", content: "Answer with complete source context." },
+            { role: "user", content: "Show the full retained request." },
+          ],
+          responseCompletion: {
+            choices: [
+              {
+                message: {
+                  role: "assistant",
+                  content: "This is the complete retained completion.",
+                  tool_calls: [
+                    {
+                      function: {
+                        name: "lookup_context",
+                        arguments: { scope: "complete" },
+                      },
+                    },
+                  ],
+                },
+              },
+            ],
+          },
+        },
+      },
+    };
+  }
+  if (event.source === "agentguard") {
+    return {
+      ...event,
+      raw: {
+        event: {
+          event_id: event.rawRef.id,
+          event_type: event.kind,
+          tool_call: {
+            tool_name: event.target?.tool,
+            args: { complete: true, sourceEvent: event.rawRef.id },
+            result: { retained: true },
+          },
+        },
+        decision: {
+          action: event.decision,
+          reason: "Complete mock decision reason",
+          plugin_result: { retained: true },
+        },
+        runtime_state: { retained: true },
+      },
+    };
+  }
+  return { ...event, raw: { id: event.rawRef.id, hasPayload: false } };
+}
+
 function listResponse<T>(request: Request, data: T[], source: Source) {
   return respond(request, data, [], source);
 }
@@ -949,7 +1028,8 @@ export const handlers = [
         { status: 404 },
       );
     }
-    return respond(request, event, event, event.source);
+    const detail = completeAuditEvent(event);
+    return respond(request, detail, detail, event.source);
   }),
   http.get("/api/v1/audit/sessions", ({ request }) =>
     listResponse(request, auditData.sessions, "agentguard"),

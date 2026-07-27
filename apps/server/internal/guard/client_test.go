@@ -39,7 +39,7 @@ func TestHealthUsesAPIKeyAndVerifiedContract(t *testing.T) {
 	}
 }
 
-func TestAuditTrafficAndSessionsUseVerifiedRedactedContracts(t *testing.T) {
+func TestAuditTrafficAndSessionsPreserveCompleteVerifiedAuditRecord(t *testing.T) {
 	t.Parallel()
 	const apiKey = "guard-secret-with-enough-entropy"
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
@@ -82,11 +82,40 @@ func TestAuditTrafficAndSessionsUseVerifiedRedactedContracts(t *testing.T) {
 	if err != nil || len(sessions) != 1 || sessions[0].UpstreamID != "session-a" {
 		t.Fatalf("unexpected sessions: %#v err=%v", sessions, err)
 	}
-	encoded, _ := json.Marshal(struct{ Traffic, Audit any }{traffic, audit})
-	for _, forbidden := range []string{"never-return-args", "never-return-result", "never-return-reason", "never-return-plugin", "never-return-runtime"} {
-		if strings.Contains(string(encoded), forbidden) {
-			t.Fatalf("audit projection leaked %q: %s", forbidden, encoded)
+	encoded, _ := json.Marshal(audit)
+	for _, expected := range []string{"never-return-args", "never-return-result", "never-return-reason", "never-return-plugin", "never-return-runtime"} {
+		if !strings.Contains(string(encoded), expected) {
+			t.Fatalf("complete audit detail omitted %q: %s", expected, encoded)
 		}
+	}
+}
+
+func TestAuditPreservesCompleteRecordLargerThanProjectionLimit(t *testing.T) {
+	t.Parallel()
+	largeArgument := strings.Repeat("x", (1<<20)+1024)
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.URL.Path != "/v1/backend/audit/recent" {
+			http.NotFound(writer, request)
+			return
+		}
+		writer.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(writer, `[{"event":{"event_id":"event-large","ts_ms":1784707200000,"event_type":"tool_invoke","tool_call":{"args":{"blob":"`)
+		_, _ = io.WriteString(writer, largeArgument)
+		_, _ = io.WriteString(writer, `"}}},"decision":{"action":"allow"}}]`)
+	}))
+	defer server.Close()
+
+	client, err := New(server.URL, "guard-secret-with-enough-entropy", server.Client(), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	audit, err := client.Audit(t.Context(), 1)
+	if err != nil || len(audit.Events) != 1 {
+		t.Fatalf("large complete audit record failed: events=%d err=%v", len(audit.Events), err)
+	}
+	encoded, _ := json.Marshal(audit.Events[0].Raw)
+	if !strings.Contains(string(encoded), largeArgument) {
+		t.Fatalf("large tool argument was truncated: bytes=%d", len(encoded))
 	}
 }
 

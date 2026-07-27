@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Thespectier/AgentsharkX/apps/server/internal/gateway"
 	"github.com/Thespectier/AgentsharkX/apps/server/internal/model"
 	"github.com/Thespectier/AgentsharkX/apps/server/internal/stream"
 )
@@ -21,11 +22,19 @@ const (
 	eventCapacity = stream.DefaultCapacity
 )
 
-var ErrInvalidCursor = errors.New("invalid audit cursor")
+var (
+	ErrInvalidCursor     = errors.New("invalid audit cursor")
+	ErrEventNotFound     = errors.New("audit event was not found")
+	ErrDetailUnavailable = errors.New("complete audit detail is unavailable")
+)
 
 type Gateway interface {
 	TrafficWindow(context.Context, int, model.TrendWindow) (model.AuditFeed, error)
 	AnalyticsWindow(context.Context, model.TrendWindow) (model.GatewayAnalytics, error)
+}
+
+type gatewayDetail interface {
+	TrafficDetail(context.Context, string) (map[string]any, error)
 }
 
 type Guard interface {
@@ -180,8 +189,8 @@ func (service *Service) Refresh(ctx context.Context) model.AuditEnvelope {
 // an AgentGuard approval. AgentGuard's audit feed records the initial
 // HUMAN_CHECK decision but its resolve endpoint returns only an acknowledgement,
 // so this source-labelled evidence closes that otherwise invisible transition.
-func (service *Service) RecordApprovalResolution(approval model.Approval, decision string, completedAt time.Time) {
-	resolution, ok := newApprovalResolution(approval, decision, completedAt)
+func (service *Service) RecordApprovalResolution(approval model.Approval, decision, operatorNote string, completedAt time.Time) {
+	resolution, ok := newApprovalResolution(approval, decision, operatorNote, completedAt)
 	if !ok {
 		return
 	}
@@ -268,6 +277,32 @@ func (service *Service) Find(source model.Source, eventID string) (model.Unified
 		}
 	}
 	return model.UnifiedEvent{}, false
+}
+
+// Detail returns complete source-owned data only for an explicit authenticated
+// detail request. Gateway payloads are fetched on demand and are never retained
+// in the poller's event ring or published over SSE.
+func (service *Service) Detail(ctx context.Context, source model.Source, eventID string) (model.UnifiedEvent, error) {
+	event, ok := service.Find(source, eventID)
+	if !ok {
+		return model.UnifiedEvent{}, ErrEventNotFound
+	}
+	if source != model.SourceAgentGateway {
+		return event, nil
+	}
+	detailClient, ok := service.gateway.(gatewayDetail)
+	if !ok {
+		return model.UnifiedEvent{}, ErrDetailUnavailable
+	}
+	raw, err := detailClient.TrafficDetail(ctx, event.RawRef.ID)
+	if err != nil {
+		if errors.Is(err, gateway.ErrLogNotFound) {
+			return model.UnifiedEvent{}, ErrEventNotFound
+		}
+		return model.UnifiedEvent{}, err
+	}
+	event.Raw = raw
+	return event, nil
 }
 
 func (service *Service) Events(source model.Source, cursor string, limit int) (model.EventsEnvelope, error) {
@@ -548,6 +583,7 @@ func incrementDeniedTrend(trend []model.TrendPoint, window model.TrendWindow, ti
 func newApprovalResolution(
 	approval model.Approval,
 	decision string,
+	operatorNote string,
 	completedAt time.Time,
 ) (approvalResolution, bool) {
 	normalized := strings.ToLower(strings.TrimSpace(decision))
@@ -583,6 +619,10 @@ func newApprovalResolution(
 	if approval.SessionID != "" {
 		correlation = &model.EventCorrelation{SessionID: approval.SessionID, Verified: false}
 	}
+	completeApproval := any(approval)
+	if approval.Raw != nil {
+		completeApproval = approval.Raw
+	}
 	event := model.UnifiedEvent{
 		ID:        "guard:approval:" + approval.ID,
 		Timestamp: completedAt,
@@ -600,17 +640,10 @@ func newApprovalResolution(
 		Summary:     summary,
 		RawRef:      model.RawRef{Source: model.SourceAgentGuard, ID: approval.UpstreamID},
 		Raw: map[string]any{
-			"approval": map[string]any{
-				"ticketId": approval.UpstreamID, "eventId": approval.EventID,
-				"eventType": approval.EventType, "createdAt": approval.CreatedAt,
-			},
+			"approval": completeApproval,
 			"decision": map[string]any{
-				"action": action, "resolvedAt": completedAt, "riskScore": approval.RiskScore,
-				"matchedRules": append([]string(nil), approval.MatchedRules...),
-			},
-			"redacted": []string{
-				"operator note", "prompt", "payload", "authorization",
-				"tool arguments", "tool result", "plugin result", "reason",
+				"action": action, "operatorNote": strings.TrimSpace(operatorNote),
+				"confirmed": true, "resolvedAt": completedAt,
 			},
 		},
 	}

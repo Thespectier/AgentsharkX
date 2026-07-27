@@ -25,8 +25,10 @@ These rules apply to the whole repository.
 - Correlate sources only through an identical, explicitly verified trace or
   session identifier. Time proximity is never evidence.
 - A failure in one upstream must not make the other upstream unavailable.
-- Never log or return API keys, authorization headers, complete prompts, or
-  unredacted sensitive payloads.
+- Authenticated Audit detail reads may return complete upstream management
+  records, including attributes, prompts, completions, tool arguments, and
+  other source-owned payload fields. Do not copy those records into application
+  logs or unauthenticated/list/SSE responses.
 
 ## Implementation and tests
 

@@ -43,6 +43,7 @@ type fakeGuard struct {
 type fakeApprovalRecorder struct {
 	approval  model.Approval
 	decision  string
+	note      string
 	timestamp time.Time
 	calls     int
 }
@@ -50,10 +51,12 @@ type fakeApprovalRecorder struct {
 func (recorder *fakeApprovalRecorder) RecordApprovalResolution(
 	approval model.Approval,
 	decision string,
+	note string,
 	timestamp time.Time,
 ) {
 	recorder.approval = approval
 	recorder.decision = decision
+	recorder.note = note
 	recorder.timestamp = timestamp
 	recorder.calls++
 }
@@ -241,7 +244,7 @@ func TestApprovalRequiresNoteAndPreventsDuplicateInFlightDecision(t *testing.T) 
 	}
 }
 
-func TestSuccessfulApprovalResolutionIsRecordedWithoutOperatorNote(t *testing.T) {
+func TestSuccessfulApprovalResolutionRecordsCompleteOperatorContext(t *testing.T) {
 	t.Parallel()
 	approval := model.Approval{
 		ProtectResourceBase: model.ProtectResourceBase{ID: "ticket-opaque", UpstreamID: "ticket-a"},
@@ -266,7 +269,8 @@ func TestSuccessfulApprovalResolutionIsRecordedWithoutOperatorNote(t *testing.T)
 		t.Fatalf("unexpected denial receipt: %#v err=%v", receipt, err)
 	}
 	if recorder.calls != 1 || recorder.approval.ID != approval.ID ||
-		recorder.approval.UpstreamID != approval.UpstreamID || recorder.decision != "deny" {
+		recorder.approval.UpstreamID != approval.UpstreamID || recorder.decision != "deny" ||
+		recorder.note != "sensitive operator explanation" {
 		t.Fatalf("confirmed approval resolution was not recorded: %#v", recorder)
 	}
 	if !recorder.timestamp.Equal(receipt.Data.CompletedAt) {

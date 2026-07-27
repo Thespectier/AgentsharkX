@@ -18,7 +18,8 @@ Phase 6 package responsibilities:
   pagination, label writes, and bounded in-memory detection jobs.
 - `protect`: gateway/AgentGuard policy views and guarded mutations.
 - `audit`: independent upstream polling, normalized metrics/events/sessions,
-  exact-ID correlation, redacted detail, and bounded snapshots.
+  exact-ID correlation, authenticated complete upstream detail, and bounded
+  summary snapshots.
 - `stream`: bounded event ring, dedupe, monotonic sequences, replay, and fan-out.
 - `model`: the shared source-preserving response model.
 
@@ -26,3 +27,5 @@ Phase 6 intentionally has no database, durable event buffer, task model, or
 payload replay. Audit polls only verified management reads; its 1000-event ring,
 scan jobs, and check tokens are ephemeral and disappear on restart. SSE replay
 means retained delivery after a sequence ID, not business-traffic replay.
+Gateway payloads are fetched only when an authenticated administrator opens one
+event; AgentGuard complete source records remain in the existing bounded ring.

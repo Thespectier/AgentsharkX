@@ -1,0 +1,64 @@
+{
+  "log": {
+    "id": "fixture-log-1",
+    "startedAt": "2026-07-27T08:00:00Z",
+    "completedAt": "2026-07-27T08:00:00.321Z",
+    "durationMs": 321,
+    "traceId": "fixture-trace-1",
+    "spanId": "fixture-span-1",
+    "httpStatus": 200,
+    "error": null,
+    "genAi": {
+      "operationName": "chat",
+      "providerName": "fixture-provider",
+      "requestModel": "fixture-request-model",
+      "responseModel": "fixture-response-model"
+    },
+    "usage": {
+      "inputTokens": 12,
+      "outputTokens": 5,
+      "totalTokens": 17
+    },
+    "cost": 0.00017,
+    "hasPayload": true,
+    "attributes": {
+      "gen_ai.prompt": [
+        {
+          "role": "user",
+          "content": "synthetic contract prompt"
+        }
+      ],
+      "gen_ai.completion": {
+        "choices": [
+          {
+            "message": {
+              "role": "assistant",
+              "content": "synthetic contract completion"
+            }
+          }
+        ]
+      },
+      "fixture.nested": {
+        "preserved": true
+      }
+    },
+    "payload": {
+      "requestPrompt": [
+        {
+          "role": "user",
+          "content": "synthetic contract prompt"
+        }
+      ],
+      "responseCompletion": {
+        "choices": [
+          {
+            "message": {
+              "role": "assistant",
+              "content": "synthetic contract completion"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

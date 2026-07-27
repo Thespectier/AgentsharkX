@@ -24,7 +24,6 @@ func TestLoadValidConfigurationAndRedactsSecrets(t *testing.T) {
 		"AGENTSHARK_SCAN_TIMEOUT":       "45s",
 		"AGENTSHARK_UPSTREAM_RETRY_MAX": "2",
 		"AGENTSHARK_POLL_INTERVAL":      "3s",
-		"AGENTSHARK_REDACT_PAYLOADS":    "true",
 	}
 
 	cfg, err := Load(func(key string) (string, bool) {
@@ -56,14 +55,13 @@ func TestLoadRejectsUnsafeDevelopmentAuth(t *testing.T) {
 	t.Parallel()
 
 	base := map[string]string{
-		"AGENTSHARK_LISTEN_ADDR":     "0.0.0.0:8080",
-		"AGENTSHARK_ENVIRONMENT":     "local",
-		"AGENTSHARK_AUTH_DISABLED":   "true",
-		"AGENTSHARK_COOKIE_SECURE":   "false",
-		"AGENTGATEWAY_BASE_URL":      "http://gateway.test:15000",
-		"AGENTGUARD_BASE_URL":        "http://guard.test:38080",
-		"AGENTGUARD_ADMIN_TOKEN":     "guard-secret-with-enough-entropy",
-		"AGENTSHARK_REDACT_PAYLOADS": "true",
+		"AGENTSHARK_LISTEN_ADDR":   "0.0.0.0:8080",
+		"AGENTSHARK_ENVIRONMENT":   "local",
+		"AGENTSHARK_AUTH_DISABLED": "true",
+		"AGENTSHARK_COOKIE_SECURE": "false",
+		"AGENTGATEWAY_BASE_URL":    "http://gateway.test:15000",
+		"AGENTGUARD_BASE_URL":      "http://guard.test:38080",
+		"AGENTGUARD_ADMIN_TOKEN":   "guard-secret-with-enough-entropy",
 	}
 
 	_, err := Load(func(key string) (string, bool) {
@@ -79,11 +77,10 @@ func TestLoadRejectsMissingTokensBeforeNonLoopbackStartup(t *testing.T) {
 	t.Parallel()
 
 	values := map[string]string{
-		"AGENTSHARK_LISTEN_ADDR":     "0.0.0.0:8080",
-		"AGENTSHARK_ENVIRONMENT":     "preview",
-		"AGENTGATEWAY_BASE_URL":      "http://gateway.test:15000",
-		"AGENTGUARD_BASE_URL":        "http://guard.test:38080",
-		"AGENTSHARK_REDACT_PAYLOADS": "true",
+		"AGENTSHARK_LISTEN_ADDR": "0.0.0.0:8080",
+		"AGENTSHARK_ENVIRONMENT": "preview",
+		"AGENTGATEWAY_BASE_URL":  "http://gateway.test:15000",
+		"AGENTGUARD_BASE_URL":    "http://guard.test:38080",
 	}
 	_, err := Load(func(key string) (string, bool) {
 		value, ok := values[key]
@@ -104,13 +101,12 @@ func TestLoadRejectsPlaceholderAndURLCredentials(t *testing.T) {
 	t.Parallel()
 
 	values := map[string]string{
-		"AGENTSHARK_LISTEN_ADDR":     "127.0.0.1:8080",
-		"AGENTSHARK_ENVIRONMENT":     "local",
-		"AGENTSHARK_ADMIN_TOKEN":     "change-me-before-use",
-		"AGENTGATEWAY_BASE_URL":      "http://admin:secret@gateway.test:15000",
-		"AGENTGUARD_BASE_URL":        "http://guard.test:38080",
-		"AGENTGUARD_ADMIN_TOKEN":     "guard-secret-with-enough-entropy",
-		"AGENTSHARK_REDACT_PAYLOADS": "true",
+		"AGENTSHARK_LISTEN_ADDR": "127.0.0.1:8080",
+		"AGENTSHARK_ENVIRONMENT": "local",
+		"AGENTSHARK_ADMIN_TOKEN": "change-me-before-use",
+		"AGENTGATEWAY_BASE_URL":  "http://admin:secret@gateway.test:15000",
+		"AGENTGUARD_BASE_URL":    "http://guard.test:38080",
+		"AGENTGUARD_ADMIN_TOKEN": "guard-secret-with-enough-entropy",
 	}
 
 	_, err := Load(func(key string) (string, bool) {
@@ -130,14 +126,13 @@ func TestLoadRejectsUnsafeConsoleURL(t *testing.T) {
 	t.Parallel()
 
 	values := map[string]string{
-		"AGENTSHARK_LISTEN_ADDR":     "127.0.0.1:8080",
-		"AGENTSHARK_ENVIRONMENT":     "local",
-		"AGENTSHARK_ADMIN_TOKEN":     "admin-token-with-enough-entropy",
-		"AGENTGATEWAY_BASE_URL":      "http://gateway.test:15000",
-		"AGENTGATEWAY_CONSOLE_URL":   "https://user:secret@gateway.test/ui",
-		"AGENTGUARD_BASE_URL":        "http://guard.test:38080",
-		"AGENTGUARD_ADMIN_TOKEN":     "guard-secret-with-enough-entropy",
-		"AGENTSHARK_REDACT_PAYLOADS": "true",
+		"AGENTSHARK_LISTEN_ADDR":   "127.0.0.1:8080",
+		"AGENTSHARK_ENVIRONMENT":   "local",
+		"AGENTSHARK_ADMIN_TOKEN":   "admin-token-with-enough-entropy",
+		"AGENTGATEWAY_BASE_URL":    "http://gateway.test:15000",
+		"AGENTGATEWAY_CONSOLE_URL": "https://user:secret@gateway.test/ui",
+		"AGENTGUARD_BASE_URL":      "http://guard.test:38080",
+		"AGENTGUARD_ADMIN_TOKEN":   "guard-secret-with-enough-entropy",
 	}
 
 	_, err := Load(func(key string) (string, bool) {

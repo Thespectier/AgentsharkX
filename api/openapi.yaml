@@ -12,7 +12,8 @@ info:
     gateway policy summaries, AgentGuard runtime-rule check/publish/delete,
     per-agent plugin phases, and guarded approval decisions. Audit adds bounded
     gateway traffic and AgentGuard audit/session projections, source-scoped
-    analytics, confirmed approval-resolution evidence, redacted detail, and
+    analytics, confirmed approval-resolution evidence, authenticated complete
+    upstream detail, and
     resumable normalized SSE.
 servers:
   - url: /
@@ -1193,7 +1194,7 @@ paths:
     get:
       tags: [Audit]
       operationId: getAuditEvent
-      summary: Return redacted normalized and raw detail for one source event
+      summary: Return complete upstream detail for one authenticated source event
       x-implementation-phase: 6
       x-implementation-status: implemented
       parameters:
@@ -1201,7 +1202,7 @@ paths:
         - $ref: '#/components/parameters/EventId'
       responses:
         '200':
-          description: Redacted source event detail
+          description: Source event with its complete upstream management record
           content:
             application/json:
               schema:
@@ -1210,6 +1211,10 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/NotFound'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+        '503':
+          $ref: '#/components/responses/UpstreamUnavailable'
 
   /api/v1/audit/sessions:
     get:
@@ -1641,7 +1646,7 @@ components:
         latencySamples:
           type: integer
           minimum: 0
-          description: Number of redacted request-log records used for this bucket's P95 value.
+          description: Number of request-log summary records used for this bucket's P95 value.
         errors:
           type: integer
           minimum: 0
@@ -2977,7 +2982,7 @@ components:
               type: string
         raw:
           type: object
-          description: Allow-listed redacted projection with verified scalar metadata and explicit content-availability markers; never contains complete prompts, payload contents, tool arguments/results, plugin results, operator notes, or authorization values.
+          description: Source-owned management record. Authenticated detail responses return every field supplied by the verified upstream detail contract, including attributes and retained payloads; list, overview, and SSE responses omit raw.
           additionalProperties: true
     AuditSession:
       type: object

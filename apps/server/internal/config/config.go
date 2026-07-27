@@ -38,7 +38,6 @@ type Config struct {
 	ScanTimeout      time.Duration
 	UpstreamRetryMax int
 	PollInterval     time.Duration
-	RedactPayloads   bool
 }
 
 func Load(lookup LookupFunc) (Config, error) {
@@ -62,7 +61,6 @@ func Load(lookup LookupFunc) (Config, error) {
 		ScanTimeout:      90 * time.Second,
 		UpstreamRetryMax: 1,
 		PollInterval:     2 * time.Second,
-		RedactPayloads:   true,
 	}
 
 	var err error
@@ -70,9 +68,6 @@ func Load(lookup LookupFunc) (Config, error) {
 		return Config{}, err
 	}
 	if cfg.CookieSecure, err = boolValue(lookup, "AGENTSHARK_COOKIE_SECURE", true); err != nil {
-		return Config{}, err
-	}
-	if cfg.RedactPayloads, err = boolValue(lookup, "AGENTSHARK_REDACT_PAYLOADS", true); err != nil {
 		return Config{}, err
 	}
 	if cfg.UpstreamTimeout, err = durationValue(lookup, "AGENTSHARK_UPSTREAM_TIMEOUT", cfg.UpstreamTimeout); err != nil {
@@ -112,9 +107,6 @@ func (cfg Config) Validate() error {
 	if !cfg.CookieSecure && (!loopback || (cfg.Environment != "local" && cfg.Environment != "development")) {
 		validationErrors = append(validationErrors, errors.New("insecure cookies are allowed only in a local environment bound to loopback"))
 	}
-	if !cfg.RedactPayloads {
-		validationErrors = append(validationErrors, errors.New("AGENTSHARK_REDACT_PAYLOADS must remain enabled"))
-	}
 	if !validSecret(cfg.Guard.AdminToken.Value()) {
 		validationErrors = append(validationErrors, errors.New("AGENTGUARD_ADMIN_TOKEN must be a non-placeholder value of at least 16 characters"))
 	}
@@ -152,9 +144,9 @@ func (cfg Config) Validate() error {
 }
 
 func (cfg Config) SafeSummary() string {
-	return fmt.Sprintf("listen=%s environment=%s auth_disabled=%t cookie_secure=%t gateway=%s guard=%s timeout=%s scan_timeout=%s retries=%d poll=%s redact_payloads=%t",
+	return fmt.Sprintf("listen=%s environment=%s auth_disabled=%t cookie_secure=%t gateway=%s guard=%s timeout=%s scan_timeout=%s retries=%d poll=%s",
 		cfg.ListenAddr, cfg.Environment, cfg.AuthDisabled, cfg.CookieSecure, safeEndpoint(cfg.Gateway.BaseURL),
-		safeEndpoint(cfg.Guard.BaseURL), cfg.UpstreamTimeout, cfg.ScanTimeout, cfg.UpstreamRetryMax, cfg.PollInterval, cfg.RedactPayloads)
+		safeEndpoint(cfg.Guard.BaseURL), cfg.UpstreamTimeout, cfg.ScanTimeout, cfg.UpstreamRetryMax, cfg.PollInterval)
 }
 
 func safeEndpoint(raw string) string {

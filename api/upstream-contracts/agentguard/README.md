@@ -48,6 +48,9 @@ file contents, detector metadata, MCP URLs, and LLM configuration from its
 normalized responses.
 
 Phase 5 mutation contracts were also cross-checked against that pinned source.
+Phase 6 retains the exact approval object received from this verified endpoint
+only for the authenticated Audit resolution detail; list and SSE projections
+continue to omit the raw object.
 Rule check is side-effect free; publish, delete, approve, and deny are never
 automatically retried. Normalized responses omit rule source and prompt fields,
 approval tool arguments and targets, and plugin parameters.

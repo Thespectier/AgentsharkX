@@ -324,7 +324,7 @@ func TestAnalyticsMissingRouteIsExplicitlyUnavailable(t *testing.T) {
 	}
 }
 
-func TestTrafficUsesRedactedSearchAndPreservesVerifiedIDs(t *testing.T) {
+func TestTrafficUsesSummarySearchAndPreservesVerifiedIDs(t *testing.T) {
 	t.Parallel()
 
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
@@ -365,6 +365,64 @@ func TestTrafficUsesRedactedSearchAndPreservesVerifiedIDs(t *testing.T) {
 		if strings.Contains(string(encoded), forbidden) {
 			t.Fatalf("traffic feed leaked %q: %s", forbidden, encoded)
 		}
+	}
+}
+
+func TestTrafficDetailReturnsCompleteUnboundedSourceRecord(t *testing.T) {
+	t.Parallel()
+	largePrompt := strings.Repeat("full-prompt-", 100_000)
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.Method != http.MethodPost || request.URL.Path != "/api/logs/get" {
+			t.Fatalf("unexpected request %s %s", request.Method, request.URL.Path)
+		}
+		var body struct {
+			ID             string `json:"id"`
+			IncludePayload bool   `json:"includePayload"`
+		}
+		if err := json.NewDecoder(request.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		if body.ID != "log-full" || !body.IncludePayload {
+			t.Fatalf("unexpected detail body: %#v", body)
+		}
+		_ = json.NewEncoder(writer).Encode(map[string]any{"log": map[string]any{
+			"id": "log-full", "hasPayload": true,
+			"attributes": map[string]any{"authorization": "synthetic-authorization-value", "nested": map[string]any{"kept": true}},
+			"payload":    map[string]any{"requestPrompt": largePrompt, "responseCompletion": map[string]any{"content": "full-completion"}},
+		}})
+	}))
+	defer server.Close()
+	client, err := New(server.URL, server.Client(), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	detail, err := client.TrafficDetail(t.Context(), "log-full")
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, _ := json.Marshal(detail)
+	for _, expected := range []string{"synthetic-authorization-value", "full-prompt-", "full-completion", `"kept":true`} {
+		if !strings.Contains(string(encoded), expected) {
+			t.Fatalf("complete detail omitted %q", expected)
+		}
+	}
+	if len(encoded) <= 1<<20 {
+		t.Fatalf("detail was unexpectedly truncated: %d bytes", len(encoded))
+	}
+}
+
+func TestTrafficDetailReportsMissingSourceLog(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(writer, `{"log":null}`)
+	}))
+	defer server.Close()
+	client, err := New(server.URL, server.Client(), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.TrafficDetail(t.Context(), "missing"); !errors.Is(err, ErrLogNotFound) {
+		t.Fatalf("expected missing log, got %v", err)
 	}
 }
 

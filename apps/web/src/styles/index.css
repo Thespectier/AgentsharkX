@@ -2594,8 +2594,16 @@ kbd {
 }
 .event-detail__source-action {
   display: flex;
-  margin-top: 10px;
   justify-content: flex-end;
+}
+.event-detail__loading {
+  display: flex;
+  min-height: 72px;
+  align-items: center;
+  justify-content: center;
+}
+.event-detail__raw-section {
+  margin-top: 14px;
 }
 .definition-list {
   margin: 18px 0;
@@ -2647,18 +2655,6 @@ kbd {
   overflow: auto;
   font-size: 11px;
   line-height: 1.6;
-}
-.redaction-note {
-  display: flex;
-  margin-top: 12px;
-  padding: 10px;
-  align-items: flex-start;
-  gap: 7px;
-  border-radius: 8px;
-  background: rgba(246, 189, 74, 0.055);
-  color: #a99a73;
-  font-size: 10px;
-  line-height: 1.5;
 }
 .command-layer {
   place-items: start center;

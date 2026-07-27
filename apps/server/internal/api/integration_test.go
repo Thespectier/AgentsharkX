@@ -29,6 +29,8 @@ import (
 type apiAuditGateway struct {
 	feed      model.AuditFeed
 	analytics model.GatewayAnalytics
+	detail    map[string]any
+	detailErr error
 }
 
 func (fake apiAuditGateway) TrafficWindow(context.Context, int, model.TrendWindow) (model.AuditFeed, error) {
@@ -36,6 +38,9 @@ func (fake apiAuditGateway) TrafficWindow(context.Context, int, model.TrendWindo
 }
 func (fake apiAuditGateway) AnalyticsWindow(context.Context, model.TrendWindow) (model.GatewayAnalytics, error) {
 	return fake.analytics, nil
+}
+func (fake apiAuditGateway) TrafficDetail(context.Context, string) (map[string]any, error) {
+	return fake.detail, fake.detailErr
 }
 
 type apiAuditGuard struct {
@@ -232,14 +237,14 @@ func TestProtectRulesAndApprovalsFlowThroughBFF(t *testing.T) {
 		auditSnapshot.Data.Events[0].Target.Tool != "database.write" {
 		t.Fatalf("confirmed approval outcomes were not recorded in Audit: %#v", auditSnapshot.Data.Events)
 	}
-	denialDetail, ok := auditService.Find(model.SourceAgentGuard, auditSnapshot.Data.Events[0].ID)
-	if !ok {
-		t.Fatal("confirmed denial detail was not retained")
+	denialDetail, detailErr := auditService.Detail(t.Context(), model.SourceAgentGuard, auditSnapshot.Data.Events[0].ID)
+	if detailErr != nil {
+		t.Fatalf("confirmed denial detail was not retained: %v", detailErr)
 	}
 	denialJSON, _ := json.Marshal(denialDetail)
-	for _, forbidden := range []string{"never-log-approval-query", "never-log-approval-reason", "never-log-denial-note"} {
-		if strings.Contains(string(denialJSON), forbidden) {
-			t.Fatalf("approval audit detail leaked %q: %s", forbidden, denialJSON)
+	for _, expected := range []string{"never-log-approval-query", "never-log-approval-reason", "never-log-denial-note"} {
+		if !strings.Contains(string(denialJSON), expected) {
+			t.Fatalf("complete approval audit detail omitted %q: %s", expected, denialJSON)
 		}
 	}
 
@@ -382,14 +387,17 @@ func TestStreamStartsWithNormalizedHealthEvents(t *testing.T) {
 	}
 }
 
-func TestAuditRoutesExposeBoundedListsAndRedactedDetail(t *testing.T) {
+func TestAuditRoutesExposeBoundedListsAndCompleteAuthenticatedDetail(t *testing.T) {
 	t.Parallel()
 	now := time.Now().UTC()
 	event := model.UnifiedEvent{
 		ID: "guard:event-1", Timestamp: now, Source: model.SourceAgentGuard, Kind: "audit", Severity: "high",
 		Subject: &model.EventSubject{AgentID: "agent-a", SessionID: "session-a"}, Decision: "DENY",
 		Summary: "tool invoke was denied", RawRef: model.RawRef{Source: model.SourceAgentGuard, ID: "event-1"},
-		Raw: map[string]any{"eventId": "event-1", "redacted": true},
+		Raw: map[string]any{
+			"event":         map[string]any{"event_id": "event-1", "tool_call": map[string]any{"args": map[string]any{"recipient": "complete@example.test"}}},
+			"runtime_state": map[string]any{"result": "complete guard result"},
+		},
 	}
 	hub := stream.NewHub()
 	auditService := audit.New(
@@ -423,13 +431,53 @@ func TestAuditRoutesExposeBoundedListsAndRedactedDetail(t *testing.T) {
 	}
 	var detail model.ResourceEnvelope[model.UnifiedEvent]
 	protectJSON(t, server.Client(), http.MethodGet, server.URL+"/api/v1/audit/events/agentguard/guard:event-1", "", http.StatusOK, &detail)
-	if detail.Data.Raw["redacted"] != true {
-		t.Fatalf("redacted detail missing: %#v", detail)
+	detailJSON, _ := json.Marshal(detail.Data.Raw)
+	for _, expected := range []string{"complete@example.test", "complete guard result"} {
+		if !strings.Contains(string(detailJSON), expected) {
+			t.Fatalf("complete detail omitted %q: %s", expected, detailJSON)
+		}
 	}
 	var sessions model.ResourceEnvelope[[]model.AuditSession]
 	protectJSON(t, server.Client(), http.MethodGet, server.URL+"/api/v1/audit/sessions", "", http.StatusOK, &sessions)
 	if len(sessions.Data) != 1 || sessions.Data[0].Events != 1 || sessions.Data[0].Denies != 1 {
 		t.Fatalf("unexpected audit sessions: %#v", sessions)
+	}
+}
+
+func TestGatewayAuditDetailReturnsCompleteOnDemandPayload(t *testing.T) {
+	t.Parallel()
+	var accessLog bytes.Buffer
+	now := time.Now().UTC()
+	event := model.UnifiedEvent{
+		ID: "gateway:log-full", Timestamp: now, Source: model.SourceAgentGateway, Kind: "traffic", Severity: "info",
+		Summary: "gateway detail", RawRef: model.RawRef{Source: model.SourceAgentGateway, ID: "log-full"},
+		Raw: map[string]any{"hasPayload": true},
+	}
+	auditService := audit.New(apiAuditGateway{
+		feed:      model.AuditFeed{Status: "available", Events: []model.UnifiedEvent{event}},
+		analytics: model.GatewayAnalytics{Status: "available", Buckets: []model.AnalyticsBucket{}},
+		detail: map[string]any{
+			"id":         "log-full",
+			"attributes": map[string]any{"authorization": "synthetic-visible-authorization"},
+			"payload":    map[string]any{"requestPrompt": "complete request", "responseCompletion": "complete response"},
+		},
+	}, apiAuditGuard{}, nil)
+	auditService.Refresh(t.Context())
+	server := httptest.NewServer(New(ServerConfig{
+		Audit: auditService, Logger: slog.New(slog.NewTextHandler(&accessLog, nil)), AuthEnabled: false,
+	}))
+	defer server.Close()
+
+	var detail model.ResourceEnvelope[model.UnifiedEvent]
+	protectJSON(t, server.Client(), http.MethodGet, server.URL+"/api/v1/audit/events/agentgateway/gateway:log-full", "", http.StatusOK, &detail)
+	encoded, _ := json.Marshal(detail.Data.Raw)
+	for _, expected := range []string{"synthetic-visible-authorization", "complete request", "complete response"} {
+		if !strings.Contains(string(encoded), expected) {
+			t.Fatalf("complete gateway detail omitted %q: %s", expected, encoded)
+		}
+		if strings.Contains(accessLog.String(), expected) {
+			t.Fatalf("BFF access log copied complete detail %q: %s", expected, accessLog.String())
+		}
 	}
 }
 

@@ -22,9 +22,10 @@ jobs. Protect now displays read-only agentgateway policy/guardrail summaries,
 AgentGuard runtime rules and per-agent plugin phases, and supports syntax-gated
 rule publication/deletion plus guarded approval decisions. Every dangerous
 write requires a note, explicit confirmation, CSRF, a request ID, and a result
-receipt. Audit now polls redacted agentgateway request logs/Analytics and
+receipt. Audit now polls agentgateway request-log summaries/Analytics and
 AgentGuard Traffic/Audit/Sessions independently, retains a bounded 1000-event
-window, and streams normalized events with SSE resume and client-side dedupe.
+window, streams normalized events with SSE resume and client-side dedupe, and
+returns complete source-owned event detail to authenticated administrators.
 The preview adds a reproducible non-root production image with the real Web
 bundle embedded in the Go BFF, source-specific System diagnostics, a full-path
 release E2E, supply-chain artifacts, and six screenshot baselines.
@@ -145,11 +146,12 @@ session CSRF token. LLM configuration writes also require a short-lived, one-use
 revision token and are verified by a fresh upstream read. Rule check tokens,
 scan jobs, and the Audit event window are bounded in
 memory and are lost when the BFF restarts. AgentGuard mutations are never
-automatically retried. Request-log payloads and attributes are never requested
-by the Audit poller; event detail is an allow-listed redacted projection. For
-agentgateway events, Audit provides an exact native Logs link built from the
-verified upstream log ID so retained prompt/completion content can be inspected
-in the source console without copying it through the AgentsharkX BFF.
+automatically retried. The Audit poller keeps gateway payloads out of list and
+SSE traffic. Opening one authenticated agentgateway event calls the verified
+`/api/logs/get` detail contract with `includePayload=true` and returns its
+complete attributes, prompt, completion, error, and other source fields through
+the BFF. AgentGuard event detail returns the complete source object retained in
+the existing bounded Audit window.
 
 ## Preview topology and pinned upstreams
 
@@ -185,10 +187,9 @@ The preview also enables agentgateway's own SQLite request-log store at
 state, not an AgentsharkX database. It persists across normal preview restarts
 and makes the native agentgateway **Logs** and **Analytics** pages available.
 The launcher limits the data directory to the checkout user. Agentgateway
-v1.3.1 can retain LLM prompt/completion payloads in this store; AgentsharkX
-never requests or returns those payloads. Audit links each gateway event to the
-matching native Logs detail, where agentgateway loads its own retained content;
-operators must still treat the database and native detail as sensitive.
+v1.3.1 can retain LLM prompt/completion payloads in this store. Authenticated
+Audit detail requests the matching native record and returns all fields through
+the BFF; the exact native Logs link remains available as a second view.
 
 Default local endpoints:
 
@@ -238,7 +239,7 @@ Raw Configuration editor can write `deploy/agentgateway/config.yaml` directly.
 The container fallback aligns only the gateway container UID/GID with that
 file's owner instead of making it world-writable or running as root.
 The observability smoke test verifies the configured database URL and calls
-redacted log search plus Analytics without printing request contents.
+summary log search plus Analytics without printing request contents.
 
 `make preview-down` stops the stack. The BFF starts even if one source is down,
 and `/system` provides source-specific recovery checks. `/healthz` reports only

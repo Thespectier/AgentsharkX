@@ -636,20 +636,21 @@ type ConfirmedActionRequest struct {
 
 type Approval struct {
 	ProtectResourceBase
-	AgentID         string    `json:"agentId,omitempty"`
-	AgentUpstreamID string    `json:"agentUpstreamId,omitempty"`
-	SessionID       string    `json:"sessionId,omitempty"`
-	UserID          string    `json:"userId,omitempty"`
-	EventID         string    `json:"eventId,omitempty"`
-	EventType       string    `json:"eventType"`
-	Tool            string    `json:"tool,omitempty"`
-	Phase           string    `json:"phase"`
-	Action          string    `json:"action"`
-	Reason          string    `json:"reason,omitempty"`
-	RiskScore       float64   `json:"riskScore"`
-	MatchedRules    []string  `json:"matchedRules"`
-	Status          string    `json:"status"`
-	CreatedAt       time.Time `json:"createdAt"`
+	AgentID         string         `json:"agentId,omitempty"`
+	AgentUpstreamID string         `json:"agentUpstreamId,omitempty"`
+	SessionID       string         `json:"sessionId,omitempty"`
+	UserID          string         `json:"userId,omitempty"`
+	EventID         string         `json:"eventId,omitempty"`
+	EventType       string         `json:"eventType"`
+	Tool            string         `json:"tool,omitempty"`
+	Phase           string         `json:"phase"`
+	Action          string         `json:"action"`
+	Reason          string         `json:"reason,omitempty"`
+	RiskScore       float64        `json:"riskScore"`
+	MatchedRules    []string       `json:"matchedRules"`
+	Status          string         `json:"status"`
+	CreatedAt       time.Time      `json:"createdAt"`
+	Raw             map[string]any `json:"-"`
 }
 
 type ProtectMutationReceipt struct {
