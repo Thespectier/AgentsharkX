@@ -334,13 +334,20 @@ func providerKind(raw json.RawMessage, field string) (string, string, error) {
 	if json.Unmarshal(raw, &kind) == nil && kind != "" {
 		return kind, "", nil
 	}
-	var reference struct {
-		Reference string `json:"reference"`
+	var provider struct {
+		Reference string          `json:"reference"`
+		Custom    json.RawMessage `json:"custom"`
 	}
-	if json.Unmarshal(raw, &reference) == nil && reference.Reference != "" {
-		return "reference:" + reference.Reference, reference.Reference, nil
+	if json.Unmarshal(raw, &provider) == nil {
+		if provider.Reference != "" {
+			return "reference:" + provider.Reference, provider.Reference, nil
+		}
+		var custom map[string]json.RawMessage
+		if len(provider.Custom) > 0 && json.Unmarshal(provider.Custom, &custom) == nil && custom != nil {
+			return "custom", "", nil
+		}
 	}
-	return "", "", &ContractError{Field: field, Problem: "expected provider name or reference"}
+	return "", "", &ContractError{Field: field, Problem: "expected provider name, reference, or custom provider"}
 }
 
 func virtualRouting(item rawVirtualModel, field string) (string, []string, error) {

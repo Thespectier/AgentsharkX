@@ -48,6 +48,10 @@ verified. Sanitized management responses are stored under
   `gatewayMode=standalone`.
 - `GET /api/config` and `GET /config_dump` returned the loaded empty Phase 0
   configuration and normalized stores.
+- A populated `GET /api/config` was rechecked on 2026-07-27 and returned the
+  accepted object discriminator `provider.custom` alongside model
+  `provider.reference`. The adapter exposes only `kind=custom` and does not
+  return custom formats, params, endpoints, or credentials.
 - `GET /api/costs/models` returned `loaded=false` and an empty provider list.
 - `GET :15020/metrics` returned Prometheus metrics.
 - The configured host-native LLM listener returned the explicit model from
@@ -115,7 +119,8 @@ accept, inspect, or relay raw configuration or provider credentials.
 
 For Phase 3, the populated config shape and UI routes were also checked against
 the exact pinned source revision. The sanitized
-`config-populated.response.json` freezes providers, direct and virtual models,
+`config-populated.response.json` freezes string, reference, and custom provider
+shapes plus direct and virtual models,
 top-level MCP targets, HTTP/TCP routes, and sanitized route/backend policy
 placement while excluding secret params, policy bodies, API keys, and other
 sensitive values. Contract tests fail

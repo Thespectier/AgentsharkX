@@ -174,6 +174,47 @@ func TestSnapshotUsesOnlyVerifiedSafeConfigFields(t *testing.T) {
 	}
 }
 
+func TestSnapshotSupportsVerifiedCustomProviderShape(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.URL.Path != "/api/config" {
+			http.NotFound(writer, request)
+			return
+		}
+		writer.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(writer, `{
+			"llm": {
+				"providers": [{
+					"name": "custom-compatible",
+					"provider": {"custom": {"formats": [{"type": "completions"}, {"type": "responses"}]}},
+					"params": {"apiKey": "never-return-custom-key", "baseUrl": "https://sensitive.example"}
+				}],
+				"models": []
+			}
+		}`)
+	}))
+	defer server.Close()
+	client, err := New(server.URL, server.Client(), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	snapshot, err := client.Snapshot(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(snapshot.Providers) != 1 || snapshot.Providers[0].Kind != "custom" {
+		t.Fatalf("unexpected custom provider: %#v", snapshot.Providers)
+	}
+	encoded, _ := json.Marshal(snapshot)
+	for _, forbidden := range []string{"formats", "completions", "responses", "never-return-custom-key", "sensitive.example"} {
+		if strings.Contains(string(encoded), forbidden) {
+			t.Fatalf("custom provider leaked %q: %s", forbidden, encoded)
+		}
+	}
+}
+
 func TestSnapshotFailsClearlyWhenPinnedContractChanges(t *testing.T) {
 	t.Parallel()
 

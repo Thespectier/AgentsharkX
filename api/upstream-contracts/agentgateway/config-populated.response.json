@@ -2,7 +2,15 @@
   "llm": {
     "port": 4000,
     "providers": [
-      { "name": "openai-shared", "provider": "openai" }
+      { "name": "openai-shared", "provider": "openai" },
+      {
+        "name": "custom-compatible",
+        "provider": {
+          "custom": {
+            "formats": [{ "type": "completions" }, { "type": "responses" }]
+          }
+        }
+      }
     ],
     "models": [
       { "name": "openai/*", "provider": "openai" },
