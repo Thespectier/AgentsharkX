@@ -216,8 +216,8 @@ Connect 汇总 agentgateway 中显式配置的：
 
 1. 打开 **Connect**，检查来源和能力状态；
 2. 在 **Connect → LLM** 新增、编辑或删除共享 Provider 和直连 Model；
-3. 查看 MCP 和 Route 列表及其安全投影后的详情；
-4. 需要编辑 Virtual Model、路由策略、Guardrail、原始配置、CEL 或使用 Playground 时，通过深链接进入 agentgateway
+3. 在 **Connect → MCP** 和 **Connect → Traffic** 管理 MCP Server、Listener 与 Route；
+4. 需要编辑 Virtual Model、未覆盖的 target/route 作用域、原始配置、CEL 或使用 Playground 时，通过深链接进入 agentgateway
    控制台。
 
 LLM 编辑器不会读取或显示现有 API Key。编辑已有条目时默认保留上游凭据；新建或
@@ -307,11 +307,19 @@ Trust 展示 AgentGuard 明确上报的：
 
 Protect 按来源保留两套不同的策略模型：
 
-- agentgateway 的路由策略和内容 Guardrail 摘要；
+- agentgateway 的 LLM/MODEL、MCP Policies，以及全局 LLM/MCP Guardrails；
 - AgentGuard 的运行时规则、插件阶段和审批队列。
 
-AgentsharkX 不会把两套模型翻译成虚构的统一策略 DSL。高级网关策略编辑继续由
-agentgateway 控制台负责。
+**Protect → Policies** 管理已核实的全局 LLM、直连 Model 和全局 MCP policy
+路径。**Protect → Guardrails** 分为 LLM 与 MCP：LLM 可完整编辑 streaming、按顺序
+排列的 request/response guards、拒绝响应和所有原生 provider 字段；MCP 可完整编辑
+按顺序排列的 remote processors、目标、方法阶段、CEL metadata、请求头过滤、失败行为
+和 backend policies。两个编辑器都提供结构化模式和完整 JSON 模式，保存完整父对象，
+不会截断高级字段。
+
+直连 Model guardrail 仍在 Policies 中；MCP target guardrail 与 route/backend 作用域
+仍由其原有页面或原生配置负责。AgentsharkX 不会把两套上游模型翻译成虚构的统一
+策略 DSL，也不会执行或重新解释 guardrail。
 
 危险写操作需要：
 

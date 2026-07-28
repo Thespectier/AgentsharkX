@@ -9,7 +9,8 @@ info:
     gateway-policy configuration writes provide the management foundation. Trust adds
     source-preserving AgentGuard identities, resources, label updates, and
     bounded asynchronous scan orchestration. Protect adds authenticated complete
-    LLM/model/MCP policy configuration, source-grouped summaries, AgentGuard
+    LLM/model/MCP policy configuration, complete global LLM/MCP guardrail
+    workflows, source-grouped summaries, AgentGuard
     runtime-rule check/publish/delete, per-agent plugin phases, and guarded
     approval decisions. Audit adds bounded
     gateway traffic and AgentGuard audit/session projections, source-scoped
@@ -1418,7 +1419,9 @@ paths:
       description: |
         Returns authenticated source-owned agentgateway policy values. Complete
         policy values are never copied into application logs, list summaries,
-        or SSE responses.
+        or SSE responses. The dedicated Guardrails workspace consumes the exact
+        global /llm/policies/guardrails and /mcp/policies/mcpGuardrails objects
+        from this same revision so Policies and Guardrails cannot diverge.
       x-implementation-phase: 11
       x-implementation-status: implemented
       responses:
@@ -1443,7 +1446,10 @@ paths:
       description: |
         Writes only the path identified by resourceId while preserving all
         unrelated source-owned configuration. The result is read back and
-        verified before success is returned.
+        verified before success is returned. The complete PromptGuard and
+        McpGuardrails parent objects are replaced atomically, preserving their
+        ordered request/response and processor arrays; array members do not
+        receive fabricated resource identities.
       x-implementation-phase: 11
       x-implementation-status: implemented
       parameters:
@@ -1480,6 +1486,12 @@ paths:
       tags: [Protect]
       operationId: deleteGatewayPolicy
       summary: Delete one verified agentgateway policy value after explicit confirmation
+      description: |
+        Deletes only the exact path identified by resourceId and verifies the
+        complete refetched document. The two global Guardrail paths follow the
+        native editor semantics: deleting /llm/policies/guardrails or
+        /mcp/policies/mcpGuardrails removes that configuration key rather than
+        retaining a null marker.
       x-implementation-phase: 11
       x-implementation-status: implemented
       parameters:

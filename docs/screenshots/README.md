@@ -1,6 +1,6 @@
 # Screenshot baselines
 
-Phase 7 stores deterministic Playwright release baselines here:
+Deterministic Playwright release and feature baselines are stored here:
 
 - [`home-1440.png`](home-1440.png): 1440 × 1000 desktop Home with LiveFlow,
   Beijing-time greeting, locale switch, metrics, chart, and source-distinct
@@ -13,6 +13,8 @@ Phase 7 stores deterministic Playwright release baselines here:
   nested section navigation.
 - [`protect-1280.png`](protect-1280.png): 1280 × 900 source-separated Protect
   policies and the pending-approval sidebar badge.
+- [`guardrails-1280.png`](guardrails-1280.png): 1280 × 900 Protect workspace
+  with complete LLM guardrail placement, phases, ordered guards, and source path.
 - [`runtime-rule-dialog-800.png`](runtime-rule-dialog-800.png): 800 × 700
   bounded runtime-rule composer with its validation and confirmation workflow.
 - [`system-degraded-1440.png`](system-degraded-1440.png): full-page 1440 px

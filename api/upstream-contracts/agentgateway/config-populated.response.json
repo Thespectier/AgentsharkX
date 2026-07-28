@@ -9,6 +9,78 @@
       "authorization": {
         "rules": ["jwt.email.endsWith(\"@example.invalid\")"]
       },
+      "guardrails": {
+        "streaming": "Enabled",
+        "request": [
+          {
+            "regex": {
+              "action": "mask",
+              "rules": [
+                { "builtin": "email" },
+                { "pattern": "(?i)secret-[a-z0-9]+" }
+              ]
+            },
+            "rejection": {
+              "status": 422,
+              "body": "Request rejected by guardrail",
+              "headers": { "set": { "x-guardrail-result": "rejected" } }
+            }
+          },
+          {
+            "webhook": {
+              "target": { "host": "guardrail.example.invalid:8080" },
+              "forwardHeaderMatches": [
+                { "name": "x-tenant-id", "value": { "regex": ".+" } }
+              ],
+              "failureMode": "failOpen"
+            }
+          },
+          {
+            "openAIModeration": {
+              "model": "omni-moderation-latest",
+              "policies": {
+                "requestHeaderModifier": { "set": { "x-source": "agentsharkx" } }
+              }
+            }
+          },
+          {
+            "bedrockGuardrails": {
+              "guardrailIdentifier": "gr-example",
+              "guardrailVersion": "1",
+              "region": "us-west-2"
+            }
+          },
+          {
+            "googleModelArmor": {
+              "templateId": "template-example",
+              "projectId": "project-example",
+              "location": "us-central1"
+            }
+          },
+          {
+            "azureContentSafety": {
+              "endpoint": "safety.example.invalid",
+              "analyzeText": {
+                "severityThreshold": 2,
+                "apiVersion": "2024-09-01",
+                "blocklistNames": ["example-blocklist"],
+                "haltOnBlocklistHit": true
+              },
+              "detectJailbreak": { "apiVersion": "2024-02-15-preview" }
+            }
+          }
+        ],
+        "response": [
+          {
+            "webhook": {
+              "target": {
+                "service": { "name": "default/guardrail", "port": 8080 }
+              },
+              "failureMode": "failClosed"
+            }
+          }
+        ]
+      },
       "localRateLimit": [
         {
           "type": "tokens",
@@ -45,6 +117,17 @@
           "eviction": { "duration": "30s" }
         },
         "authorization": { "rules": ["jwt.sub != ''"] },
+        "guardrails": {
+          "streaming": "Disabled",
+          "response": [
+            {
+              "regex": {
+                "action": "reject",
+                "rules": [{ "builtin": "creditCard" }]
+              }
+            }
+          ]
+        },
         "promptCaching": {
           "cacheSystem": true,
           "cacheMessages": true,
@@ -59,7 +142,7 @@
           "failover": {
             "targets": [
               { "model": "openai/gpt-5.4-nano", "priority": 0 },
-              { "model": "anthropic/claude-haiku-4-5", "priority": 1 }
+              { "model": "openai/gpt-5.4-mini", "priority": 1 }
             ]
           }
         }
@@ -74,10 +157,58 @@
       },
       "mcpAuthorization": {
         "rules": ["mcp.tool.name == \"get_weather\""]
+      },
+      "mcpGuardrails": {
+        "processors": [
+          {
+            "kind": "remote",
+            "host": "guardrail.example.invalid:9000",
+            "failureMode": "failClosed",
+            "methods": {
+              "tools/call": "full",
+              "prompts/*": "request",
+              "*/list": "response",
+              "*": "off"
+            },
+            "metadata": { "tenant": "jwt.sub" },
+            "requestHeaders": {
+              "allowed": ["authorization", "x-tenant-id"],
+              "disallowed": ["cookie"]
+            },
+            "policies": {
+              "requestHeaderModifier": { "set": { "x-policy-source": "mcp" } }
+            }
+          },
+          {
+            "kind": "remote",
+            "backend": "guardrail-backend",
+            "methods": { "resources/read": "response" }
+          },
+          {
+            "kind": "remote",
+            "service": { "name": "default/guardrail", "port": 9000 },
+            "failureMode": "failOpen",
+            "methods": { "tools/*": "request" }
+          }
+        ]
       }
     },
     "targets": [
-      { "name": "everything", "mcp": { "host": "http://localhost:3001/mcp" } }
+      {
+        "name": "everything",
+        "mcp": { "host": "http://localhost:3001/mcp" },
+        "policies": {
+          "mcpGuardrails": {
+            "processors": [
+              {
+                "kind": "remote",
+                "host": "target-guardrail.example.invalid:9000",
+                "methods": { "tools/call": "request" }
+              }
+            ]
+          }
+        }
+      }
     ]
   },
   "binds": [
@@ -97,15 +228,28 @@
                 "cors": { "allowOrigins": ["https://console.example.invalid"] },
                 "ai": {
                   "promptGuard": {
-                    "request": { "regex": { "patterns": ["<sanitized>"] } },
-                    "response": { "webhook": { "url": "https://guardrail.example.invalid" } }
+                    "request": [
+                      {
+                        "regex": {
+                          "action": "reject",
+                          "rules": [{ "pattern": "<sanitized>" }]
+                        }
+                      }
+                    ],
+                    "response": [
+                      {
+                        "webhook": {
+                          "target": { "host": "guardrail.example.invalid:8443" }
+                        }
+                      }
+                    ]
                   }
                 }
               },
               "backends": [
                 {
                   "host": "localhost:9000",
-                  "policies": { "backendAuth": { "token": "<redacted>" } }
+                  "policies": { "backendAuth": { "key": "<redacted>" } }
                 }
               ]
             }

@@ -840,7 +840,7 @@ func TestProtectGatewayPoliciesReturnCompleteValuesAndWriteWithoutLoggingBodies(
 	const sourceOwnedValue = "complete-policy-value-visible-to-admin"
 	const submittedValue = "submitted-policy-value-never-logged"
 	var mu sync.Mutex
-	configuration := []byte(`{"llm":{"providers":[],"models":[{"name":"fast","provider":{"reference":"shared"},"defaults":{"temperature":0.2}}],"policies":{"cors":{"allowOrigins":["https://admin.example"]}}},"mcp":{"targets":[],"policies":{"mcpAuthorization":{"rules":[{"action":"allow","resource":"` + sourceOwnedValue + `"}]}}},"binds":[],"unowned":{"preserve":true}}`)
+	configuration := []byte(`{"llm":{"providers":[],"models":[{"name":"fast","provider":{"reference":"shared"},"defaults":{"temperature":0.2}}],"policies":{"cors":{"allowOrigins":["https://admin.example"]},"guardrails":{"streaming":"Enabled","request":[{"regex":{"action":"mask","rules":[{"builtin":"email"}]}}],"response":[]}}},"mcp":{"targets":[],"policies":{"mcpAuthorization":{"rules":[{"action":"allow","resource":"` + sourceOwnedValue + `"}]}}},"binds":[],"unowned":{"preserve":true}}`)
 	mutationCalls := 0
 	gatewayServer := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		writer.Header().Set("Content-Type", "application/json")
@@ -902,16 +902,31 @@ func TestProtectGatewayPoliciesReturnCompleteValuesAndWriteWithoutLoggingBodies(
 		t.Fatalf("unexpected MCP policy setting: %#v", setting)
 	}
 
-	localRateLimit := find("llm", "localRateLimit")
+	guardrails := find("llm", "guardrails")
+	submittedGuardrails := map[string]any{
+		"streaming": "Disabled",
+		"request": []any{
+			map[string]any{"webhook": map[string]any{
+				"target":               map[string]any{"host": "review.example.invalid:9000"},
+				"failureMode":          "failOpen",
+				"forwardHeaderMatches": []any{map[string]any{"name": "x-tenant", "value": map[string]any{"regex": ".+"}}},
+			}},
+			map[string]any{"regex": map[string]any{"action": "reject", "rules": []any{map[string]any{"pattern": submittedValue}}}},
+		},
+		"response": []any{map[string]any{
+			"azureContentSafety": map[string]any{"endpoint": "safety.example.invalid", "analyzeText": map[string]any{"severityThreshold": 2}},
+			"rejection":          map[string]any{"status": 451, "headers": map[string]any{"set": map[string]any{"x-result": "blocked"}}},
+		}},
+	}
 	requestBody, err := json.Marshal(model.GatewayPolicyMutationRequest{
 		RevisionToken: current.Data.RevisionToken,
-		Value:         []any{map[string]any{"requests": 100, "key": submittedValue}},
+		Value:         submittedGuardrails,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	var receipt model.GatewayPolicyMutationEnvelope
-	protectJSON(t, server.Client(), http.MethodPatch, server.URL+"/api/v1/protect/gateway-policies/"+localRateLimit.ID, string(requestBody), http.StatusOK, &receipt)
+	protectJSON(t, server.Client(), http.MethodPatch, server.URL+"/api/v1/protect/gateway-policies/"+guardrails.ID, string(requestBody), http.StatusOK, &receipt)
 	if receipt.Data.Operation != "upsert-gateway-policy" || strings.Contains(string(marshalIntegrationValue(t, receipt)), submittedValue) {
 		t.Fatalf("unexpected gateway policy receipt: %#v", receipt.Data)
 	}
@@ -921,11 +936,22 @@ func TestProtectGatewayPoliciesReturnCompleteValuesAndWriteWithoutLoggingBodies(
 
 	var refreshed model.GatewayPolicyConfigurationEnvelope
 	protectJSON(t, server.Client(), http.MethodGet, server.URL+"/api/v1/protect/gateway-policies/configuration", "", http.StatusOK, &refreshed)
+	var refreshedGuardrails any
+	for _, setting := range refreshed.Data.Settings {
+		if setting.RawRef.ID == "/llm/policies/guardrails" {
+			refreshedGuardrails = setting.Value
+			break
+		}
+	}
+	refreshedGuardrailsJSON := marshalIntegrationValue(t, refreshedGuardrails)
+	if !bytes.Contains(refreshedGuardrailsJSON, []byte(submittedValue)) || bytes.Index(refreshedGuardrailsJSON, []byte("webhook")) > bytes.Index(refreshedGuardrailsJSON, []byte("regex")) {
+		t.Fatalf("complete ordered guardrails were not returned after the write: %s", refreshedGuardrailsJSON)
+	}
 	deleteBody, err := json.Marshal(model.GatewayPolicyDeleteRequest{RevisionToken: refreshed.Data.RevisionToken, Confirmed: true})
 	if err != nil {
 		t.Fatal(err)
 	}
-	protectJSON(t, server.Client(), http.MethodDelete, server.URL+"/api/v1/protect/gateway-policies/"+localRateLimit.ID, string(deleteBody), http.StatusOK, &receipt)
+	protectJSON(t, server.Client(), http.MethodDelete, server.URL+"/api/v1/protect/gateway-policies/"+guardrails.ID, string(deleteBody), http.StatusOK, &receipt)
 	mu.Lock()
 	written := append([]byte(nil), configuration...)
 	writes := mutationCalls

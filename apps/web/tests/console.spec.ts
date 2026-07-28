@@ -93,7 +93,7 @@ test("sidebar subnavigation renders immediately without a hard refresh", async (
   const protectNavigation = page.getByRole("group", { name: "Protect sections" });
   await protectNavigation.getByRole("link", { name: "Guardrails", exact: true }).click();
   await expect(page).toHaveURL(/\/protect\/guardrails$/);
-  await expect(page.getByRole("heading", { name: "Content guardrails" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "LLM guardrails" })).toBeVisible();
 
   await page.goto("/audit/analytics");
   const auditNavigation = page.getByRole("group", { name: "Audit sections" });

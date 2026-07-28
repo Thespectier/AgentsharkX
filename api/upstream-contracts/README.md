@@ -5,6 +5,13 @@ where explicitly labelled `populated shape`, minimized from exact pinned-source
 response builders/tests. They are not a substitute for capability probing and
 freeze verified adapter contracts.
 
+The populated agentgateway fixture also freezes the Phase 12 exact global LLM
+`PromptGuard` and MCP `McpGuardrails` parent shapes, including ordered
+children and advanced policy fields. These shapes come from the pinned v1.3.1
+schema and UI; there is no dedicated Guardrail REST API, so management continues
+through the verified whole-document `GET`/`POST /api/config` contract. The full
+fixture passes the pinned v1.3.1 binary's `--validate-only` check.
+
 - `agentgateway/`: release `v1.3.1`, revision
   `dbaaf7ed73671e7aec9195e35e7f726c0b14b84a`.
 - `agentguard/`: main snapshot (package version `2.1`), revision

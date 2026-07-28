@@ -2,10 +2,10 @@
 
 Last verified: 2026-07-28.
 
-Phase 11 still prevents direct browser contact with either upstream. The
+Phase 12 still prevents direct browser contact with either upstream. The
 agentgateway adapter reads request-log summary, complete detail, and Analytics
 contracts and now performs the Provider/direct-Model, MCP, Traffic, and verified
-Protect policy configuration workflows. The AgentGuard adapter reads Trust,
+Protect policy and global guardrail configuration workflows. The AgentGuard adapter reads Trust,
 Protect, and Audit resources and invokes
 verified label, detection, runtime-rule, and approval mutations with
 `X-Api-Key`, source-scoped errors, strict response bounds, and no automatic
@@ -187,12 +187,33 @@ The BFF returns the complete source-owned JSON value for those entries and uses
 one generic upsert/delete operation per exact raw path from the current
 revision. Direct models are addressed by configuration index, and mutually
 exclusive TLS aliases are not combined. Delete follows the native editor:
-global LLM entries retain a `null` marker except that `localRateLimit` is
-removed, while global MCP and direct-model entries are removed. Unknown policy
+global LLM entries retain a `null` marker except that `localRateLimit` and
+`guardrails` are removed, while global MCP and direct-model entries are removed. Unknown policy
 keys are preserved but remain read-only. Virtual-model
 policies, MCP target policies, and route-owned policy scopes are excluded from
 the Protect editor; verified Listener/Route/Backend policy objects remain in
 Connect Traffic. AgentsharkX neither evaluates nor translates any policy.
+
+Phase 12 gives the two verified global guardrail paths a dedicated Protect
+workspace without adding a new BFF route. The LLM editor reads and atomically
+writes `/llm/policies/guardrails` as one complete `PromptGuard`: optional
+`streaming`, ordered `request` and `response` arrays, regex, webhook, OpenAI
+moderation, Bedrock Guardrails, Google Model Armor, Azure Content Safety, and
+each guard's rejection response. OpenAI moderation is request-only in the
+pinned schema. The MCP editor reads and atomically writes
+`/mcp/policies/mcpGuardrails` as the complete ordered remote-processor array,
+including host/backend/service targets, fail-open/fail-closed behavior, exact/
+prefix/suffix/wildcard method phases, CEL metadata, request-header allow/deny
+lists, and backend policy objects.
+
+Neither upstream array exposes stable child IDs. AgentsharkX therefore reuses
+the Phase 11 parent-path upsert/delete contract, revision, mutation lock, single
+whole-document POST, and canonical refetch instead of inventing child CRUD
+identities. Structured controls cover verified fields; complete JSON remains
+available so advanced source-owned objects are not truncated. Delete removes
+the global key, matching the native editor. Direct-model guardrails remain in
+Protect Policies, MCP target guardrails remain with their targets, and
+route/backend guardrails remain in Connect Traffic.
 
 LLM, MCP, Traffic, and Protect policy mutations use the same process-local lock
 because every operation replaces `/api/config`. Each Protect mutation consumes
@@ -202,16 +223,17 @@ write, so an external native-console or YAML write can race between the final
 revision check and POST; detectable stale revisions are rejected and ambiguous
 writes are never retried automatically.
 
-For Phase 3 and the Phase 8/9/10/11 configuration-write rounds, the populated
+For Phase 3 and the Phase 8/9/10/11/12 configuration-write rounds, the populated
 config shape, UI routes, client hook, and file-backed write implementation were
 checked against the exact pinned source revision. The sanitized
 `config-populated.response.json` freezes string, reference, and custom provider
 shapes plus direct and virtual models,
 top-level MCP targets, HTTP/TCP routes, sanitized route/backend policy placement,
-and representative non-secret global/model/MCP policy bodies while excluding
+and representative non-secret global/model/MCP policy and guardrail bodies while excluding
 secret params, API keys, and other sensitive values. Contract tests fail
 with a field-scoped error when required names, provider shapes, routing
-strategies, or MCP transport shapes change.
+strategies, or MCP transport shapes change. The complete populated fixture also
+passes the pinned v1.3.1 binary's `--validate-only` parser and semantic checks.
 
 ### AgentGuard main snapshot `4b755fb`
 

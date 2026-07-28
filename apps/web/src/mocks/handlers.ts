@@ -391,7 +391,37 @@ const mockLlmPolicyCatalog: MockPolicyCatalogEntry[] = [
     description: "Apply prompt and response guardrails.",
     phase: "Request + Response",
     action: "Inspect",
-    value: { request: [{ type: "regex", pattern: "secret" }] },
+    value: {
+      streaming: "Enabled",
+      request: [
+        {
+          regex: {
+            action: "mask",
+            rules: [{ builtin: "email" }, { pattern: "(?i)secret-[a-z0-9]+" }],
+          },
+          rejection: {
+            status: 422,
+            body: "Request rejected by guardrail",
+            headers: { set: { "x-guardrail-result": "rejected" } },
+          },
+        },
+        {
+          webhook: {
+            target: { service: { name: "default/guardrail", port: 8080 } },
+            failureMode: "failOpen",
+            forwardHeaderMatches: [{ name: "x-tenant-id", value: { regex: ".+" } }],
+          },
+        },
+      ],
+      response: [
+        {
+          azureContentSafety: {
+            endpoint: "safety.example.invalid",
+            analyzeText: { severityThreshold: 2, blocklistNames: ["restricted"] },
+          },
+        },
+      ],
+    },
   },
   {
     key: "localRateLimit",
@@ -563,6 +593,29 @@ const mockMcpPolicyCatalog: MockPolicyCatalogEntry[] = [
     description: "Apply processors to MCP traffic.",
     phase: "Request + Response",
     action: "Inspect",
+    value: {
+      processors: [
+        {
+          kind: "remote",
+          backend: "guardrail-backend",
+          failureMode: "failOpen",
+          methods: {
+            "tools/call": "full",
+            "tools/*": "request",
+            "*/list": "response",
+            "*": "off",
+          },
+          metadata: { tenant: "jwt.sub" },
+          requestHeaders: {
+            allowed: ["authorization", "x-tenant-id"],
+            disallowed: ["cookie"],
+          },
+          policies: {
+            requestHeaderModifier: { set: { "x-policy-source": "mcp" } },
+          },
+        },
+      ],
+    },
   },
   {
     key: "authorization",

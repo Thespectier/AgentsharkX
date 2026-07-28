@@ -283,7 +283,8 @@ Agent 身份必须来自 AgentGuard 明确字段。agentgateway 日志中的客�
 
 - Policies：agentgateway 配置按 **LLM / MODEL** 与 **MCP** 两类展示完整上游
   JSON；AgentGuard Runtime Rule 保持独立页面，不合并成虚假的统一 DSL。
-- Guardrails：展示 agentgateway 内容防护摘要并跳转高级配置。
+- Guardrails：按 **LLM** 与 **MCP** 管理 agentgateway 两个已核实的全局
+  Guardrail 父对象，保留顺序、完整 JSON、来源与原始路径。
 - Runtime Rules：规则列表、语法检查、生成、发布和删除。
 - Plugins：按执行阶段查看启用状态。
 - Approvals：待处理队列、上下文详情、Approve/Deny 和必填备注。
@@ -654,7 +655,8 @@ AgentGuard 为 GPLv3，agentgateway 为 Apache-2.0。实现上保持独立进程
 4. 为每次写操作加入确认、备注、请求 ID 和结果回执。
 5. 防止重复点击与重复审批。
 6. 本阶段 Guardrails 和 Gateway Policy 保持摘要只读或 link-out；后续只有在精确契约
-   冻结后才能新增独立可写阶段（已由 Phase 11 覆盖核实路径）。
+   冻结后才能新增独立可写阶段（Gateway Policy 由 Phase 11 覆盖，Guardrails 由
+   Phase 12 覆盖）。
 
 验收：
 
@@ -731,7 +733,9 @@ AgentGuard 为 GPLv3，agentgateway 为 Apache-2.0。实现上保持独立进程
   Model 引用则拒绝删除。被 Virtual Model 引用的直连 Model 不可单独删除，陈旧或重复
   revision token 不会触发上游 POST。
 - 一次成功操作只 POST 一次，写后回读验证目标状态且保留非 LLM、高级字段和现有凭据。
-- Virtual Model、Guardrail、负载/故障转移策略与原始 YAML 继续由 agentgateway 原生控制台编辑。
+- Virtual Model、直连 Model/target/route 作用域 Guardrail、负载/故障转移策略与原始
+  YAML 继续由 agentgateway 原生控制台或其现有作用域页面编辑；两个已核实的全局
+  Guardrail 父对象由 Phase 12 管理。
 
 已知上游限制：agentgateway v1.3.1 只提供整份配置 `POST /api/config`，没有 ETag
 或条件更新；AgentsharkX 能拒绝已检测到的陈旧 revision，但无法把外部原生控制台或
@@ -821,6 +825,44 @@ YAML 写入与最后一次读取到 POST 之间的窗口变成原子操作。
 - policy body 不出现在应用日志、写入回执、摘要列表或 SSE 中。
 
 建议提交：`feat(protect): manage verified agentgateway policies`
+
+### Phase 12：Protect agentgateway Guardrail 配置管理
+
+目标：把 agentgateway v1.3.1 已核实的全局 LLM Guardrails 与 MCP Guardrails
+能力搬入 `Protect / Guardrails`，保留上游顺序和完整对象，不在 AgentsharkX 中新增
+Guardrail 引擎。
+
+任务：
+
+1. 复用 Phase 11 已认证的 gateway policy configuration 与单路径 upsert/delete
+   契约，UI 分为 **LLM** 与 **MCP** 两类，不发明不存在的独立 Guardrail API。
+2. LLM 严格管理 `/llm/policies/guardrails` 完整父对象，覆盖 streaming、按顺序排列
+   的 request/response guards、regex/webhook/OpenAI moderation/Bedrock/Google/Azure
+   类型、rejection 以及高级 provider policy 对象。
+3. MCP 严格管理 `/mcp/policies/mcpGuardrails` 完整有序 remote processor 数组，覆盖
+   host/backend/service target、failure、method phase、CEL metadata、request header
+   allow/deny 与 backend policy 对象。
+4. 提供结构化编辑和完整 JSON 编辑；子项没有上游稳定 ID，因此只以完整父对象原子
+   保存，不生成虚构 child ID。删除遵循原生编辑器并移除全局配置键。
+5. 直连 Model guardrail 保留在 Protect Policies；MCP target guardrail 与
+   route/backend guardrail 保留在其原有作用域，不从全局 Guardrails 页误改。
+6. 添加冻结契约、model/adapter/BFF/Mock/浏览器、校验、删除确认、可访问性、桌面与
+   移动布局测试，并更新能力矩阵、兼容文档和截图。
+
+验收：
+
+- LLM 与 MCP 两类可查看、创建、完整更新和删除全局 Guardrail，来源、scope、phase、
+  action 与 raw reference 始终可见。
+- LLM request/response 顺序和 MCP processor 顺序可调整；所有已核实字段可编辑，高级
+  JSON 不会因结构化表单保存而丢失。
+- 非法 Guard 类型、response 侧 OpenAI moderation、无效 target/method phase、状态码
+  或 JSON 在提交前给出明确错误。
+- 陈旧或重复 revision 不触发 POST；与 LLM/MCP/Traffic/Policy 写入共用同一锁，成功
+  操作只 POST 一次并比对完整 canonical refetch。
+- Guardrail 正文不进入应用日志、写入回执、摘要列表或 SSE；AgentsharkX 不执行、
+  推断或合并上游 Guardrail 语义。
+
+建议提交：`feat(protect): manage agentgateway guardrails`
 
 ---
 

@@ -371,7 +371,7 @@ func (document *gatewayPolicyConfigDocument) disableLLMPolicy(key string) error 
 	if err != nil || !policyPresent {
 		return err
 	}
-	if key == "localRateLimit" {
+	if key == "localRateLimit" || key == "guardrails" {
 		delete(policies, key)
 	} else {
 		policies[key] = json.RawMessage("null")

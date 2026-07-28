@@ -2,8 +2,6 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowRight,
   CheckCircle2,
-  ExternalLink,
-  FileCode2,
   GitPullRequestArrow,
   LoaderCircle,
   ShieldAlert,
@@ -50,6 +48,7 @@ import { formatTimeWithZone } from "../../lib/format";
 import { useI18n } from "../../lib/i18n";
 import { synchronizeAgentGuardData } from "../../lib/query-sync";
 import type { Severity } from "../../types";
+import { GatewayGuardrailManager } from "./gateway-guardrail-manager";
 import { GatewayPolicyManager } from "./gateway-policy-manager";
 
 type PolicyRow = {
@@ -138,7 +137,7 @@ export function ProtectPage() {
       />
       <PartialBanner meta={meta} />
       {section === "policies" ? <GatewayPolicyManager /> : null}
-      {section === "guardrails" ? <GuardrailView data={data} /> : null}
+      {section === "guardrails" ? <GatewayGuardrailManager /> : null}
       {section === "runtime-rules" ? <RuntimeRulesView data={data} /> : null}
       {section === "plugins" ? <PluginsView data={data} /> : null}
       {section === "approvals" ? (
@@ -154,76 +153,6 @@ export function ProtectPage() {
 
 function runtimeRow(rule: RuntimeRule): PolicyRow {
   return { ...rule, type: "Runtime Rule" };
-}
-
-function GuardrailView({ data }: { data: ProtectSnapshot }) {
-  const { t } = useI18n();
-  const guardrails = data.gatewayPolicies.filter((policy) => policy.type === "Content Guardrail");
-  return (
-    <div className="content-grid">
-      <Card elevated>
-        <CardHeader
-          description="Only explicit request/response placement and configuration keys are shown."
-          title="Content guardrails"
-        />
-        {guardrails.length ? (
-          guardrails.map((item) => (
-            <div className="policy-summary" key={item.id}>
-              <span className="policy-summary__icon">
-                <ShieldAlert aria-hidden="true" size={18} />
-              </span>
-              <div>
-                <div>
-                  <strong>{item.name}</strong>
-                  <StatusBadge status={item.status} />
-                </div>
-                <p>
-                  {item.scope} · {item.phase}
-                </p>
-                <footer>
-                  <SourceBadge source={item.source} />
-                  <span>{item.action}</span>
-                </footer>
-              </div>
-            </div>
-          ))
-        ) : (
-          <EmptyState
-            compact
-            description="No explicit content guardrail in gateway config."
-            title="No guardrails"
-          />
-        )}
-      </Card>
-      <Card>
-        <CardHeader
-          description="Complex configuration remains in its owning control plane."
-          title="Advanced configuration"
-        />
-        <div className="linkout-card">
-          <FileCode2 aria-hidden="true" size={25} />
-          <h2>{t("Use the native policy editor")}</h2>
-          <p>
-            {t(
-              "Raw config, CEL, credentials, and vendor-specific bodies are intentionally not duplicated.",
-            )}
-          </p>
-          {data.links.rawConfig ? (
-            <a
-              className="button button--secondary button--md"
-              href={data.links.rawConfig}
-              rel="noreferrer"
-              target="_blank"
-            >
-              {t("Open agentgateway")} <ExternalLink aria-hidden="true" size={14} />
-            </a>
-          ) : (
-            <StatusBadge status="link unavailable" />
-          )}
-        </div>
-      </Card>
-    </div>
-  );
 }
 
 function RuntimeRulesView({ data }: { data: ProtectSnapshot }) {

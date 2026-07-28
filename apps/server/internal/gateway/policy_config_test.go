@@ -38,7 +38,10 @@ const completeGatewayPolicyConfig = `{
         "auth":{"basic":{"username":"service","password":"preserve-backend-secret"}},
         "health":{"unhealthyExpression":"response.code >= 500"},
         "backendTunnel":{"proxy":{"host":"proxy.internal","port":8080}},
-        "guardrails":{"request":[{"regex":{"patterns":["secret"]}}]},
+        "guardrails":{
+          "streaming":"Disabled",
+          "request":[{"regex":{"action":"reject","rules":[{"pattern":"secret"}]}}]
+        },
         "promptCaching":{"cacheSystem":true,"minTokens":1024}
       },
       {
@@ -51,6 +54,27 @@ const completeGatewayPolicyConfig = `{
     "policies":{
       "cors":{"allowOrigins":["https://console.example.invalid"],"allowMethods":["POST"]},
       "authorization":{"rules":["jwt.email.endsWith('@example.invalid')"]},
+      "guardrails":{
+        "streaming":"Enabled",
+        "request":[
+          {
+            "regex":{"action":"mask","rules":[{"builtin":"email"},{"pattern":"secret-[a-z]+"}]},
+            "rejection":{"status":422,"body":"rejected","headers":{"set":{"x-result":"rejected"}}}
+          },
+          {
+            "webhook":{
+              "target":{"service":{"name":"default/guardrail","port":8080}},
+              "failureMode":"failOpen",
+              "forwardHeaderMatches":[{"name":"x-tenant","value":{"regex":".+"}}]
+            }
+          },
+          {"openAIModeration":{"model":"omni-moderation-latest","policies":{"requestHeaderModifier":{"set":{"x-source":"llm"}}}}},
+          {"bedrockGuardrails":{"guardrailIdentifier":"guardrail","guardrailVersion":"1","region":"us-west-2"}},
+          {"googleModelArmor":{"templateId":"template","projectId":"project","location":"us-central1"}},
+          {"azureContentSafety":{"endpoint":"safety.example.invalid","analyzeText":{"severityThreshold":2},"detectJailbreak":{"apiVersion":"2024-02-15-preview"}}}
+        ],
+        "response":[{"webhook":{"target":{"host":"guardrail.example.invalid:8080"},"failureMode":"failClosed"}}]
+      },
       "localRateLimit":[{"type":"tokens","fillInterval":"1s","tokensPerFill":10,"maxTokens":100}],
       "futurePolicy":{"mode":"preserve","nested":{"enabled":true}}
     }
@@ -60,11 +84,27 @@ const completeGatewayPolicyConfig = `{
     "targets":[{
       "name":"tools",
       "mcp":{"host":"localhost","port":3001},
-      "policies":{"authorization":{"rules":["true"]}}
+      "policies":{
+        "authorization":{"rules":["true"]},
+        "mcpGuardrails":{"processors":[{"kind":"remote","host":"target-guardrail.example.invalid:9000","methods":{"tools/call":"request"}}]}
+      }
     }],
     "policies":{
       "cors":{"allowOrigins":["https://console.example.invalid"],"exposeHeaders":["Mcp-Session-Id"]},
       "mcpAuthorization":{"rules":["mcp.tool.name == 'get_weather'"]},
+      "mcpGuardrails":{
+        "processors":[
+          {
+            "kind":"remote",
+            "backend":"guardrail-backend",
+            "failureMode":"failOpen",
+            "methods":{"tools/call":"full","tools/*":"request","*/list":"response","*":"off"},
+            "metadata":{"tenant":"jwt.sub"},
+            "requestHeaders":{"allowed":["authorization"],"disallowed":["cookie"]},
+            "policies":{"requestHeaderModifier":{"set":{"x-source":"mcp"}}}
+          }
+        ]
+      },
       "futureMcpPolicy":{"value":[1,2,3]}
     }
   },
@@ -72,7 +112,10 @@ const completeGatewayPolicyConfig = `{
     "port":8080,
     "listeners":[{
       "protocol":"HTTP",
-      "routes":[{"backends":[{"host":"backend.internal","policies":{"timeout":"5s"}}]}]
+      "routes":[{
+        "policies":{"ai":{"promptGuard":{"request":[{"regex":{"action":"reject","rules":[{"pattern":"route-secret"}]}}]}}},
+        "backends":[{"host":"backend.internal","policies":{"timeout":"5s"}}]
+      }]
     }]
   }]
 }`
@@ -120,7 +163,7 @@ func TestPolicyConfigurationReturnsCompleteCatalogsAndSourceValues(t *testing.T)
 	modelAuthorization := gatewayPolicyAtPath(t, configuration.Settings, "/llm/models/0/authorization")
 	assertPolicyJSON(t, modelAuthorization.Value, `{"rules":["jwt.sub != ''"]}`)
 	modelGuardrails := gatewayPolicyAtPath(t, configuration.Settings, "/llm/models/0/guardrails")
-	assertPolicyJSON(t, modelGuardrails.Value, `{"request":[{"regex":{"patterns":["secret"]}}]}`)
+	assertPolicyJSON(t, modelGuardrails.Value, `{"streaming":"Disabled","request":[{"regex":{"action":"reject","rules":[{"pattern":"secret"}]}}]}`)
 	modelTLSAlias := gatewayPolicyAtPath(t, configuration.Settings, "/llm/models/1/backendTLS")
 	assertPolicyJSON(t, modelTLSAlias.Value, `{"insecure":true}`)
 	firstID := gatewayPolicyAtPath(t, configuration.Settings, "/llm/models/0/defaults").ID
@@ -131,6 +174,29 @@ func TestPolicyConfigurationReturnsCompleteCatalogsAndSourceValues(t *testing.T)
 
 	mcpAuthorization := gatewayPolicyAtPath(t, configuration.Settings, "/mcp/policies/mcpAuthorization")
 	assertPolicyJSON(t, mcpAuthorization.Value, `{"rules":["mcp.tool.name == 'get_weather'"]}`)
+	llmGuardrails := gatewayPolicyAtPath(t, configuration.Settings, "/llm/policies/guardrails")
+	assertPolicyJSON(t, llmGuardrails.Value, `{
+		"streaming":"Enabled",
+		"request":[
+			{"regex":{"action":"mask","rules":[{"builtin":"email"},{"pattern":"secret-[a-z]+"}]},"rejection":{"status":422,"body":"rejected","headers":{"set":{"x-result":"rejected"}}}},
+			{"webhook":{"target":{"service":{"name":"default/guardrail","port":8080}},"failureMode":"failOpen","forwardHeaderMatches":[{"name":"x-tenant","value":{"regex":".+"}}]}},
+			{"openAIModeration":{"model":"omni-moderation-latest","policies":{"requestHeaderModifier":{"set":{"x-source":"llm"}}}}},
+			{"bedrockGuardrails":{"guardrailIdentifier":"guardrail","guardrailVersion":"1","region":"us-west-2"}},
+			{"googleModelArmor":{"templateId":"template","projectId":"project","location":"us-central1"}},
+			{"azureContentSafety":{"endpoint":"safety.example.invalid","analyzeText":{"severityThreshold":2},"detectJailbreak":{"apiVersion":"2024-02-15-preview"}}}
+		],
+		"response":[{"webhook":{"target":{"host":"guardrail.example.invalid:8080"},"failureMode":"failClosed"}}]
+	}`)
+	mcpGuardrails := gatewayPolicyAtPath(t, configuration.Settings, "/mcp/policies/mcpGuardrails")
+	assertPolicyJSON(t, mcpGuardrails.Value, `{
+		"processors":[{
+			"kind":"remote","backend":"guardrail-backend","failureMode":"failOpen",
+			"methods":{"tools/call":"full","tools/*":"request","*/list":"response","*":"off"},
+			"metadata":{"tenant":"jwt.sub"},
+			"requestHeaders":{"allowed":["authorization"],"disallowed":["cookie"]},
+			"policies":{"requestHeaderModifier":{"set":{"x-source":"mcp"}}}
+		}]
+	}`)
 	unknownMCP := gatewayPolicyAtPath(t, configuration.Settings, "/mcp/policies/futureMcpPolicy")
 	if unknownMCP.Editable || !unknownMCP.Enabled || unknownMCP.Family != "mcp" {
 		t.Fatalf("unexpected unknown MCP policy: %#v", unknownMCP)
@@ -209,6 +275,78 @@ func TestApplyPolicyChangeUpsertsEachVerifiedScopeAndPreservesWholeDocument(t *t
 	}
 }
 
+func TestApplyPolicyChangeUpsertsCompleteOrderedGuardrailParents(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name  string
+		path  string
+		value any
+	}{
+		{
+			name: "LLM guardrails",
+			path: "/llm/policies/guardrails",
+			value: map[string]any{
+				"streaming": "Disabled",
+				"request": []any{
+					map[string]any{"webhook": map[string]any{
+						"target":               map[string]any{"host": "review.example.invalid:9000"},
+						"failureMode":          "failOpen",
+						"forwardHeaderMatches": []any{map[string]any{"name": "x-tenant", "value": map[string]any{"regex": ".+"}}},
+					}},
+					map[string]any{"regex": map[string]any{"action": "reject", "rules": []any{map[string]any{"builtin": "creditCard"}}}},
+				},
+				"response": []any{map[string]any{
+					"azureContentSafety": map[string]any{"endpoint": "safety.example.invalid", "analyzeText": map[string]any{"severityThreshold": float64(2)}},
+					"rejection":          map[string]any{"status": float64(451), "headers": map[string]any{"set": map[string]any{"x-denied": "true"}}},
+				}},
+			},
+		},
+		{
+			name: "MCP guardrails",
+			path: "/mcp/policies/mcpGuardrails",
+			value: map[string]any{"processors": []any{
+				map[string]any{
+					"kind":           "remote",
+					"service":        map[string]any{"name": "default/review", "port": float64(9000)},
+					"failureMode":    "failClosed",
+					"methods":        map[string]any{"tools/call": "full", "resources/*": "request"},
+					"metadata":       map[string]any{"principal": "jwt.sub"},
+					"requestHeaders": map[string]any{"allowed": []any{"authorization"}, "disallowed": []any{"cookie"}},
+					"policies":       map[string]any{"requestHeaderModifier": map[string]any{"set": map[string]any{"x-source": "guardrail"}}},
+				},
+				map[string]any{"kind": "remote", "backend": "review-backend", "methods": map[string]any{"*": "response"}},
+			}},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			state := &mutableConfigServer{config: json.RawMessage(completeGatewayPolicyConfig)}
+			upstream := httptest.NewServer(http.HandlerFunc(state.handler))
+			defer upstream.Close()
+			client, err := New(upstream.URL, upstream.Client(), 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			configuration, revision, err := client.PolicyConfiguration(t.Context())
+			if err != nil {
+				t.Fatal(err)
+			}
+			setting := gatewayPolicyAtPath(t, configuration.Settings, test.path)
+			if _, err := client.ApplyPolicyChange(t.Context(), revision, model.GatewayPolicyChange{
+				Operation: changeUpsertGatewayPolicy, ResourceID: setting.ID, Value: test.value,
+			}); err != nil {
+				t.Fatal(err)
+			}
+			if state.postCount != 1 {
+				t.Fatalf("guardrail upsert posted %d times", state.postCount)
+			}
+			assertPolicyJSON(t, postedValueAtPointer(t, state.lastPost, test.path), mustPolicyJSON(t, test.value))
+			assertPreservedPolicyConfigurationExcept(t, state.lastPost, test.path)
+		})
+	}
+}
+
 func TestApplyPolicyChangeDeletesOneFieldAndReturnsItDisabled(t *testing.T) {
 	t.Parallel()
 	state := &mutableConfigServer{config: json.RawMessage(completeGatewayPolicyConfig)}
@@ -252,6 +390,8 @@ func TestApplyPolicyChangeUsesNativeGlobalDisableRepresentation(t *testing.T) {
 	}{
 		{name: "LLM policies retain a null marker", path: "/llm/policies/cors", wantExists: true},
 		{name: "LLM local rate limit is removed", path: "/llm/policies/localRateLimit"},
+		{name: "LLM guardrails are removed by the native Guardrails editor", path: "/llm/policies/guardrails"},
+		{name: "MCP guardrails are removed by the native Guardrails editor", path: "/mcp/policies/mcpGuardrails"},
 		{name: "MCP policies are removed", path: "/mcp/policies/cors"},
 	}
 	for _, test := range tests {
@@ -285,6 +425,7 @@ func TestApplyPolicyChangeUsesNativeGlobalDisableRepresentation(t *testing.T) {
 			if state.postCount != 1 {
 				t.Fatalf("disable posted %d times", state.postCount)
 			}
+			assertPreservedPolicyConfigurationExcept(t, state.lastPost, test.path)
 		})
 	}
 }
@@ -459,22 +600,38 @@ func mustPolicyJSON(t *testing.T, value any) string {
 
 func assertPreservedPolicyConfiguration(t *testing.T, payload json.RawMessage) {
 	t.Helper()
+	assertPreservedPolicyConfigurationExcept(t, payload, "")
+}
+
+func assertPreservedPolicyConfigurationExcept(t *testing.T, payload json.RawMessage, excludedPrefix string) {
+	t.Helper()
 	checks := map[string]any{
-		"/config/database/url":                                      "sqlite://request-logs.db",
-		"/opaqueRoot/keep/nested":                                   true,
-		"/llm/providers/0/params/apiKey":                            "preserve-provider-secret",
-		"/llm/models/0/params/apiKey":                               "preserve-model-secret",
-		"/llm/models/0/matches/0/headers/0/exact":                   "primary",
-		"/llm/models/0/auth/basic/password":                         "preserve-backend-secret",
-		"/llm/virtualModels/0/name":                                 "virtual",
-		"/llm/policies/futurePolicy/nested/enabled":                 true,
-		"/mcp/policies/futureMcpPolicy/value/2":                     float64(3),
-		"/mcp/targets/0/name":                                       "tools",
-		"/mcp/targets/0/policies/authorization/rules/0":             "true",
-		"/binds/0/listeners/0/routes/0/backends/0/host":             "backend.internal",
-		"/binds/0/listeners/0/routes/0/backends/0/policies/timeout": "5s",
+		"/config/database/url":                                                                  "sqlite://request-logs.db",
+		"/opaqueRoot/keep/nested":                                                               true,
+		"/llm/providers/0/params/apiKey":                                                        "preserve-provider-secret",
+		"/llm/models/0/params/apiKey":                                                           "preserve-model-secret",
+		"/llm/models/0/matches/0/headers/0/exact":                                               "primary",
+		"/llm/models/0/auth/basic/password":                                                     "preserve-backend-secret",
+		"/llm/virtualModels/0/name":                                                             "virtual",
+		"/llm/models/0/guardrails/request/0/regex/rules/0/pattern":                              "secret",
+		"/llm/policies/guardrails/streaming":                                                    "Enabled",
+		"/llm/policies/guardrails/request/0/rejection/headers/set/x-result":                     "rejected",
+		"/llm/policies/guardrails/request/1/webhook/forwardHeaderMatches/0/name":                "x-tenant",
+		"/llm/policies/futurePolicy/nested/enabled":                                             true,
+		"/mcp/policies/mcpGuardrails/processors/0/requestHeaders/disallowed/0":                  "cookie",
+		"/mcp/policies/mcpGuardrails/processors/0/policies/requestHeaderModifier/set/x-source":  "mcp",
+		"/mcp/policies/futureMcpPolicy/value/2":                                                 float64(3),
+		"/mcp/targets/0/name":                                                                   "tools",
+		"/mcp/targets/0/policies/authorization/rules/0":                                         "true",
+		"/mcp/targets/0/policies/mcpGuardrails/processors/0/host":                               "target-guardrail.example.invalid:9000",
+		"/binds/0/listeners/0/routes/0/policies/ai/promptGuard/request/0/regex/rules/0/pattern": "route-secret",
+		"/binds/0/listeners/0/routes/0/backends/0/host":                                         "backend.internal",
+		"/binds/0/listeners/0/routes/0/backends/0/policies/timeout":                             "5s",
 	}
 	for path, expected := range checks {
+		if excludedPrefix != "" && strings.HasPrefix(path, excludedPrefix+"/") {
+			continue
+		}
 		if actual := postedValueAtPointer(t, payload, path); !reflect.DeepEqual(actual, expected) {
 			t.Fatalf("%s=%#v, want %#v", path, actual, expected)
 		}

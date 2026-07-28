@@ -1,6 +1,6 @@
 # Architecture
 
-Status: Phase 11 Protect gateway-policy management over the Phase 7 preview, verified 2026-07-28.
+Status: Phase 12 Protect guardrail management over the Phase 7 preview, verified 2026-07-28.
 
 ## Context
 
@@ -42,12 +42,12 @@ The Go BFF is organized into the following packages:
 - `gateway`: agentgateway management adapter.
 - `connect`: filtering, cursor pagination, details, setup verification,
   short-lived configuration revision tokens, one shared serialized coordinator
-  for typed LLM/MCP/Traffic/Policy mutations, and native-console links over
+  for typed LLM/MCP/Traffic/Policy/Guardrail mutations, and native-console links over
   verified gateway resources.
 - `guard`: AgentGuard management adapter.
 - `trust`: explicit AgentGuard identity/resource aggregation, filtering,
   pagination, label writes, and bounded scan-job orchestration.
-- `protect`: authenticated complete gateway-policy configuration workflows,
+- `protect`: authenticated complete gateway-policy and global-guardrail configuration workflows,
   independent AgentGuard rule/plugin aggregation, short-lived rule-check tokens,
   guarded mutations, approval pagination, and duplicate-operation locks.
 - `audit`: independent polling, source-scoped failures, normalized summaries,
@@ -126,7 +126,7 @@ A gateway failure cannot suppress AgentGuard data, and an AgentGuard failure
 cannot suppress gateway data. Aggregated responses carry per-source metadata
 and stale markers rather than collapsing partial failures into a global 500.
 
-## Phase 11 runtime data and storage
+## Phase 12 runtime data and storage
 
 The BFF has no database. Background monitors poll the two health contracts and,
 every two seconds by default, the verified Audit read contracts. New normalized
@@ -155,7 +155,14 @@ objects, so administrators can
 edit them without a second policy engine in AgentsharkX. Protect Policies is
 split into **LLM / MODEL** and **MCP** views. It manages the exact verified
 global LLM, direct-model, and native global MCP policy paths without interpreting
-their JSON, while route/backend policies remain in Connect Traffic. Trust reads
+their JSON, while route/backend policies remain in Connect Traffic. Protect
+Guardrails projects the two exact global paths
+`/llm/policies/guardrails` and `/mcp/policies/mcpGuardrails` into separate LLM
+and MCP workspaces. It retains complete ordered parent objects, provides typed
+controls for every verified v1.3.1 variant, and keeps a complete JSON editor for
+advanced source-owned fields. Direct-model guardrails remain in Protect
+Policies; MCP-target and route/backend guardrails remain in their owning scopes.
+Trust reads
 the four AgentGuard session/resource routes independently, so one failed capability does
 not erase successful siblings. It whitelists display fields and never returns
 session keys, client URLs, arbitrary principal/metadata objects, descriptors,
@@ -163,7 +170,7 @@ file contents, MCP URLs, detector metadata, reasons, or LLM configuration.
 
 The pinned agentgateway exposes only whole-document `GET` and `POST /api/config`
 operations and no ETag. The BFF therefore issues bounded five-minute, one-use
-revision tokens, serializes all in-process LLM, MCP, Traffic, and Protect policy
+revision tokens, serializes all in-process LLM, MCP, Traffic, and Protect policy/guardrail
 mutations, rereads immediately before the change, preserves unowned fields and
 opaque credential values, posts exactly once, then refetches and verifies the
 requested result. A native-console or YAML
@@ -178,7 +185,8 @@ advanced routing.
 Connect MCP writes cover the verified global settings and top-level Streamable
 HTTP, SSE, and stdio target forms. They preserve MCP policies, OpenAPI targets,
 route-owned inline targets, non-MCP configuration, and unrecognized fields;
-Phase 11 Protect writes may change only one verified global MCP policy path.
+Phase 11/12 Protect writes may change only one verified global policy or
+guardrail parent path.
 
 Traffic writes cover bind CRUD; HTTP, HTTPS, HBONE, TCP, and TLS Listener CRUD;
 and HTTP/TCP Route CRUD. Listener edits preserve compatible child routes and
@@ -200,6 +208,18 @@ polls those real states and does not invent percentage progress. Jobs use the
 configured `AGENTSHARK_SCAN_TIMEOUT`; completed state is not durable across a
 BFF restart. Tool-label updates and scan starts require CSRF and are never
 automatically retried.
+
+The dedicated Guardrails workspace reuses that authenticated configuration and
+mutation contract instead of introducing another endpoint or execution engine.
+LLM saves replace the complete `PromptGuard` object, preserving request/response
+order, optional streaming mode, every native guard variant, rejection response,
+and advanced provider policy objects. MCP saves replace the complete
+`McpGuardrails` parent and ordered `Processor` array, preserving targets, method
+phases, CEL metadata, request-header filters, failure behavior, and backend
+policy objects.
+The upstream arrays have no stable child IDs, so child edits are submitted only
+as one atomic parent-object write. Deleting either global guardrail follows the
+native editor and removes its configuration key.
 
 Protect reads AgentGuard rules and pending approvals, then fans out plugin
 config/available reads only for explicit Trust agent IDs with fixed agent and
@@ -274,9 +294,9 @@ vault, replay engine, or traffic collector.
 - Authenticated Audit detail returns complete verified upstream event records.
   Application access logs record method/path/status only and do not copy event
   bodies; list, overview, and SSE responses omit raw detail.
-- Authenticated Protect policy configuration returns complete source-owned policy
-  JSON. Application logs and mutation receipts contain only operation metadata;
-  policy bodies are not copied into summary lists or SSE responses.
+- Authenticated Protect policy and guardrail configuration returns complete
+  source-owned JSON. Application logs and mutation receipts contain only
+  operation metadata; bodies are not copied into summary lists or SSE responses.
 - The default Phase 7 preview runs the pinned agentgateway binary on the host
   and publishes the remaining management services on loopback. It is a
   development topology, not an internet-facing deployment.

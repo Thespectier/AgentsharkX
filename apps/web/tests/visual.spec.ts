@@ -42,6 +42,13 @@ test("laptop Protect visual baseline", async ({ page }) => {
   await expect(page).toHaveScreenshot("protect-1280.png");
 });
 
+test("laptop Guardrails visual baseline", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto("/protect/guardrails");
+  await expect(page.getByRole("heading", { name: "LLM guardrails" })).toBeVisible();
+  await expect(page).toHaveScreenshot("guardrails-1280.png");
+});
+
 test("runtime rule composer visual baseline", async ({ page }) => {
   await page.setViewportSize({ width: 800, height: 700 });
   await page.goto("/protect/runtime-rules");

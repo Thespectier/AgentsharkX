@@ -8,8 +8,8 @@ protection workflows, and audit views without entering the agent data plane or
 reimplementing either upstream.
 
 The repository is at the **0.7.0 Phase 7 preview** with the Phase 8 Connect LLM,
-Phase 9 Connect MCP, Phase 10 Connect Traffic, and Phase 11 Protect gateway-policy
-management rounds applied. Connect reads explicit
+Phase 9 Connect MCP, Phase 10 Connect Traffic, Phase 11 Protect gateway-policy,
+and Phase 12 Protect guardrail management rounds applied. Connect reads explicit
 agentgateway providers, models, MCP targets, and routes, and manages verified
 shared-provider, direct-model, MCP listener/federation, and top-level MCP target
 settings plus bind, listener, and HTTP/TCP route configuration through the BFF.
@@ -31,7 +31,14 @@ and **MCP**, with create, update, and delete actions at their exact configuratio
 paths. Unknown policy keys are preserved but remain read-only. Virtual models,
 MCP target policies, route-owned policies outside Connect Traffic, OpenAPI MCP
 targets, top-level services/backends/route groups, and arbitrary raw
-configuration remain in the native agentgateway console. Trust now reads
+configuration remain in the native agentgateway console. The dedicated
+**Protect / Guardrails** workspace manages the complete global LLM prompt and
+response guard arrays plus the complete ordered global MCP remote-processor
+array. Structured editors cover every verified v1.3.1 variant and its common
+fields, while a complete JSON mode exposes advanced headers, backend policies,
+and other source-owned values without truncation. Direct
+model guardrails remain in **Protect / Policies**; MCP target and route/backend
+guardrails remain in their owning scopes. Trust now reads
 AgentGuard sessions,
 tools, skills, and MCP resources, builds Agents only from explicit AgentGuard
 identity fields, and supports tool-label updates plus polled Skill/MCP detection
@@ -46,7 +53,7 @@ window, streams normalized events with SSE resume and client-side dedupe, and
 returns complete source-owned event detail to authenticated administrators.
 The preview adds a reproducible non-root production image with the real Web
 bundle embedded in the Go BFF, source-specific System diagnostics, a full-path
-release E2E, supply-chain artifacts, and six screenshot baselines.
+release E2E, supply-chain artifacts, and eight screenshot baselines.
 
 ## Product boundary
 
@@ -161,7 +168,7 @@ Production
 deployments must keep `AGENTSHARK_COOKIE_SECURE=true` and terminate HTTPS before
 the BFF. Trust, Protect, and Connect write requests additionally require the
 session CSRF token. Agentgateway configuration writes require a short-lived,
-one-use revision token, share one in-process LLM/MCP/Traffic/Policy mutation
+one-use revision token, share one in-process LLM/MCP/Traffic/Policy/Guardrail mutation
 lock, and are verified by a fresh canonical upstream read. Rule check tokens,
 scan jobs, and the Audit event window are bounded in
 memory and are lost when the BFF restarts. AgentGuard mutations are never
