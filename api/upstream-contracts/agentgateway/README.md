@@ -40,6 +40,10 @@ Phase 8 therefore exposes typed provider/direct-model main-form fields without
 accepting raw configuration. Typed write-only credential inputs match the
 pinned literal API-key, AWS static, GCP credential-file, and Azure managed
 identity shapes; no credential value is returned by the public read contract.
+AgentsharkX may use that verified whole-document write to delete one Provider
+and its directly referenced Models together after explicit confirmation. It
+does not edit Virtual Models: any Virtual Model reference to an affected direct
+Model blocks the deletion.
 The Phase 6 log and Analytics adapters send the same exact rolling 60-minute
 `timeRange`. Search always sends `includeAttributes=false`; Analytics requests
 `bucketSeconds=300`. Search rejects unexpected attributes or payload fields so

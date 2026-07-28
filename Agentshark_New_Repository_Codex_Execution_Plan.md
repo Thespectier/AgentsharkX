@@ -721,7 +721,9 @@ AgentGuard 为 GPLv3，agentgateway 为 Apache-2.0。实现上保持独立进程
 - Provider 和直连 Model 可新增、编辑、删除，并显示来源与写入回执。
 - Provider 覆盖原生主表单凭据模式，直连 Model 覆盖原生出站模型映射模式。
 - 读取响应、写入回执和服务日志不包含现有或新凭据值；保存后页面不重新显示凭据。
-- 引用中的 Provider/Model 不可删除，陈旧或重复 revision token 不会触发上游 POST。
+- Provider 可在明确确认后与其直接引用的 Model 同次删除；若受影响 Model 被 Virtual
+  Model 引用则拒绝删除。被 Virtual Model 引用的直连 Model 不可单独删除，陈旧或重复
+  revision token 不会触发上游 POST。
 - 一次成功操作只 POST 一次，写后回读验证目标状态且保留非 LLM、高级字段和现有凭据。
 - Virtual Model、Guardrail、负载/故障转移策略与原始 YAML 继续由 agentgateway 原生控制台编辑。
 

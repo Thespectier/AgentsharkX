@@ -195,8 +195,17 @@ test("Connect manages verified LLM providers and direct models, then reruns setu
   );
 
   await page.goto("/connect/llm");
-  await page.getByRole("button", { name: "Add provider" }).click();
+  await page.getByLabel("Filter providers").fill("openai-shared");
+  let row = page.getByRole("row", { name: /openai-shared/ });
+  await row.getByRole("button", { name: "Delete provider" }).click();
   let dialog = page.getByRole("dialog");
+  await expect(dialog.getByText(/used by a virtual model: fast/)).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "Delete", exact: true })).toBeDisabled();
+  await dialog.getByRole("button", { name: "Cancel" }).click();
+  await page.getByLabel("Filter providers").fill("");
+
+  await page.getByRole("button", { name: "Add provider" }).click();
+  dialog = page.getByRole("dialog");
   await dialog.getByLabel("Provider name").fill("anthropic-backup");
   await dialog.getByLabel("Provider type").selectOption("anthropic");
   await dialog.getByLabel("Credential mode").selectOption("literal");
@@ -215,21 +224,20 @@ test("Connect manages verified LLM providers and direct models, then reruns setu
   await expect(page.getByText("Model created in agentgateway.")).toBeVisible();
 
   await page.getByLabel("Filter models").fill("backup-chat");
-  let row = page.getByRole("row", { name: /backup-chat/ });
+  row = page.getByRole("row", { name: /backup-chat/ });
   await expect(row).toContainText("anthropic-backup");
-  await row.getByRole("button", { name: "Delete model" }).click();
-  dialog = page.getByRole("dialog");
-  await dialog.getByRole("checkbox").check();
-  await dialog.getByRole("button", { name: "Delete", exact: true }).click();
-  await expect(page.getByText("Model deleted from agentgateway.")).toBeVisible();
 
   await page.getByLabel("Filter providers").fill("anthropic-backup");
   row = page.getByRole("row", { name: /anthropic-backup/ });
   await row.getByRole("button", { name: "Delete provider" }).click();
   dialog = page.getByRole("dialog");
+  await expect(dialog.getByText(/also deletes the direct models listed below/)).toBeVisible();
+  await expect(dialog.getByText("backup-chat", { exact: true })).toBeVisible();
   await dialog.getByRole("checkbox").check();
   await dialog.getByRole("button", { name: "Delete", exact: true }).click();
   await expect(page.getByText("Provider deleted from agentgateway.")).toBeVisible();
+  await page.getByLabel("Filter models").fill("backup-chat");
+  await expect(page.getByRole("row", { name: /backup-chat/ })).toHaveCount(0);
 
   await page.goto("/connect/setup");
   await expect(page.getByText("Connection verified")).toBeVisible();

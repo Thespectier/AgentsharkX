@@ -149,10 +149,21 @@ export function LlmManager() {
       const revisionToken = query.data?.data.revisionToken;
       if (!revisionToken)
         throw new Error(t("The configuration revision is unavailable. Refresh and retry."));
-      const body = { revisionToken, confirmed: true };
       return target.kind === "provider"
-        ? mutateOperation("deleteLlmProvider", body, { path: { resourceId: target.item.id } })
-        : mutateOperation("deleteLlmModel", body, { path: { resourceId: target.item.id } });
+        ? mutateOperation(
+            "deleteLlmProvider",
+            {
+              revisionToken,
+              confirmed: true,
+              deleteReferencedModels: target.item.modelCount > 0,
+            },
+            { path: { resourceId: target.item.id } },
+          )
+        : mutateOperation(
+            "deleteLlmModel",
+            { revisionToken, confirmed: true },
+            { path: { resourceId: target.item.id } },
+          );
     },
     onSuccess: async (response) => {
       setReceipt(response.data);
@@ -197,6 +208,14 @@ export function LlmManager() {
   const virtualReferences = new Set(
     configuration.virtualModels.flatMap((item) => item.targets ?? []),
   );
+  const providerModels =
+    deleteTarget?.kind === "provider"
+      ? configuration.models.filter(
+          (item) =>
+            item.providerMode === "reference" && item.providerReference === deleteTarget.item.name,
+        )
+      : [];
+  const blockingProviderModels = providerModels.filter((item) => virtualReferences.has(item.name));
 
   return (
     <div className="stack llm-manager">
@@ -232,12 +251,14 @@ export function LlmManager() {
         virtualReferences={virtualReferences}
       />
       <DeleteDialog
+        blockingModels={blockingProviderModels}
         confirmed={deleteConfirmed}
         error={remove.isError ? remove.error : undefined}
         onClose={() => !remove.isPending && setDeleteTarget(undefined)}
         onConfirm={() => deleteTarget && remove.mutate(deleteTarget)}
         onToggle={setDeleteConfirmed}
         pending={remove.isPending}
+        referencedModels={providerModels}
         target={deleteTarget}
       />
     </div>
@@ -278,10 +299,8 @@ function ProviderSettings({
       header: "Actions",
       render: (item) => (
         <RowActions
-          deleteDisabled={item.modelCount > 0 || !item.editable}
-          deleteTitle={
-            item.modelCount > 0 ? "Provider is referenced by a model" : "Delete provider"
-          }
+          deleteDisabled={!item.editable}
+          deleteTitle="Delete provider"
           editDisabled={!item.editable}
           onDelete={() => onDelete(item)}
           onEdit={() => onEdit(item)}
@@ -1411,6 +1430,8 @@ function SelectField({
 
 function DeleteDialog({
   target,
+  referencedModels,
+  blockingModels,
   confirmed,
   pending,
   error,
@@ -1419,6 +1440,8 @@ function DeleteDialog({
   onConfirm,
 }: {
   target?: DeleteTarget;
+  referencedModels: LlmModelSetting[];
+  blockingModels: LlmModelSetting[];
   confirmed: boolean;
   pending: boolean;
   error?: unknown;
@@ -1428,6 +1451,8 @@ function DeleteDialog({
 }) {
   const { t } = useI18n();
   const name = target?.item.name ?? "resource";
+  const blocked = blockingModels.length > 0;
+  const cascadesModels = target?.kind === "provider" && referencedModels.length > 0;
   return (
     <Dialog
       description="This removes the item from agentgateway configuration after a fresh revision check."
@@ -1439,20 +1464,50 @@ function DeleteDialog({
         <p className="llm-delete-copy">
           {t("References are checked again by the server before agentgateway is updated.")}
         </p>
+        {cascadesModels ? (
+          <div className="llm-delete-impact">
+            <strong>
+              {t(
+                "Deleting this provider also deletes the direct models listed below in the same update.",
+              )}
+            </strong>
+            <ul>
+              {referencedModels.map((item) => (
+                <li key={item.id}>
+                  <code>{item.name}</code>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+        {blocked ? (
+          <div className="llm-delete-blocker" role="alert">
+            {t(
+              "Deletion is blocked because these models are used by a virtual model: {names}. Remove those virtual-model references in agentgateway Raw Config first.",
+              { names: blockingModels.map((item) => item.name).join(", ") },
+            )}
+          </div>
+        ) : null}
         <label className="confirm-field">
           <input
             checked={confirmed}
+            disabled={blocked}
             onChange={(event) => onToggle(event.target.checked)}
             type="checkbox"
           />
-          {t("I confirm that {name} should be deleted.", { name })}
+          {cascadesModels
+            ? t(
+                "I confirm that {name} and the listed directly referenced models should be deleted.",
+                { name },
+              )
+            : t("I confirm that {name} should be deleted.", { name })}
         </label>
         {error ? <MutationError error={error} /> : null}
         <footer>
           <Button disabled={pending} onClick={onClose} variant="ghost">
             Cancel
           </Button>
-          <Button disabled={!confirmed || pending} onClick={onConfirm} variant="danger">
+          <Button disabled={!confirmed || blocked || pending} onClick={onConfirm} variant="danger">
             <Trash2 size={14} /> Delete
           </Button>
         </footer>

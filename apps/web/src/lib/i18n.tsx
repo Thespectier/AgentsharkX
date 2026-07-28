@@ -354,7 +354,13 @@ const zhCN: Record<string, string> = {
   "Delete {name}": "删除 {name}",
   "References are checked again by the server before agentgateway is updated.":
     "更新 agentgateway 前，服务器会再次检查引用关系。",
+  "Deleting this provider also deletes the direct models listed below in the same update.":
+    "删除此提供商时，将在同一次更新中一并删除下列直接引用它的模型。",
+  "Deletion is blocked because these models are used by a virtual model: {names}. Remove those virtual-model references in agentgateway Raw Config first.":
+    "无法删除，因为以下模型正被虚拟模型使用：{names}。请先在 agentgateway 原始配置中移除这些虚拟模型引用。",
   "I confirm that {name} should be deleted.": "我确认应删除 {name}。",
+  "I confirm that {name} and the listed directly referenced models should be deleted.":
+    "我确认应删除 {name} 及上面列出的直接引用模型。",
   request: "请求",
   "LLM provider created": "LLM 提供商已创建",
   "LLM provider updated": "LLM 提供商已更新",

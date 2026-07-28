@@ -320,7 +320,7 @@ paths:
     delete:
       tags: [Connect]
       operationId: deleteLlmProvider
-      summary: Delete one unreferenced agentgateway LLM provider configuration
+      summary: Delete one agentgateway LLM provider and optionally its directly referenced models
       x-implementation-phase: 8
       x-implementation-status: implemented
       parameters:
@@ -331,7 +331,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/LlmDeleteRequest'
+              $ref: '#/components/schemas/LlmProviderDeleteRequest'
       responses:
         '200':
           description: Provider configuration deleted
@@ -2025,6 +2025,17 @@ components:
         revisionToken:
           { type: string, minLength: 1, maxLength: 128, writeOnly: true }
         confirmed: { type: boolean }
+    LlmProviderDeleteRequest:
+      type: object
+      additionalProperties: false
+      required: [revisionToken, confirmed, deleteReferencedModels]
+      properties:
+        revisionToken:
+          { type: string, minLength: 1, maxLength: 128, writeOnly: true }
+        confirmed: { type: boolean }
+        deleteReferencedModels:
+          type: boolean
+          description: Delete direct models that reference this provider in the same configuration write; the operation remains blocked if a referenced model is targeted by a virtual model.
     LlmMutationReceipt:
       type: object
       additionalProperties: false

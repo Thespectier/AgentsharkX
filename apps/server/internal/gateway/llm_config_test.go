@@ -32,6 +32,25 @@ const editableConfig = `{
   "mcp":{"targets":[{"name":"tools","mcp":{"host":"localhost","port":3000}}]}
 }`
 
+const providerCascadeConfig = `{
+  "config":{"database":{"url":"sqlite://request-logs.db"}},
+  "llm":{
+    "providers":[{
+      "name":"shared-custom",
+      "provider":{"custom":{"formats":[{"type":"completions"}]}},
+      "params":{"apiKey":"never-return-existing-key"}
+    }],
+    "models":[
+      {"name":"fast","provider":{"reference":"shared-custom"},"params":{"model":"upstream-fast"}},
+      {"name":"quality","provider":{"reference":"shared-custom"},"params":{"model":"upstream-quality"}},
+      {"name":"openai/*","provider":"openai","params":{"apiKey":"never-return-model-key"}}
+    ],
+    "virtualModels":[],
+    "policies":{"cors":{"allowOrigins":["https://console.example"]}}
+  },
+  "mcp":{"targets":[{"name":"tools","mcp":{"host":"localhost","port":3000}}]}
+}`
+
 type mutableConfigServer struct {
 	mu         sync.Mutex
 	config     json.RawMessage
@@ -210,10 +229,70 @@ func TestApplyLLMChangeRejectsStaleRevisionAndReferencesWithoutWriting(t *testin
 	if !errors.Is(err, ErrLLMResourceReferenced) {
 		t.Fatalf("reference error = %v", err)
 	}
+	_, err = client.ApplyLLMChange(t.Context(), revision, model.LLMChange{
+		Operation: "delete-llm-provider", ResourceID: configuration.Providers[0].ID,
+		DeleteReferencedModels: true,
+	})
+	if !errors.Is(err, ErrLLMResourceReferenced) {
+		t.Fatalf("virtual model reference error = %v", err)
+	}
 	state.mu.Lock()
 	defer state.mu.Unlock()
 	if state.postCount != 0 {
 		t.Fatalf("POST count = %d", state.postCount)
+	}
+}
+
+func TestApplyLLMChangeDeletesProviderAndDirectModelsInOneWrite(t *testing.T) {
+	t.Parallel()
+	state := &mutableConfigServer{config: json.RawMessage(providerCascadeConfig)}
+	upstream := httptest.NewServer(http.HandlerFunc(state.handler))
+	defer upstream.Close()
+	client, err := New(upstream.URL, upstream.Client(), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	configuration, revision, err := client.LLMConfiguration(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	target, err := client.ApplyLLMChange(t.Context(), revision, model.LLMChange{
+		Operation:              "delete-llm-provider",
+		ResourceID:             configuration.Providers[0].ID,
+		DeleteReferencedModels: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if target != "shared-custom" {
+		t.Fatalf("target = %q", target)
+	}
+
+	updated, _, err := client.LLMConfiguration(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(updated.Providers) != 0 || len(updated.Models) != 1 || updated.Models[0].Name != "openai/*" {
+		t.Fatalf("unexpected updated configuration: %#v", updated)
+	}
+	state.mu.Lock()
+	posted := append([]byte(nil), state.lastPost...)
+	postCount := state.postCount
+	state.mu.Unlock()
+	if postCount != 1 {
+		t.Fatalf("POST count = %d", postCount)
+	}
+	for _, preserved := range []string{
+		"sqlite://request-logs.db", "never-return-model-key", "console.example", `"mcp"`,
+	} {
+		if !strings.Contains(string(posted), preserved) {
+			t.Fatalf("write did not preserve %q: %s", preserved, posted)
+		}
+	}
+	for _, deleted := range []string{"shared-custom", "upstream-fast", "upstream-quality"} {
+		if strings.Contains(string(posted), deleted) {
+			t.Fatalf("write retained deleted value %q: %s", deleted, posted)
+		}
 	}
 }
 

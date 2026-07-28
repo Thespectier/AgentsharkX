@@ -225,8 +225,10 @@ LLM 编辑器不会读取或显示现有 API Key。编辑已有条目时默认�
 AWS 静态凭据，Vertex 支持 GCP 凭据文件，Azure 支持托管身份。一次性明文和结构化
 凭据仅随当前写请求发送，保存后不会由读取接口返回或重新显示。直连 Model 可将出站
 模型名设为沿用入站名称、显式名称、去除 Provider 前缀或自定义 CEL 表达式。Provider
-类型和 Model 的 Provider 绑定创建后暂不可修改；被 Model 引用的 Provider、被
-Virtual Model 引用的直连 Model 不能删除。
+类型和 Model 的 Provider 绑定创建后暂不可修改。删除 Provider 时，确认框会列出并在
+同一次配置写入中删除所有直接引用它的 Model；如果其中任何 Model 正被 Virtual Model
+引用，则必须先在 agentgateway 原始配置中移除该高级路由引用。被 Virtual Model 引用
+的直连 Model 也不能单独删除。
 
 agentgateway 管理控制台默认地址为 <http://127.0.0.1:15000/ui>。
 

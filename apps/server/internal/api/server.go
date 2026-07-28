@@ -255,7 +255,7 @@ func (server *server) deleteLLMProvider(writer http.ResponseWriter, request *htt
 	if !server.connectAvailable(writer, request) {
 		return
 	}
-	var input model.LLMDeleteRequest
+	var input model.LLMProviderDeleteRequest
 	if !server.decodeMutation(writer, request, &input) {
 		return
 	}

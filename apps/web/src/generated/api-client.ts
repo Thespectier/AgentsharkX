@@ -276,6 +276,12 @@ export type LlmModelMutationRequest = { revisionToken: string; model: LlmModelDr
 
 export type LlmDeleteRequest = { revisionToken: string; confirmed: boolean };
 
+export type LlmProviderDeleteRequest = {
+  revisionToken: string;
+  confirmed: boolean;
+  deleteReferencedModels: boolean;
+};
+
 export type LlmMutationReceipt = {
   operation:
     | "create-llm-provider"
@@ -828,7 +834,7 @@ export interface OperationBodies {
   createLlmModel: LlmModelMutationRequest;
   createLlmProvider: LlmProviderMutationRequest;
   deleteLlmModel: LlmDeleteRequest;
-  deleteLlmProvider: LlmDeleteRequest;
+  deleteLlmProvider: LlmProviderDeleteRequest;
   deleteRuntimeRule: ConfirmedActionRequest;
   denyTicket: ConfirmedActionRequest;
   detectMcps: MCPDetectionRequest;

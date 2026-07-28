@@ -342,7 +342,7 @@ export const connectData: {
       name: "resilient",
       kind: "virtual",
       routing: "failover",
-      targets: ["openai/gpt-5.4-nano", "anthropic/claude-haiku-4-5"],
+      targets: ["fast", "openai/*"],
     },
   ],
   mcpServers: [

@@ -150,6 +150,10 @@ once, then refetches and verifies the requested result. A native-console or YAML
 write can still race between the final read and whole-document POST; the BFF
 rejects detectable stale revisions but cannot make that upstream gap atomic.
 Provider type and model provider binding are immutable during Phase 8 edits.
+An explicitly confirmed Provider deletion may remove its directly referenced
+Models in the same whole-document write. If a Virtual Model targets any of
+those Models, the BFF rejects the operation instead of mutating upstream-owned
+advanced routing.
 
 Agent rows are an AgentsharkX view over explicit AgentGuard `agent_id` and
 `owner_agent_id` fields. No gateway log, timing window, name similarity, or

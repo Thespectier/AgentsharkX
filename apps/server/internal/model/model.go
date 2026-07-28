@@ -296,11 +296,18 @@ type LLMDeleteRequest struct {
 	Confirmed     bool   `json:"confirmed"`
 }
 
+type LLMProviderDeleteRequest struct {
+	RevisionToken          string `json:"revisionToken"`
+	Confirmed              bool   `json:"confirmed"`
+	DeleteReferencedModels *bool  `json:"deleteReferencedModels"`
+}
+
 type LLMChange struct {
-	Operation  string
-	ResourceID string
-	Provider   LLMProviderDraft
-	Model      LLMModelDraft
+	Operation              string
+	ResourceID             string
+	Provider               LLMProviderDraft
+	Model                  LLMModelDraft
+	DeleteReferencedModels bool
 }
 
 type LLMMutationReceipt struct {

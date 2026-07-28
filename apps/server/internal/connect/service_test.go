@@ -148,4 +148,23 @@ func TestLLMConfigurationIssuesOneTimeRevisionAndAppliesTypedChange(t *testing.T
 	if _, err := service.CreateProvider(t.Context(), request); !errors.Is(err, ErrRevisionStale) {
 		t.Fatalf("one-time revision error = %v", err)
 	}
+	configuration, err = service.LLMConfiguration(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.DeleteProvider(t.Context(), "provider-1", model.LLMProviderDeleteRequest{
+		RevisionToken: configuration.Data.RevisionToken,
+		Confirmed:     true,
+	}); !errors.Is(err, ErrInvalidRequest) {
+		t.Fatalf("missing cascade choice error = %v", err)
+	}
+	deleteReferencedModels := true
+	receipt, err = service.DeleteProvider(t.Context(), "provider-1", model.LLMProviderDeleteRequest{
+		RevisionToken:          configuration.Data.RevisionToken,
+		Confirmed:              true,
+		DeleteReferencedModels: &deleteReferencedModels,
+	})
+	if err != nil || receipt.Data.Operation != "delete-llm-provider" || !applied.DeleteReferencedModels {
+		t.Fatalf("unexpected cascade deletion: receipt=%#v change=%#v err=%v", receipt, applied, err)
+	}
 }

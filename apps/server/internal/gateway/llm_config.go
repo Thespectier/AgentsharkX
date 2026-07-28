@@ -522,7 +522,7 @@ func (document *llmConfigDocument) apply(change model.LLMChange) error {
 	case changeUpdateProvider:
 		return document.updateProvider(change.ResourceID, change.Provider)
 	case changeDeleteProvider:
-		return document.deleteProvider(change.ResourceID)
+		return document.deleteProvider(change.ResourceID, change.DeleteReferencedModels)
 	case changeCreateModel:
 		return document.createModel(change.Model)
 	case changeUpdateModel:
@@ -582,7 +582,7 @@ func (document *llmConfigDocument) updateProvider(id string, draft model.LLMProv
 	return nil
 }
 
-func (document *llmConfigDocument) deleteProvider(id string) error {
+func (document *llmConfigDocument) deleteProvider(id string, deleteReferencedModels bool) error {
 	index, existing, err := document.providerByID(id)
 	if err != nil {
 		return err
@@ -591,8 +591,36 @@ func (document *llmConfigDocument) deleteProvider(id string) error {
 	if json.Unmarshal(existing, &current) != nil {
 		return ErrLLMInvalidRequest
 	}
-	if document.providerReferenced(current.Name) {
+	referencedModels := make(map[int]string)
+	for modelIndex, raw := range document.models {
+		var item editableModel
+		if json.Unmarshal(raw, &item) != nil || item.Name == "" {
+			return ErrLLMInvalidRequest
+		}
+		_, reference, providerErr := providerKind(item.Provider, fmt.Sprintf("/llm/models/%d/provider", modelIndex))
+		if providerErr != nil {
+			return providerErr
+		}
+		if reference == current.Name {
+			referencedModels[modelIndex] = item.Name
+		}
+	}
+	if len(referencedModels) > 0 && !deleteReferencedModels {
 		return ErrLLMResourceReferenced
+	}
+	for _, name := range referencedModels {
+		if document.modelReferenced(name) {
+			return ErrLLMResourceReferenced
+		}
+	}
+	if len(referencedModels) > 0 {
+		models := make([]json.RawMessage, 0, len(document.models)-len(referencedModels))
+		for modelIndex, raw := range document.models {
+			if _, deleted := referencedModels[modelIndex]; !deleted {
+				models = append(models, raw)
+			}
+		}
+		document.models = models
 	}
 	document.providers = append(document.providers[:index], document.providers[index+1:]...)
 	return nil
@@ -1295,7 +1323,17 @@ func changeVerified(configuration model.LLMConfiguration, change model.LLMChange
 		}
 		return false
 	case changeDeleteProvider:
-		return !containsProvider(configuration.Providers, targetName)
+		if containsProvider(configuration.Providers, targetName) {
+			return false
+		}
+		if change.DeleteReferencedModels {
+			for _, item := range configuration.Models {
+				if item.ProviderMode == "reference" && item.ProviderReference == targetName {
+					return false
+				}
+			}
+		}
+		return true
 	case changeCreateModel, changeUpdateModel:
 		for _, item := range configuration.Models {
 			if item.Name == change.Model.Name {

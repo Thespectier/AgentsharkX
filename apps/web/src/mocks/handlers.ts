@@ -21,6 +21,7 @@ import type {
   LlmModelMutationRequest,
   LlmModelSetting,
   LlmProviderDraft,
+  LlmProviderDeleteRequest,
   LlmProviderMutationRequest,
   LlmProviderSetting,
   MCPDetectionRequest,
@@ -671,7 +672,7 @@ export const handlers = [
     );
   }),
   http.delete("/api/v1/connect/llm/providers/:resourceId", async ({ request, params }) => {
-    const body = (await request.json()) as LlmDeleteRequest;
+    const body = (await request.json()) as LlmProviderDeleteRequest;
     const conflict = acceptLlmRevision(body.revisionToken);
     if (conflict) return conflict;
     if (!body.confirmed) return llmFailure(400, "INVALID_REQUEST", "Deletion must be confirmed.");
@@ -680,9 +681,26 @@ export const handlers = [
     );
     if (index < 0) return llmFailure(404, "RESOURCE_NOT_FOUND", "Provider was not found.");
     const provider = mockLlmConfiguration.providers[index];
-    if (provider.modelCount > 0) {
+    const referencedModels = mockLlmConfiguration.models.filter(
+      (model) => model.providerMode === "reference" && model.providerReference === provider.name,
+    );
+    if (referencedModels.length > 0 && !body.deleteReferencedModels) {
       return llmFailure(409, "RESOURCE_REFERENCED", "Provider is referenced by a model.");
     }
+    const virtualReferences = new Set(
+      mockLlmConfiguration.virtualModels.flatMap((model) => model.targets ?? []),
+    );
+    if (referencedModels.some((model) => virtualReferences.has(model.name))) {
+      return llmFailure(
+        409,
+        "RESOURCE_REFERENCED",
+        "A referenced model is used by a virtual model.",
+      );
+    }
+    const referencedIDs = new Set(referencedModels.map((model) => model.id));
+    mockLlmConfiguration.models = mockLlmConfiguration.models.filter(
+      (model) => !referencedIDs.has(model.id),
+    );
     mockLlmConfiguration.providers.splice(index, 1);
     return llmReceipt("delete-llm-provider", provider.name, "Provider deleted from agentgateway.");
   }),

@@ -93,12 +93,13 @@ func (service *Service) UpdateProvider(ctx context.Context, id string, request m
 	}, request.Provider.Name, "LLM provider updated")
 }
 
-func (service *Service) DeleteProvider(ctx context.Context, id string, request model.LLMDeleteRequest) (model.LLMMutationEnvelope, error) {
-	if !request.Confirmed {
+func (service *Service) DeleteProvider(ctx context.Context, id string, request model.LLMProviderDeleteRequest) (model.LLMMutationEnvelope, error) {
+	if !request.Confirmed || request.DeleteReferencedModels == nil {
 		return model.LLMMutationEnvelope{}, ErrInvalidRequest
 	}
 	return service.applyLLMChange(ctx, request.RevisionToken, model.LLMChange{
 		Operation: "delete-llm-provider", ResourceID: id,
+		DeleteReferencedModels: *request.DeleteReferencedModels,
 	}, id, "LLM provider deleted")
 }
 

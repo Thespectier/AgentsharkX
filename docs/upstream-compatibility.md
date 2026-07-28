@@ -135,7 +135,10 @@ and custom CEL outgoing-model mappings. Each write uses a bounded five-minute,
 one-use revision token, an in-process mutation lock, a fresh revision check, one
 upstream POST, and a refetch that verifies the requested result. Credential
 values are not returned or logged. Provider type and Model provider binding are
-immutable on update; referenced Provider/Model deletion is rejected.
+immutable on update. A confirmed Provider deletion may remove its directly
+referenced Models in the same whole-document write; deletion is rejected when
+any affected Model is referenced by a Virtual Model. Direct Model deletion is
+also rejected while a Virtual Model references it.
 
 Because the upstream has no conditional update, a native-console or YAML write
 can still occur between the BFF's final read and whole-document POST. The BFF

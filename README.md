@@ -14,7 +14,10 @@ main-form settings through the BFF. Existing credentials are never returned to
 the browser. New credentials support the native ambient, environment-variable,
 file, write-only literal, AWS static, GCP credential-file, and Azure managed
 identity modes. Direct models also support incoming, explicit, stripped-prefix,
-and custom CEL outgoing-model mappings. Virtual models and advanced routing,
+and custom CEL outgoing-model mappings. Deleting a shared provider can remove
+its directly referenced models in the same confirmed configuration write; the
+operation remains blocked when a Virtual Model targets one of those models.
+Virtual models and advanced routing,
 policy, TLS, and raw configuration remain in the native agentgateway console. Trust now reads AgentGuard sessions,
 tools, skills, and MCP resources, builds Agents only from explicit AgentGuard
 identity fields, and supports tool-label updates plus polled Skill/MCP detection
