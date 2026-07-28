@@ -109,6 +109,12 @@ export function AppShell() {
     staleTime: 15_000,
     retry: false,
   });
+  const approvals = useQuery({
+    queryKey: ["protect-approvals", scenario],
+    queryFn: ({ signal }) => requestOperation("listApprovals", { signal, query: { limit: 100 } }),
+    staleTime: 15_000,
+    retry: false,
+  });
   const live = useLiveEvents(overview.isSuccess && scenario !== "empty");
 
   useEffect(() => {
@@ -120,8 +126,7 @@ export function AppShell() {
     if (event) void synchronizeLiveEvent(queryClient, event);
   }, [live.events[0]?.id, queryClient]);
 
-  const pending =
-    overview.data?.data.metrics.find((metric) => metric.id === "approvals")?.value ?? 0;
+  const pending = approvals.data?.data.total ?? 0;
   const health = overview.data?.data.health ?? [];
 
   return (
@@ -362,7 +367,7 @@ export function AppShell() {
               {pending ? <span>{pending}</span> : null}
             </Link>
             <Link
-              aria-label={t("Open system settings")}
+              aria-label={`AS · ${t("Open system settings")}`}
               className="avatar"
               search={{ scenario: scenario === "normal" ? undefined : scenario }}
               to="/system"

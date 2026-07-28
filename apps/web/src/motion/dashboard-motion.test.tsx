@@ -10,6 +10,7 @@ const health: SourceHealth[] = [
     label: "agentgateway",
     status: "healthy",
     latencyMs: 12,
+    checkedAt: "2026-07-21T12:42:10Z",
     message: "ready",
   },
   {
@@ -17,6 +18,7 @@ const health: SourceHealth[] = [
     label: "AgentGuard",
     status: "degraded",
     latencyMs: 22,
+    checkedAt: "2026-07-21T12:42:10Z",
     message: "partial",
   },
 ];

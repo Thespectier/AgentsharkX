@@ -75,7 +75,10 @@ if [[ -n "$chrome_path" ]] && "$chrome_path" --version >/dev/null 2>&1; then
       npm exec playwright -- test --config playwright.release.config.ts
   )
 else
-  docker run --rm --add-host host.docker.internal:host-gateway -v "$root_dir:/work" -w /work/apps/web \
+  docker run --rm --add-host host.docker.internal:host-gateway \
+    --user "$(id -u):$(id -g)" \
+    -e HOME=/tmp \
+    -v "$root_dir:/work" -w /work/apps/web \
     -e AGENTSHARK_RELEASE_E2E=1 \
     -e AGENTSHARK_RELEASE_BASE_URL=http://host.docker.internal:5173 \
     -e AGENTSHARK_RELEASE_FIXTURE_URL=http://host.docker.internal:19001 \

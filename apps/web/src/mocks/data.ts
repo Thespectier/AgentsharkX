@@ -12,6 +12,8 @@ import type {
   TrustScanJob,
 } from "../generated/api-client";
 
+const connectFetchedAt = "2026-07-21T12:42:10Z";
+
 export const baseEvents: UnifiedEvent[] = [
   {
     id: "guard-audit-9017",
@@ -201,6 +203,7 @@ export const overviewData: OverviewData = {
       status: "healthy",
       version: "v1.3.1",
       latencyMs: 18,
+      checkedAt: connectFetchedAt,
       message: "Admin and readiness probes responding",
     },
     {
@@ -209,6 +212,7 @@ export const overviewData: OverviewData = {
       status: "healthy",
       version: "v2.1 · API 0.3.0",
       latencyMs: 24,
+      checkedAt: connectFetchedAt,
       message: "Runtime control plane responding",
     },
   ],
@@ -269,8 +273,6 @@ export const overviewData: OverviewData = {
     ],
   },
 };
-
-const connectFetchedAt = "2026-07-21T12:42:10Z";
 
 const resource = (id: string) => ({
   id,

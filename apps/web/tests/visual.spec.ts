@@ -1,10 +1,18 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
+
+async function waitForStableShell(page: Page) {
+  await expect(page.getByRole("link", { name: "3 pending approvals" })).toBeVisible();
+}
 
 test("desktop home visual baseline", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.emulateMedia({ reducedMotion: "reduce" });
   await page.clock.setFixedTime(new Date("2026-07-21T06:00:00Z"));
   await page.goto("/");
   await expect(page.getByRole("heading", { name: /agents are in control/i })).toBeVisible();
+  await waitForStableShell(page);
+  await expect(page.locator(".live-flow")).toHaveAttribute("data-motion", "reduced");
+  await expect(page.getByText("7 · recent events", { exact: true })).toBeVisible();
   await expect(page).toHaveScreenshot("home-1440.png");
 });
 
@@ -12,6 +20,7 @@ test("laptop audit visual baseline", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.goto("/audit/analytics");
   await expect(page.getByRole("heading", { name: "See every verified signal" })).toBeVisible();
+  await waitForStableShell(page);
   await expect(page).toHaveScreenshot("audit-1280.png");
 });
 
@@ -21,6 +30,7 @@ test("laptop Connect visual baseline", async ({ page }) => {
   await expect(
     page.getByRole("heading", { name: "Connect agents to every destination" }),
   ).toBeVisible();
+  await waitForStableShell(page);
   await expect(page).toHaveScreenshot("connect-1280.png");
 });
 
@@ -30,6 +40,7 @@ test("laptop Trust visual baseline", async ({ page }) => {
   await expect(
     page.getByRole("heading", { name: "Know what every agent can reach" }),
   ).toBeVisible();
+  await waitForStableShell(page);
   await expect(page).toHaveScreenshot("trust-1280.png");
 });
 
@@ -39,6 +50,7 @@ test("laptop Protect visual baseline", async ({ page }) => {
   await expect(
     page.getByRole("heading", { name: "Enforce every critical boundary" }),
   ).toBeVisible();
+  await waitForStableShell(page);
   await expect(page).toHaveScreenshot("protect-1280.png");
 });
 
@@ -46,12 +58,14 @@ test("laptop Guardrails visual baseline", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.goto("/protect/guardrails");
   await expect(page.getByRole("heading", { name: "LLM guardrails" })).toBeVisible();
+  await waitForStableShell(page);
   await expect(page).toHaveScreenshot("guardrails-1280.png");
 });
 
 test("runtime rule composer visual baseline", async ({ page }) => {
   await page.setViewportSize({ width: 800, height: 700 });
   await page.goto("/protect/runtime-rules");
+  await waitForStableShell(page);
   await page.getByRole("button", { name: "New rule" }).click();
   await expect(page.getByRole("dialog", { name: "Publish runtime rule" })).toBeVisible();
   await expect(page).toHaveScreenshot("runtime-rule-dialog-800.png");
@@ -59,10 +73,12 @@ test("runtime rule composer visual baseline", async ({ page }) => {
 
 test("degraded System diagnostic visual baseline", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 1200 });
+  await page.clock.setFixedTime(new Date("2026-07-21T06:00:00Z"));
   await page.goto("/system?scenario=partial");
   await expect(
     page.getByRole("heading", { name: "Sources, versions & capabilities" }),
   ).toBeVisible();
   await expect(page.getByText(/AgentGuard management probes are unavailable/)).toBeVisible();
+  await waitForStableShell(page);
   await expect(page).toHaveScreenshot("system-degraded-1440.png", { fullPage: true });
 });

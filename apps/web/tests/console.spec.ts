@@ -175,7 +175,7 @@ test("interactive controls have observable behavior", async ({ page }) => {
   await expect(page.locator("tbody tr")).toHaveCount(1);
   await expect(page.locator("tbody tr")).toContainText("shell invocation");
 
-  await page.getByRole("link", { name: "Open system settings" }).click();
+  await page.getByRole("link", { name: /Open system settings/ }).click();
   await expect(page).toHaveURL(/\/system$/);
   await expect(
     page.getByRole("heading", { name: "Sources, versions & capabilities" }),
@@ -689,24 +689,28 @@ test("empty, loading, partial, and total failure states are explicit", async ({ 
 
 test("an audit detail drawer is recoverable from its URL", async ({ page }) => {
   await page.goto("/audit/security-events");
-  const row = page.locator("tbody tr").first();
+  const title = "Runtime rule blocked a shell invocation outside the workspace boundary.";
+  const row = page.locator("tbody tr").filter({ hasText: title });
+  await expect(row).toHaveCount(1);
   await row.click();
   await expect(page).toHaveURL(/\/audit\/security-events\?event=/);
   const dialog = page.getByRole("dialog");
   await expect(dialog).toBeVisible();
-  const title = await dialog.getByRole("heading", { level: 2 }).textContent();
+  await expect(dialog.getByRole("heading", { level: 2, name: title })).toBeVisible();
 
   await page.keyboard.press("Escape");
   await expect(dialog).toBeHidden();
   const selectedRow = page
     .locator("tbody tr")
-    .filter({ has: page.getByText(title ?? "", { exact: true }) })
+    .filter({ has: page.getByText(title, { exact: true }) })
     .first();
   await expect(selectedRow).toBeFocused();
   await selectedRow.click();
 
   await page.reload();
-  await expect(page.getByRole("dialog").getByRole("heading", { level: 2 })).toHaveText(title ?? "");
+  await expect(
+    page.getByRole("dialog").getByRole("heading", { level: 2, name: title }),
+  ).toBeVisible();
 });
 
 test("audit traffic and security tables show the full Beijing calendar date", async ({ page }) => {

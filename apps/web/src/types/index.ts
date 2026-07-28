@@ -9,6 +9,7 @@ export interface SourceHealth {
   status: HealthStatus;
   version?: string;
   latencyMs: number | null;
+  checkedAt: string;
   message: string;
 }
 
