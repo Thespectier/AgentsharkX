@@ -321,6 +321,82 @@ test("Connect manages verified MCP settings and server transports", async ({ pag
   await expect(page.getByRole("row", { name: /search-tools/ })).toHaveCount(0);
 });
 
+test("Connect manages complete agentgateway listeners and HTTP routes", async ({ page }) => {
+  await page.goto("/connect/traffic");
+  await expect(page.getByRole("heading", { name: "Traffic listeners" })).toBeVisible();
+  await expect(page.getByRole("row", { name: /public-http/ })).toContainText("HTTPS");
+
+  await page.getByRole("button", { name: "Add bind" }).click();
+  let dialog = page.getByRole("dialog", { name: "Add bind" });
+  await dialog.getByLabel("Port").fill("7070");
+  await dialog.getByRole("button", { name: "Save bind" }).click();
+  await expect(page.getByText("Traffic bind created")).toBeVisible();
+
+  let bind = page.locator(".traffic-bind").filter({ hasText: ":7070" });
+  await bind.getByRole("button", { name: "Add listener" }).click();
+  dialog = page.getByRole("dialog", { name: "Add listener" });
+  await dialog.getByLabel("Name", { exact: true }).fill("admin-http");
+  await dialog.getByLabel("Namespace").fill("default");
+  await dialog.getByLabel("Hostname").fill("admin.example.com");
+  await dialog.getByLabel("Protocol").selectOption("HTTPS");
+  await dialog
+    .getByLabel("TLS configuration")
+    .fill('{"mode":"static","cert":"/certs/admin.crt","key":"/certs/admin.key"}');
+  await dialog
+    .getByLabel("Listener policies")
+    .fill('{"cors":{"allowOrigins":["https://admin.example.com"]}}');
+  await dialog.getByRole("button", { name: "Save listener" }).click();
+  await expect(page.getByText("Traffic listener created")).toBeVisible();
+  await expect(page.getByRole("row", { name: /admin-http/ })).toContainText("HTTPS");
+
+  await page.getByRole("radio", { name: "Routes" }).click();
+  await page.getByRole("button", { name: "Add route" }).click();
+  dialog = page.getByRole("dialog", { name: "Add route" });
+  await dialog.getByLabel("Listener").selectOption({ label: ":7070 · admin-http · HTTP" });
+  await dialog.getByLabel("Name", { exact: true }).fill("admin-api");
+  await dialog.getByLabel("Hostnames").fill("admin.example.com");
+  await dialog
+    .getByLabel("HTTP matches")
+    .fill(
+      '[{"path":{"pathPrefix":"/api"},"method":"POST","headers":[{"name":"x-role","value":{"exact":"admin"}}],"query":[{"name":"trace","value":{"regex":"1|true"}}]}]',
+    );
+  await dialog
+    .getByLabel("Backend configuration")
+    .fill(
+      '[{"host":"admin.internal:8443","weight":3,"policies":{"backendTLS":{"insecure":true}}},{"routeGroup":"shared-admin"}]',
+    );
+  await dialog
+    .getByLabel("Route policies")
+    .fill('{"timeout":{"requestTimeout":"20s"},"localRateLimit":{"maxTokens":100}}');
+  await dialog.getByRole("button", { name: "Save route" }).click();
+  await expect(page.getByText("Traffic route created")).toBeVisible();
+
+  let route = page.getByRole("row", { name: /admin-api/ });
+  await expect(route).toContainText("POST /api");
+  await expect(route).toContainText("2");
+  await route.getByRole("button", { name: "Edit route" }).click();
+  dialog = page.getByRole("dialog", { name: "Edit route" });
+  await expect(dialog.getByLabel("Backend configuration")).toContainText("shared-admin");
+  await expect(dialog.getByLabel("Route policies")).toContainText("localRateLimit");
+  await dialog.getByRole("button", { name: "Cancel" }).click();
+
+  route = page.getByRole("row", { name: /admin-api/ });
+  await route.getByRole("button", { name: "Delete route" }).click();
+  dialog = page.getByRole("dialog", { name: "Delete traffic route" });
+  await dialog.getByLabel("I understand this configuration will be removed").check();
+  await dialog.getByRole("button", { name: "Delete route" }).click();
+  await expect(page.getByText("Traffic route deleted")).toBeVisible();
+
+  await page.getByRole("radio", { name: "Listeners" }).click();
+  bind = page.locator(".traffic-bind").filter({ hasText: ":7070" });
+  await bind.getByRole("button", { name: "Delete bind" }).click();
+  dialog = page.getByRole("dialog", { name: "Delete traffic bind" });
+  await dialog.getByLabel("I understand this configuration will be removed").check();
+  await dialog.getByRole("button", { name: "Delete bind" }).click();
+  await expect(page.getByText("Traffic bind deleted")).toBeVisible();
+  await expect(page.locator(".traffic-bind").filter({ hasText: ":7070" })).toHaveCount(0);
+});
+
 test("Trust uses explicit identities, confirms labels, and recovers a polled scan", async ({
   page,
 }) => {

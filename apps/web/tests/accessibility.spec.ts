@@ -5,6 +5,7 @@ const pages = [
   "/",
   "/connect/overview",
   "/connect/mcp",
+  "/connect/traffic",
   "/trust/agents",
   "/protect/policies",
   "/audit/analytics",

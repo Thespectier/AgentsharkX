@@ -386,6 +386,106 @@ export type McpMutationReceipt = {
 
 export type McpMutationEnvelope = { data: McpMutationReceipt; meta: Meta };
 
+export type TrafficConfigObject = { [key: string]: unknown };
+
+export type TrafficBindSetting = {
+  id: string;
+  upstreamId?: string;
+  source: GatewaySource;
+  fetchedAt: string;
+  rawRef: RawRef;
+  port: number;
+  tunnelProtocol: string;
+  listenerCount: number;
+  routeCount: number;
+  backendCount: number;
+};
+
+export type TrafficListenerSetting = {
+  id: string;
+  upstreamId?: string;
+  source: GatewaySource;
+  fetchedAt: string;
+  rawRef: RawRef;
+  bindId: string;
+  port: number;
+  name: string;
+  hostname: string;
+  protocol: "HTTP" | "HTTPS" | "TLS" | "TCP" | "HBONE";
+  routeCount: number;
+  backendCount: number;
+  configuration: TrafficConfigObject;
+};
+
+export type TrafficRouteSetting = {
+  id: string;
+  upstreamId?: string;
+  source: GatewaySource;
+  fetchedAt: string;
+  rawRef: RawRef;
+  listenerId: string;
+  listener: string;
+  port: number;
+  kind: "http" | "tcp";
+  name: string;
+  hostnames: Array<string>;
+  backendCount: number;
+  configuration: TrafficConfigObject;
+};
+
+export type TrafficConfiguration = {
+  source: GatewaySource;
+  fetchedAt: string;
+  revisionToken: string;
+  binds: Array<TrafficBindSetting>;
+  listeners: Array<TrafficListenerSetting>;
+  routes: Array<TrafficRouteSetting>;
+  links: ConsoleLinks;
+};
+
+export type TrafficConfigurationEnvelope = { data: TrafficConfiguration; meta: Meta };
+
+export type TrafficBindDraft = { port: number };
+
+export type TrafficListenerDraft = {
+  configuration: TrafficConfigObject;
+  deleteIncompatibleRoutes?: boolean;
+};
+
+export type TrafficRouteDraft = { kind: "http" | "tcp"; configuration: TrafficConfigObject };
+
+export type TrafficBindMutationRequest = { revisionToken: string; bind: TrafficBindDraft };
+
+export type TrafficListenerMutationRequest = {
+  revisionToken: string;
+  bindId?: string;
+  listener: TrafficListenerDraft;
+};
+
+export type TrafficRouteMutationRequest = {
+  revisionToken: string;
+  listenerId?: string;
+  route: TrafficRouteDraft;
+};
+
+export type TrafficDeleteRequest = {
+  revisionToken: string;
+  confirmed: boolean;
+  deleteChildren?: boolean;
+};
+
+export type TrafficMutationReceipt = {
+  operation: string;
+  status: "succeeded";
+  source: GatewaySource;
+  target: string;
+  requestId: string;
+  completedAt: string;
+  message: string;
+};
+
+export type TrafficMutationEnvelope = { data: TrafficMutationReceipt; meta: Meta };
+
 export type GatewayMCPServer = {
   id: string;
   upstreamId?: string;
@@ -821,6 +921,9 @@ export const implementedOperations = {
   createLlmModel: { method: "POST", path: "/api/v1/connect/llm/models" },
   createLlmProvider: { method: "POST", path: "/api/v1/connect/llm/providers" },
   createMcpServer: { method: "POST", path: "/api/v1/connect/mcp/servers" },
+  createTrafficBind: { method: "POST", path: "/api/v1/connect/traffic/binds" },
+  createTrafficListener: { method: "POST", path: "/api/v1/connect/traffic/listeners" },
+  createTrafficRoute: { method: "POST", path: "/api/v1/connect/traffic/routes" },
   deleteLlmModel: { method: "DELETE", path: "/api/v1/connect/llm/models/{resourceId}" },
   deleteLlmProvider: { method: "DELETE", path: "/api/v1/connect/llm/providers/{resourceId}" },
   deleteMcpServer: { method: "DELETE", path: "/api/v1/connect/mcp/servers/{resourceId}" },
@@ -828,6 +931,12 @@ export const implementedOperations = {
     method: "DELETE",
     path: "/api/v1/protect/agents/{agentId}/runtime-rules/{ruleId}",
   },
+  deleteTrafficBind: { method: "DELETE", path: "/api/v1/connect/traffic/binds/{resourceId}" },
+  deleteTrafficListener: {
+    method: "DELETE",
+    path: "/api/v1/connect/traffic/listeners/{resourceId}",
+  },
+  deleteTrafficRoute: { method: "DELETE", path: "/api/v1/connect/traffic/routes/{resourceId}" },
   denyTicket: { method: "POST", path: "/api/v1/protect/approvals/{ticketId}/deny" },
   detectMcps: { method: "POST", path: "/api/v1/trust/agents/{agentId}/mcps/detect" },
   detectSkills: { method: "POST", path: "/api/v1/trust/agents/{agentId}/skills/detect" },
@@ -847,6 +956,7 @@ export const implementedOperations = {
   getProvider: { method: "GET", path: "/api/v1/connect/llm/providers/{resourceId}" },
   getSystemDiagnostics: { method: "GET", path: "/api/v1/system/diagnostics" },
   getSystemHealth: { method: "GET", path: "/api/v1/system/health" },
+  getTrafficConfiguration: { method: "GET", path: "/api/v1/connect/traffic/configuration" },
   getTrafficRoute: { method: "GET", path: "/api/v1/connect/traffic/routes/{resourceId}" },
   getTrustScan: { method: "GET", path: "/api/v1/trust/scans/{scanId}" },
   listAgents: { method: "GET", path: "/api/v1/trust/agents" },
@@ -867,6 +977,12 @@ export const implementedOperations = {
   updateMcpServer: { method: "PATCH", path: "/api/v1/connect/mcp/servers/{resourceId}" },
   updateMcpSettings: { method: "PATCH", path: "/api/v1/connect/mcp/configuration/settings" },
   updateToolLabels: { method: "PATCH", path: "/api/v1/trust/agents/{agentId}/tools/{tool}/labels" },
+  updateTrafficBind: { method: "PATCH", path: "/api/v1/connect/traffic/binds/{resourceId}" },
+  updateTrafficListener: {
+    method: "PATCH",
+    path: "/api/v1/connect/traffic/listeners/{resourceId}",
+  },
+  updateTrafficRoute: { method: "PATCH", path: "/api/v1/connect/traffic/routes/{resourceId}" },
   verifyGatewaySetup: { method: "GET", path: "/api/v1/connect/setup" },
 } as const;
 
@@ -877,10 +993,16 @@ export interface OperationResponses {
   createLlmModel: LlmMutationEnvelope;
   createLlmProvider: LlmMutationEnvelope;
   createMcpServer: McpMutationEnvelope;
+  createTrafficBind: TrafficMutationEnvelope;
+  createTrafficListener: TrafficMutationEnvelope;
+  createTrafficRoute: TrafficMutationEnvelope;
   deleteLlmModel: LlmMutationEnvelope;
   deleteLlmProvider: LlmMutationEnvelope;
   deleteMcpServer: McpMutationEnvelope;
   deleteRuntimeRule: ProtectMutationEnvelope;
+  deleteTrafficBind: TrafficMutationEnvelope;
+  deleteTrafficListener: TrafficMutationEnvelope;
+  deleteTrafficRoute: TrafficMutationEnvelope;
   denyTicket: ProtectMutationEnvelope;
   detectMcps: TrustScanEnvelope;
   detectSkills: TrustScanEnvelope;
@@ -900,6 +1022,7 @@ export interface OperationResponses {
   getProvider: ProviderEnvelope;
   getSystemDiagnostics: DiagnosticsEnvelope;
   getSystemHealth: HealthEnvelope;
+  getTrafficConfiguration: TrafficConfigurationEnvelope;
   getTrafficRoute: RouteEnvelope;
   getTrustScan: TrustScanEnvelope;
   listAgents: TrustAgentPageEnvelope;
@@ -920,6 +1043,9 @@ export interface OperationResponses {
   updateMcpServer: McpMutationEnvelope;
   updateMcpSettings: McpMutationEnvelope;
   updateToolLabels: TrustResourceEnvelope;
+  updateTrafficBind: TrafficMutationEnvelope;
+  updateTrafficListener: TrafficMutationEnvelope;
+  updateTrafficRoute: TrafficMutationEnvelope;
   verifyGatewaySetup: ConnectSetupEnvelope;
 }
 
@@ -930,10 +1056,16 @@ export interface OperationBodies {
   createLlmModel: LlmModelMutationRequest;
   createLlmProvider: LlmProviderMutationRequest;
   createMcpServer: McpServerMutationRequest;
+  createTrafficBind: TrafficBindMutationRequest;
+  createTrafficListener: TrafficListenerMutationRequest;
+  createTrafficRoute: TrafficRouteMutationRequest;
   deleteLlmModel: LlmDeleteRequest;
   deleteLlmProvider: LlmProviderDeleteRequest;
   deleteMcpServer: McpDeleteRequest;
   deleteRuntimeRule: ConfirmedActionRequest;
+  deleteTrafficBind: TrafficDeleteRequest;
+  deleteTrafficListener: TrafficDeleteRequest;
+  deleteTrafficRoute: TrafficDeleteRequest;
   denyTicket: ConfirmedActionRequest;
   detectMcps: MCPDetectionRequest;
   detectSkills: SkillDetectionRequest;
@@ -943,6 +1075,9 @@ export interface OperationBodies {
   updateMcpServer: McpServerMutationRequest;
   updateMcpSettings: McpSettingsMutationRequest;
   updateToolLabels: LabelUpdate;
+  updateTrafficBind: TrafficBindMutationRequest;
+  updateTrafficListener: TrafficListenerMutationRequest;
+  updateTrafficRoute: TrafficRouteMutationRequest;
 }
 
 export type ImplementedOperationId = keyof typeof implementedOperations;

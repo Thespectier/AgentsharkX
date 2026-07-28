@@ -1587,6 +1587,104 @@ kbd {
 .mcp-manager {
   min-width: 0;
 }
+.traffic-manager {
+  min-width: 0;
+}
+.traffic-manager .card-header__action .button {
+  min-width: max-content;
+  white-space: nowrap;
+}
+.traffic-manager__bar {
+  display: grid;
+  grid-template-columns: minmax(240px, 340px) minmax(220px, 1fr);
+  gap: 12px;
+  align-items: center;
+}
+.traffic-manager__bar .mcp-segmented button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+}
+.traffic-search input {
+  width: 100%;
+  min-height: 42px;
+  padding: 8px 11px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: #090f18;
+  color: var(--text-primary);
+  font: inherit;
+}
+.traffic-bind-list {
+  display: grid;
+}
+.traffic-bind {
+  min-width: 0;
+  border-top: 1px solid var(--border-subtle);
+}
+.traffic-bind:first-child {
+  border-top: 0;
+}
+.traffic-bind > header {
+  display: flex;
+  min-height: 62px;
+  padding: 12px 18px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  background: rgba(7, 13, 21, 0.28);
+}
+.traffic-bind > header > div:first-child {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+.traffic-bind > header strong {
+  font-family: var(--font-mono);
+  font-size: 14px;
+}
+.traffic-bind > header span {
+  color: var(--text-tertiary);
+  font-size: 11px;
+}
+.traffic-bind .llm-row-actions,
+.traffic-manager table .llm-row-actions {
+  width: auto;
+  flex-shrink: 0;
+}
+.traffic-editor {
+  display: grid;
+  gap: 14px;
+}
+.traffic-json-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.traffic-json-field > span {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.traffic-json-field > span code {
+  color: var(--text-tertiary);
+  font-size: 10px;
+}
+.traffic-backends {
+  display: grid;
+  gap: 10px;
+}
+.traffic-backend-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.traffic-protocol-warning {
+  border-color: rgba(255, 190, 94, 0.35);
+  background: rgba(255, 190, 94, 0.08);
+}
 .mcp-manager .card-header__action {
   flex-shrink: 0;
 }
@@ -1631,6 +1729,7 @@ kbd {
   grid-column: 1 / -1;
 }
 .llm-field input,
+.llm-field select,
 .llm-field textarea,
 .llm-secret-input input,
 .llm-format-row > input {
@@ -1641,6 +1740,9 @@ kbd {
   border-radius: 8px;
   background: #0a1019;
   color: var(--text-primary);
+}
+.llm-field select {
+  appearance: auto;
 }
 .llm-field textarea {
   min-height: 126px;
@@ -3413,8 +3515,18 @@ kbd {
   }
 
   .llm-form-grid,
+  .traffic-json-grid,
   .llm-format-row {
     grid-template-columns: 1fr;
+  }
+
+  .traffic-manager__bar {
+    grid-template-columns: 1fr;
+  }
+
+  .traffic-bind > header {
+    align-items: flex-start;
+    flex-direction: column;
   }
 
   .llm-format-row {

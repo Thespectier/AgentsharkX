@@ -1,10 +1,10 @@
 # Upstream compatibility
 
-Last verified: 2026-07-27.
+Last verified: 2026-07-28.
 
-Phase 9 still prevents direct browser contact with either upstream. The
+Phase 10 still prevents direct browser contact with either upstream. The
 agentgateway adapter reads request-log summary, complete detail, and Analytics contracts and now
-performs the typed Provider/direct-Model main-form configuration workflow. The
+performs the Provider/direct-Model, MCP, and Traffic configuration workflows. The
 AgentGuard adapter reads Trust, Protect, and Audit
 resources and invokes
 verified label, detection, runtime-rule, and approval mutations with
@@ -107,7 +107,7 @@ The pinned standalone management surface exposes runtime information, config,
 config dump, logs, analytics, costs, and UI routes. It does not expose dedicated
 Provider, Model, MCP Server, Listener, Route, Policy, or Guardrail read APIs.
 Adapters must use explicit fields from config/config-dump and treat missing
-sections as unavailable. Advanced workflows remain in the native console.
+sections as unavailable. Arbitrary top-level configuration remains in the native console.
 
 The pinned native UI writes the entire configuration through `POST /api/config`.
 Its implementation accepts only a file-backed `ConfigSource`, validates the
@@ -157,7 +157,27 @@ route-owned inline targets remain advanced/read-only. MCP and LLM writes share
 one process-local mutation lock because both replace the same `/api/config`
 document.
 
-For Phase 3 and the Phase 8/9 typed-write rounds, the populated config shape, UI
+Phase 10 extends that same revision, mutation-lock, single-POST, and refetch
+discipline to `binds`. The exact pinned `LocalBind`, `LocalListener`,
+`LocalTLSServerConfig`, `LocalRoute`, `LocalTCPRoute`, `RouteMatch`,
+`LocalRouteBackend`, and `LocalTCPRouteBackend` schemas and the bundled Traffic
+Listeners/Routes editors verify the fields used by the BFF. The authenticated
+configuration response preserves complete Listener and Route objects, including
+TLS, every HTTP match entry, native or advanced backend variants, weights, and
+Listener/Route/Backend policy objects. Structured controls cover the native main
+fields and JSON editors retain the complete source-owned nested objects. The BFF
+does not execute those policies or proxy traffic. Listener protocol-family
+changes require explicit removal of incompatible routes. A successful mutation
+changes only the selected path, posts once, then compares the refetched complete
+canonical document with the intended document.
+
+LLM, MCP, and Traffic mutations use the same process-local lock because every
+operation replaces `/api/config`. The upstream still has no conditional write,
+so an external native-console or YAML write can race between the final revision
+check and POST; detectable stale revisions are rejected and ambiguous writes are
+never retried automatically.
+
+For Phase 3 and the Phase 8/9/10 configuration-write rounds, the populated config shape, UI
 routes, client hook, and file-backed write implementation were checked against
 the exact pinned source revision. The sanitized
 `config-populated.response.json` freezes string, reference, and custom provider

@@ -95,7 +95,17 @@ func (server *server) routes() {
 	server.mux.Handle("PATCH /api/v1/connect/mcp/servers/{resourceId}", server.requireAuth(server.requireCSRF(http.HandlerFunc(server.updateMCPServer))))
 	server.mux.Handle("DELETE /api/v1/connect/mcp/servers/{resourceId}", server.requireAuth(server.requireCSRF(http.HandlerFunc(server.deleteMCPServer))))
 	server.mux.Handle("GET /api/v1/connect/traffic/routes", server.requireAuth(http.HandlerFunc(server.trafficRoutes)))
+	server.mux.Handle("POST /api/v1/connect/traffic/routes", server.requireAuth(server.requireCSRF(http.HandlerFunc(server.createTrafficRoute))))
 	server.mux.Handle("GET /api/v1/connect/traffic/routes/{resourceId}", server.requireAuth(http.HandlerFunc(server.route)))
+	server.mux.Handle("PATCH /api/v1/connect/traffic/routes/{resourceId}", server.requireAuth(server.requireCSRF(http.HandlerFunc(server.updateTrafficRoute))))
+	server.mux.Handle("DELETE /api/v1/connect/traffic/routes/{resourceId}", server.requireAuth(server.requireCSRF(http.HandlerFunc(server.deleteTrafficRoute))))
+	server.mux.Handle("GET /api/v1/connect/traffic/configuration", server.requireAuth(http.HandlerFunc(server.trafficConfiguration)))
+	server.mux.Handle("POST /api/v1/connect/traffic/binds", server.requireAuth(server.requireCSRF(http.HandlerFunc(server.createTrafficBind))))
+	server.mux.Handle("PATCH /api/v1/connect/traffic/binds/{resourceId}", server.requireAuth(server.requireCSRF(http.HandlerFunc(server.updateTrafficBind))))
+	server.mux.Handle("DELETE /api/v1/connect/traffic/binds/{resourceId}", server.requireAuth(server.requireCSRF(http.HandlerFunc(server.deleteTrafficBind))))
+	server.mux.Handle("POST /api/v1/connect/traffic/listeners", server.requireAuth(server.requireCSRF(http.HandlerFunc(server.createTrafficListener))))
+	server.mux.Handle("PATCH /api/v1/connect/traffic/listeners/{resourceId}", server.requireAuth(server.requireCSRF(http.HandlerFunc(server.updateTrafficListener))))
+	server.mux.Handle("DELETE /api/v1/connect/traffic/listeners/{resourceId}", server.requireAuth(server.requireCSRF(http.HandlerFunc(server.deleteTrafficListener))))
 	server.mux.Handle("GET /api/v1/trust/agents", server.requireAuth(http.HandlerFunc(server.trustAgents)))
 	server.mux.Handle("GET /api/v1/trust/agents/{agentId}", server.requireAuth(http.HandlerFunc(server.trustAgent)))
 	server.mux.Handle("GET /api/v1/trust/resources", server.requireAuth(http.HandlerFunc(server.trustResources)))
@@ -409,6 +419,95 @@ func (server *server) route(writer http.ResponseWriter, request *http.Request) {
 	}
 	envelope, err := server.config.Connect.Route(request.Context(), request.PathValue("resourceId"))
 	server.writeConnectResult(writer, request, envelope, err)
+}
+
+func (server *server) trafficConfiguration(writer http.ResponseWriter, request *http.Request) {
+	if !server.connectAvailable(writer, request) {
+		return
+	}
+	envelope, err := server.config.Connect.TrafficConfiguration(request.Context())
+	server.writeConnectResult(writer, request, envelope, err)
+}
+
+func (server *server) createTrafficBind(writer http.ResponseWriter, request *http.Request) {
+	var input model.TrafficBindMutationRequest
+	if !server.connectAvailable(writer, request) || !server.decodeMutation(writer, request, &input) {
+		return
+	}
+	envelope, err := server.config.Connect.CreateTrafficBind(request.Context(), input)
+	server.writeConnectTrafficMutation(writer, request, http.StatusCreated, envelope, err)
+}
+
+func (server *server) updateTrafficBind(writer http.ResponseWriter, request *http.Request) {
+	var input model.TrafficBindMutationRequest
+	if !server.connectAvailable(writer, request) || !server.decodeMutation(writer, request, &input) {
+		return
+	}
+	envelope, err := server.config.Connect.UpdateTrafficBind(request.Context(), request.PathValue("resourceId"), input)
+	server.writeConnectTrafficMutation(writer, request, http.StatusOK, envelope, err)
+}
+
+func (server *server) deleteTrafficBind(writer http.ResponseWriter, request *http.Request) {
+	var input model.TrafficDeleteRequest
+	if !server.connectAvailable(writer, request) || !server.decodeMutation(writer, request, &input) {
+		return
+	}
+	envelope, err := server.config.Connect.DeleteTrafficBind(request.Context(), request.PathValue("resourceId"), input)
+	server.writeConnectTrafficMutation(writer, request, http.StatusOK, envelope, err)
+}
+
+func (server *server) createTrafficListener(writer http.ResponseWriter, request *http.Request) {
+	var input model.TrafficListenerMutationRequest
+	if !server.connectAvailable(writer, request) || !server.decodeMutation(writer, request, &input) {
+		return
+	}
+	envelope, err := server.config.Connect.CreateTrafficListener(request.Context(), input)
+	server.writeConnectTrafficMutation(writer, request, http.StatusCreated, envelope, err)
+}
+
+func (server *server) updateTrafficListener(writer http.ResponseWriter, request *http.Request) {
+	var input model.TrafficListenerMutationRequest
+	if !server.connectAvailable(writer, request) || !server.decodeMutation(writer, request, &input) {
+		return
+	}
+	envelope, err := server.config.Connect.UpdateTrafficListener(request.Context(), request.PathValue("resourceId"), input)
+	server.writeConnectTrafficMutation(writer, request, http.StatusOK, envelope, err)
+}
+
+func (server *server) deleteTrafficListener(writer http.ResponseWriter, request *http.Request) {
+	var input model.TrafficDeleteRequest
+	if !server.connectAvailable(writer, request) || !server.decodeMutation(writer, request, &input) {
+		return
+	}
+	envelope, err := server.config.Connect.DeleteTrafficListener(request.Context(), request.PathValue("resourceId"), input)
+	server.writeConnectTrafficMutation(writer, request, http.StatusOK, envelope, err)
+}
+
+func (server *server) createTrafficRoute(writer http.ResponseWriter, request *http.Request) {
+	var input model.TrafficRouteMutationRequest
+	if !server.connectAvailable(writer, request) || !server.decodeMutation(writer, request, &input) {
+		return
+	}
+	envelope, err := server.config.Connect.CreateTrafficRoute(request.Context(), input)
+	server.writeConnectTrafficMutation(writer, request, http.StatusCreated, envelope, err)
+}
+
+func (server *server) updateTrafficRoute(writer http.ResponseWriter, request *http.Request) {
+	var input model.TrafficRouteMutationRequest
+	if !server.connectAvailable(writer, request) || !server.decodeMutation(writer, request, &input) {
+		return
+	}
+	envelope, err := server.config.Connect.UpdateTrafficRoute(request.Context(), request.PathValue("resourceId"), input)
+	server.writeConnectTrafficMutation(writer, request, http.StatusOK, envelope, err)
+}
+
+func (server *server) deleteTrafficRoute(writer http.ResponseWriter, request *http.Request) {
+	var input model.TrafficDeleteRequest
+	if !server.connectAvailable(writer, request) || !server.decodeMutation(writer, request, &input) {
+		return
+	}
+	envelope, err := server.config.Connect.DeleteTrafficRoute(request.Context(), request.PathValue("resourceId"), input)
+	server.writeConnectTrafficMutation(writer, request, http.StatusOK, envelope, err)
 }
 
 func (server *server) trustAgents(writer http.ResponseWriter, request *http.Request) {
@@ -734,18 +833,18 @@ func (server *server) writeConnectResult(writer http.ResponseWriter, request *ht
 		return
 	}
 	if errors.Is(err, connect.ErrReferenced) {
-		server.writeError(writer, request, http.StatusConflict, "RESOURCE_REFERENCED", "the LLM configuration resource is still referenced", source(model.SourceAgentGateway), false)
+		server.writeError(writer, request, http.StatusConflict, "RESOURCE_REFERENCED", "the agentgateway configuration resource still has references or incompatible children", source(model.SourceAgentGateway), false)
 		return
 	}
 	if errors.Is(err, connect.ErrConflict) {
-		server.writeError(writer, request, http.StatusConflict, "RESOURCE_CONFLICT", "an agentgateway configuration resource already uses that name", source(model.SourceAgentGateway), false)
+		server.writeError(writer, request, http.StatusConflict, "RESOURCE_CONFLICT", "an agentgateway configuration resource already uses that value", source(model.SourceAgentGateway), false)
 		return
 	}
 	if errors.Is(err, connect.ErrMutationInFlight) {
 		server.writeError(writer, request, http.StatusConflict, "MUTATION_IN_FLIGHT", "another agentgateway configuration change is still in progress", source(model.SourceAgentGateway), false)
 		return
 	}
-	if errors.Is(err, gateway.ErrLLMWriteUnverified) || errors.Is(err, gateway.ErrMCPWriteUnverified) {
+	if errors.Is(err, gateway.ErrLLMWriteUnverified) || errors.Is(err, gateway.ErrMCPWriteUnverified) || errors.Is(err, gateway.ErrTrafficWriteUnverified) {
 		server.writeError(writer, request, http.StatusServiceUnavailable, "WRITE_UNVERIFIED", "the write result could not be verified; refresh before making another change", source(model.SourceAgentGateway), false)
 		return
 	}
@@ -778,6 +877,21 @@ func (server *server) writeConnectMutation(writer http.ResponseWriter, request *
 }
 
 func (server *server) writeConnectMCPMutation(writer http.ResponseWriter, request *http.Request, status int, envelope model.MCPMutationEnvelope, err error) {
+	if err != nil {
+		server.writeConnectResult(writer, request, nil, err)
+		return
+	}
+	envelope.Data.RequestID = requestID(request.Context())
+	server.config.Logger.Info("connect operation completed",
+		"request_id", envelope.Data.RequestID,
+		"operation", envelope.Data.Operation,
+		"target", envelope.Data.Target,
+		"status", envelope.Data.Status,
+	)
+	server.writeJSON(writer, status, envelope)
+}
+
+func (server *server) writeConnectTrafficMutation(writer http.ResponseWriter, request *http.Request, status int, envelope model.TrafficMutationEnvelope, err error) {
 	if err != nil {
 		server.writeConnectResult(writer, request, nil, err)
 		return

@@ -346,6 +346,15 @@ func protectJSON(t *testing.T, client *http.Client, method, endpoint, body strin
 	}
 }
 
+func marshalIntegrationValue(t *testing.T, value any) []byte {
+	t.Helper()
+	data, err := json.Marshal(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return data
+}
+
 func TestStreamStartsWithNormalizedHealthEvents(t *testing.T) {
 	t.Parallel()
 
@@ -738,6 +747,86 @@ func TestConnectMCPConfigurationReadsAndWritesCompleteVerifiedTargets(t *testing
 	for _, expected := range [][]byte{[]byte("complete-admin-value"), []byte("x-scope"), []byte("weather.example")} {
 		if !bytes.Contains(written, expected) {
 			t.Fatalf("MCP write did not preserve/apply %q: %s", expected, written)
+		}
+	}
+	if writes != 1 {
+		t.Fatalf("upstream writes = %d", writes)
+	}
+}
+
+func TestConnectTrafficConfigurationReadsAndWritesCompleteRoutes(t *testing.T) {
+	t.Parallel()
+
+	var mu sync.Mutex
+	configuration := []byte(`{"llm":{"providers":[],"models":[],"virtualModels":[]},"mcp":{"targets":[{"name":"weather","mcp":{"host":"https://weather.example/mcp"}}]},"binds":[{"port":8080,"listeners":[{"name":"public","protocol":"HTTPS","tls":{"cert":"/cert.pem","key":"/key.pem"},"policies":{"cors":{"allowOrigins":["https://admin.example"]}},"routes":[{"name":"existing","matches":[{"path":{"pathPrefix":"/"}}],"backends":[{"host":"localhost:9000","policies":{"backendAuth":{"token":"complete-value"}}}]}]}]}]}`)
+	mutationCalls := 0
+	gatewayServer := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		writer.Header().Set("Content-Type", "application/json")
+		if request.URL.Path != "/api/config" {
+			http.NotFound(writer, request)
+			return
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		if request.Method == http.MethodPost {
+			body, err := io.ReadAll(request.Body)
+			if err != nil {
+				t.Error(err)
+				http.Error(writer, "read failed", http.StatusInternalServerError)
+				return
+			}
+			configuration = body
+			mutationCalls++
+			_, _ = io.WriteString(writer, `{"status":"success"}`)
+			return
+		}
+		_, _ = writer.Write(configuration)
+	}))
+	defer gatewayServer.Close()
+
+	gatewayClient, err := gateway.New(gatewayServer.URL, gatewayServer.Client(), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(New(ServerConfig{
+		Connect: connect.New(gatewayClient, "http://localhost:15000/ui"),
+		Logger:  slog.New(slog.DiscardHandler), AuthEnabled: false,
+	}))
+	defer server.Close()
+
+	var current model.TrafficConfigurationEnvelope
+	protectJSON(t, server.Client(), http.MethodGet, server.URL+"/api/v1/connect/traffic/configuration", "", http.StatusOK, &current)
+	if len(current.Data.Listeners) != 1 || len(current.Data.Routes) != 1 || current.Data.RevisionToken == "" ||
+		!bytes.Contains(marshalIntegrationValue(t, current.Data.Listeners[0].Configuration), []byte("admin.example")) ||
+		!bytes.Contains(marshalIntegrationValue(t, current.Data.Routes[0].Configuration), []byte("complete-value")) {
+		t.Fatalf("unexpected complete Traffic configuration: %#v", current.Data)
+	}
+
+	requestBody, err := json.Marshal(model.TrafficRouteMutationRequest{
+		RevisionToken: current.Data.RevisionToken,
+		ListenerID:    current.Data.Listeners[0].ID,
+		Route: model.TrafficRouteDraft{Kind: "http", Configuration: model.TrafficConfigObject{
+			"name": "admin", "hostnames": []any{"admin.example.com"},
+			"matches":  []any{map[string]any{"path": map[string]any{"exact": "/admin"}, "method": "POST"}},
+			"backends": []any{map[string]any{"routeGroup": "shared-admin", "weight": 3}},
+			"policies": map[string]any{"timeout": map[string]any{"requestTimeout": "20s"}},
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var receipt model.TrafficMutationEnvelope
+	protectJSON(t, server.Client(), http.MethodPost, server.URL+"/api/v1/connect/traffic/routes", string(requestBody), http.StatusCreated, &receipt)
+	if receipt.Data.Operation != "create-traffic-route" || receipt.Data.Target != "admin" {
+		t.Fatalf("unexpected Traffic mutation receipt: %#v", receipt.Data)
+	}
+	mu.Lock()
+	written := append([]byte(nil), configuration...)
+	writes := mutationCalls
+	mu.Unlock()
+	for _, expected := range [][]byte{[]byte("weather.example"), []byte("complete-value"), []byte("shared-admin"), []byte("requestTimeout")} {
+		if !bytes.Contains(written, expected) {
+			t.Fatalf("Traffic write did not preserve/apply %q: %s", expected, written)
 		}
 	}
 	if writes != 1 {

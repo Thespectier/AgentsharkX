@@ -10,14 +10,16 @@ import (
 )
 
 type fakeGateway struct {
-	snapshot         model.GatewaySnapshot
-	analytics        model.GatewayAnalytics
-	health           model.SourceHealth
-	configuration    model.LLMConfiguration
-	mcpConfiguration model.MCPConfiguration
-	revision         string
-	apply            func(context.Context, string, model.LLMChange) error
-	applyMCP         func(context.Context, string, model.MCPChange) error
+	snapshot             model.GatewaySnapshot
+	analytics            model.GatewayAnalytics
+	health               model.SourceHealth
+	configuration        model.LLMConfiguration
+	mcpConfiguration     model.MCPConfiguration
+	trafficConfiguration model.TrafficConfiguration
+	revision             string
+	apply                func(context.Context, string, model.LLMChange) error
+	applyMCP             func(context.Context, string, model.MCPChange) error
+	applyTraffic         func(context.Context, string, model.TrafficChange) error
 }
 
 func (fake fakeGateway) Health(context.Context) model.SourceHealth { return fake.health }
@@ -58,6 +60,17 @@ func (fake fakeGateway) ApplyMCPChange(ctx context.Context, revision string, cha
 	}
 	if change.Operation == "update-mcp-settings" {
 		return "MCP settings", nil
+	}
+	return change.ResourceID, nil
+}
+func (fake fakeGateway) TrafficConfiguration(context.Context) (model.TrafficConfiguration, string, error) {
+	return fake.trafficConfiguration, fake.revision, nil
+}
+func (fake fakeGateway) ApplyTrafficChange(ctx context.Context, revision string, change model.TrafficChange) (string, error) {
+	if fake.applyTraffic != nil {
+		if err := fake.applyTraffic(ctx, revision, change); err != nil {
+			return "", err
+		}
 	}
 	return change.ResourceID, nil
 }
@@ -224,6 +237,48 @@ func TestMCPConfigurationIssuesOneTimeRevisionAndAppliesTypedChange(t *testing.T
 		t.Fatalf("unexpected MCP mutation: receipt=%#v change=%#v err=%v", receipt, applied, err)
 	}
 	if _, err := service.CreateMCPServer(t.Context(), request); !errors.Is(err, ErrRevisionStale) {
+		t.Fatalf("one-time revision error = %v", err)
+	}
+}
+
+func TestTrafficConfigurationIssuesOneTimeRevisionAndAppliesChange(t *testing.T) {
+	t.Parallel()
+	fetchedAt := time.Date(2026, 7, 28, 9, 0, 0, 0, time.UTC)
+	var applied model.TrafficChange
+	service := New(fakeGateway{
+		trafficConfiguration: model.TrafficConfiguration{
+			Source: model.SourceAgentGateway, FetchedAt: fetchedAt,
+			Binds: []model.TrafficBindSetting{}, Listeners: []model.TrafficListenerSetting{}, Routes: []model.TrafficRouteSetting{},
+		},
+		revision: "revision-traffic-a",
+		applyTraffic: func(_ context.Context, revision string, change model.TrafficChange) error {
+			if revision != "revision-traffic-a" {
+				t.Fatalf("revision = %q", revision)
+			}
+			applied = change
+			return nil
+		},
+	}, "http://localhost:15000/ui")
+
+	configuration, err := service.TrafficConfiguration(t.Context())
+	if err != nil || configuration.Data.RevisionToken == "" || configuration.Data.Links.RawConfig == "" {
+		t.Fatalf("unexpected Traffic configuration: %#v err=%v", configuration, err)
+	}
+	request := model.TrafficRouteMutationRequest{
+		RevisionToken: configuration.Data.RevisionToken,
+		ListenerID:    "listener-1",
+		Route: model.TrafficRouteDraft{
+			Kind: "http",
+			Configuration: model.TrafficConfigObject{
+				"name": "api", "matches": []any{map[string]any{"path": map[string]any{"pathPrefix": "/"}}},
+			},
+		},
+	}
+	receipt, err := service.CreateTrafficRoute(t.Context(), request)
+	if err != nil || receipt.Data.Operation != "create-traffic-route" || applied.ListenerID != "listener-1" {
+		t.Fatalf("unexpected Traffic mutation: receipt=%#v change=%#v err=%v", receipt, applied, err)
+	}
+	if _, err := service.CreateTrafficRoute(t.Context(), request); !errors.Is(err, ErrRevisionStale) {
 		t.Fatalf("one-time revision error = %v", err)
 	}
 }

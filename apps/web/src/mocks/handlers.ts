@@ -36,6 +36,13 @@ import type {
   RuntimeRuleCheckRequest,
   RuntimeRulePublishRequest,
   SkillDetectionRequest,
+  TrafficBindMutationRequest,
+  TrafficConfiguration,
+  TrafficDeleteRequest,
+  TrafficListenerMutationRequest,
+  TrafficListenerSetting,
+  TrafficRouteMutationRequest,
+  TrafficRouteSetting,
   TrustResource,
   TrustScanJob,
 } from "../generated/api-client";
@@ -424,6 +431,130 @@ let mockMcpConfiguration: McpConfiguration = {
   inlineServers: [],
   links: connectData.summary.links,
 };
+let mockTrafficRevision = 1;
+let nextTrafficResource = 100;
+let mockTrafficConfiguration: TrafficConfiguration = {
+  source: "agentgateway",
+  fetchedAt: capturedAt,
+  revisionToken: "mock-traffic-revision-1",
+  binds: [
+    {
+      id: "bind-8080",
+      upstreamId: "8080",
+      source: "agentgateway",
+      fetchedAt: capturedAt,
+      rawRef: { source: "agentgateway", id: "/binds/0" },
+      port: 8080,
+      tunnelProtocol: "direct",
+      listenerCount: 1,
+      routeCount: 1,
+      backendCount: 2,
+    },
+    {
+      id: "bind-9090",
+      upstreamId: "9090",
+      source: "agentgateway",
+      fetchedAt: capturedAt,
+      rawRef: { source: "agentgateway", id: "/binds/1" },
+      port: 9090,
+      tunnelProtocol: "direct",
+      listenerCount: 1,
+      routeCount: 1,
+      backendCount: 1,
+    },
+  ],
+  listeners: [
+    {
+      id: "listener-public",
+      upstreamId: "public-http",
+      source: "agentgateway",
+      fetchedAt: capturedAt,
+      rawRef: { source: "agentgateway", id: "/binds/0/listeners/0" },
+      bindId: "bind-8080",
+      port: 8080,
+      name: "public-http",
+      hostname: "example.com",
+      protocol: "HTTPS",
+      routeCount: 1,
+      backendCount: 2,
+      configuration: {
+        name: "public-http",
+        hostname: "example.com",
+        protocol: "HTTPS",
+        tls: { cert: "/etc/certs/tls.crt", key: "/etc/certs/tls.key" },
+        policies: { cors: { allowOrigins: ["https://console.example"] } },
+      },
+    },
+    {
+      id: "listener-tcp",
+      upstreamId: "database",
+      source: "agentgateway",
+      fetchedAt: capturedAt,
+      rawRef: { source: "agentgateway", id: "/binds/1/listeners/0" },
+      bindId: "bind-9090",
+      port: 9090,
+      name: "database",
+      hostname: "db.example.com",
+      protocol: "TCP",
+      routeCount: 1,
+      backendCount: 1,
+      configuration: { name: "database", hostname: "db.example.com", protocol: "TCP" },
+    },
+  ],
+  routes: [
+    {
+      id: "route-api",
+      upstreamId: "api",
+      source: "agentgateway",
+      fetchedAt: capturedAt,
+      rawRef: { source: "agentgateway", id: "/binds/0/listeners/0/routes/0" },
+      listenerId: "listener-public",
+      listener: "public-http",
+      port: 8080,
+      kind: "http",
+      name: "api",
+      hostnames: ["example.com"],
+      backendCount: 2,
+      configuration: {
+        name: "api",
+        hostnames: ["example.com"],
+        matches: [
+          {
+            path: { pathPrefix: "/api" },
+            method: "POST",
+            headers: [{ name: "x-tenant", value: { exact: "admin" } }],
+            query: [{ name: "debug", value: { regex: "true|1" } }],
+          },
+        ],
+        policies: { timeout: { requestTimeout: "30s" } },
+        backends: [
+          { host: "localhost:9000", weight: 2, policies: { backendAuth: { token: "full-value" } } },
+          { dynamic: {} },
+        ],
+      },
+    },
+    {
+      id: "route-mysql",
+      upstreamId: "mysql",
+      source: "agentgateway",
+      fetchedAt: capturedAt,
+      rawRef: { source: "agentgateway", id: "/binds/1/listeners/0/tcpRoutes/0" },
+      listenerId: "listener-tcp",
+      listener: "database",
+      port: 9090,
+      kind: "tcp",
+      name: "mysql",
+      hostnames: ["db.example.com"],
+      backendCount: 1,
+      configuration: {
+        name: "mysql",
+        hostnames: ["db.example.com"],
+        backends: [{ service: { name: "default/mysql", port: 3306 } }],
+      },
+    },
+  ],
+  links: connectData.summary.links,
+};
 const ruleChecks = new Map<string, string>();
 const approvalAttempts = new Map<string, number>();
 
@@ -554,6 +685,124 @@ function mcpReceipt(operation: string, target: string, message: string) {
     },
     meta: { ...meta("agentgateway"), fetchedAt: completedAt },
   });
+}
+
+function acceptTrafficRevision(revisionToken: string): Response | undefined {
+  if (revisionToken !== mockTrafficConfiguration.revisionToken) {
+    return llmFailure(
+      409,
+      "CONFIGURATION_CHANGED",
+      "agentgateway configuration changed. Refresh and retry the operation.",
+    );
+  }
+  return undefined;
+}
+
+function nextTrafficRevision() {
+  mockTrafficRevision += 1;
+  const fetchedAt = new Date().toISOString();
+  mockTrafficConfiguration.revisionToken = `mock-traffic-revision-${mockTrafficRevision}`;
+  mockTrafficConfiguration.fetchedAt = fetchedAt;
+  for (const listener of mockTrafficConfiguration.listeners) {
+    const routes = mockTrafficConfiguration.routes.filter(
+      (route) => route.listenerId === listener.id,
+    );
+    listener.routeCount = routes.length;
+    listener.backendCount = routes.reduce((total, route) => total + route.backendCount, 0);
+    listener.fetchedAt = fetchedAt;
+  }
+  for (const bind of mockTrafficConfiguration.binds) {
+    const listeners = mockTrafficConfiguration.listeners.filter(
+      (listener) => listener.bindId === bind.id,
+    );
+    bind.listenerCount = listeners.length;
+    bind.routeCount = listeners.reduce((total, listener) => total + listener.routeCount, 0);
+    bind.backendCount = listeners.reduce((total, listener) => total + listener.backendCount, 0);
+    bind.fetchedAt = fetchedAt;
+  }
+}
+
+function trafficReceipt(operation: string, target: string, message: string) {
+  nextTrafficRevision();
+  const completedAt = new Date().toISOString();
+  return HttpResponse.json({
+    data: {
+      operation,
+      status: "succeeded",
+      source: "agentgateway",
+      target,
+      requestId: `req_mock_${operation.replaceAll("-", "_")}`,
+      completedAt,
+      message,
+    },
+    meta: { ...meta("agentgateway"), fetchedAt: completedAt },
+  });
+}
+
+function trafficListenerSetting(
+  draft: TrafficListenerMutationRequest["listener"],
+  bindId: string,
+  current?: TrafficListenerSetting,
+): TrafficListenerSetting {
+  const bind = mockTrafficConfiguration.binds.find((item) => item.id === bindId);
+  const configuration = structuredClone(draft.configuration);
+  const name =
+    typeof configuration.name === "string" && configuration.name
+      ? configuration.name
+      : "Unnamed listener";
+  const protocol = ["HTTP", "HTTPS", "TLS", "TCP", "HBONE"].includes(String(configuration.protocol))
+    ? (configuration.protocol as TrafficListenerSetting["protocol"])
+    : "HTTP";
+  return {
+    id: current?.id ?? `mock-listener-${nextTrafficResource++}`,
+    upstreamId: name,
+    source: "agentgateway",
+    fetchedAt: new Date().toISOString(),
+    rawRef: current?.rawRef ?? { source: "agentgateway", id: `/binds/${bindId}/listeners/new` },
+    bindId,
+    port: bind?.port ?? current?.port ?? 0,
+    name,
+    hostname: typeof configuration.hostname === "string" ? configuration.hostname : "",
+    protocol,
+    routeCount: current?.routeCount ?? 0,
+    backendCount: current?.backendCount ?? 0,
+    configuration,
+  };
+}
+
+function trafficRouteSetting(
+  draft: TrafficRouteMutationRequest["route"],
+  listenerId: string,
+  current?: TrafficRouteSetting,
+): TrafficRouteSetting {
+  const listener = mockTrafficConfiguration.listeners.find((item) => item.id === listenerId);
+  const configuration = structuredClone(draft.configuration);
+  const backends = Array.isArray(configuration.backends) ? configuration.backends : [];
+  const hostnames = Array.isArray(configuration.hostnames)
+    ? configuration.hostnames.filter((item): item is string => typeof item === "string")
+    : [];
+  const name =
+    (typeof configuration.name === "string" && configuration.name) ||
+    (typeof configuration.ruleName === "string" && configuration.ruleName) ||
+    "(unnamed)";
+  return {
+    id: current?.id ?? `mock-route-${nextTrafficResource++}`,
+    upstreamId: name,
+    source: "agentgateway",
+    fetchedAt: new Date().toISOString(),
+    rawRef: current?.rawRef ?? {
+      source: "agentgateway",
+      id: `/listeners/${listenerId}/routes/new`,
+    },
+    listenerId,
+    listener: listener?.name ?? current?.listener ?? "Listener",
+    port: listener?.port ?? current?.port ?? 0,
+    kind: draft.kind,
+    name,
+    hostnames,
+    backendCount: backends.length,
+    configuration,
+  };
 }
 
 function credentialState(
@@ -947,6 +1196,177 @@ export const handlers = [
   http.get("/api/v1/connect/mcp/servers/:resourceId", ({ request, params }) => {
     const item = connectData.mcpServers.find((server) => server.id === params.resourceId);
     return item ? respond(request, item, item, "agentgateway") : failure("agentgateway");
+  }),
+  http.get("/api/v1/connect/traffic/configuration", ({ request }) =>
+    respond(
+      request,
+      structuredClone(mockTrafficConfiguration),
+      {
+        ...structuredClone(mockTrafficConfiguration),
+        binds: [],
+        listeners: [],
+        routes: [],
+      },
+      "agentgateway",
+    ),
+  ),
+  http.post("/api/v1/connect/traffic/binds", async ({ request }) => {
+    const body = (await request.json()) as TrafficBindMutationRequest;
+    const conflict = acceptTrafficRevision(body.revisionToken);
+    if (conflict) return conflict;
+    if (mockTrafficConfiguration.binds.some((bind) => bind.port === body.bind.port))
+      return llmFailure(409, "RESOURCE_CONFLICT", "A bind with this port already exists.");
+    const id = `mock-bind-${nextTrafficResource++}`;
+    mockTrafficConfiguration.binds.push({
+      id,
+      upstreamId: String(body.bind.port),
+      source: "agentgateway",
+      fetchedAt: new Date().toISOString(),
+      rawRef: { source: "agentgateway", id: `/binds/${mockTrafficConfiguration.binds.length}` },
+      port: body.bind.port,
+      tunnelProtocol: "direct",
+      listenerCount: 0,
+      routeCount: 0,
+      backendCount: 0,
+    });
+    return trafficReceipt("create-traffic-bind", `Port ${body.bind.port}`, "Traffic bind created");
+  }),
+  http.patch("/api/v1/connect/traffic/binds/:resourceId", async ({ request, params }) => {
+    const body = (await request.json()) as TrafficBindMutationRequest;
+    const conflict = acceptTrafficRevision(body.revisionToken);
+    if (conflict) return conflict;
+    const bind = mockTrafficConfiguration.binds.find(
+      (item) => item.id === String(params.resourceId),
+    );
+    if (!bind) return llmFailure(404, "RESOURCE_NOT_FOUND", "Traffic bind was not found.");
+    if (
+      mockTrafficConfiguration.binds.some(
+        (item) => item.id !== bind.id && item.port === body.bind.port,
+      )
+    )
+      return llmFailure(409, "RESOURCE_CONFLICT", "A bind with this port already exists.");
+    bind.port = body.bind.port;
+    bind.upstreamId = String(body.bind.port);
+    for (const listener of mockTrafficConfiguration.listeners.filter(
+      (item) => item.bindId === bind.id,
+    ))
+      listener.port = bind.port;
+    return trafficReceipt("update-traffic-bind", `Port ${bind.port}`, "Traffic bind updated");
+  }),
+  http.delete("/api/v1/connect/traffic/binds/:resourceId", async ({ request, params }) => {
+    const body = (await request.json()) as TrafficDeleteRequest;
+    const conflict = acceptTrafficRevision(body.revisionToken);
+    if (conflict) return conflict;
+    if (!body.confirmed) return llmFailure(400, "INVALID_REQUEST", "Deletion must be confirmed.");
+    const index = mockTrafficConfiguration.binds.findIndex(
+      (item) => item.id === String(params.resourceId),
+    );
+    if (index < 0) return llmFailure(404, "RESOURCE_NOT_FOUND", "Traffic bind was not found.");
+    if (mockTrafficConfiguration.binds[index].listenerCount && !body.deleteChildren)
+      return llmFailure(409, "RESOURCE_REFERENCED", "Traffic bind still has listeners.");
+    const [bind] = mockTrafficConfiguration.binds.splice(index, 1);
+    const listenerIds = new Set(
+      mockTrafficConfiguration.listeners
+        .filter((item) => item.bindId === bind.id)
+        .map((item) => item.id),
+    );
+    mockTrafficConfiguration.listeners = mockTrafficConfiguration.listeners.filter(
+      (item) => item.bindId !== bind.id,
+    );
+    mockTrafficConfiguration.routes = mockTrafficConfiguration.routes.filter(
+      (item) => !listenerIds.has(item.listenerId),
+    );
+    return trafficReceipt("delete-traffic-bind", `Port ${bind.port}`, "Traffic bind deleted");
+  }),
+  http.post("/api/v1/connect/traffic/listeners", async ({ request }) => {
+    const body = (await request.json()) as TrafficListenerMutationRequest;
+    const conflict = acceptTrafficRevision(body.revisionToken);
+    if (conflict) return conflict;
+    const bindId = body.bindId ?? "";
+    if (!mockTrafficConfiguration.binds.some((bind) => bind.id === bindId))
+      return llmFailure(404, "RESOURCE_NOT_FOUND", "Traffic bind was not found.");
+    const listener = trafficListenerSetting(body.listener, bindId);
+    mockTrafficConfiguration.listeners.push(listener);
+    return trafficReceipt("create-traffic-listener", listener.name, "Traffic listener created");
+  }),
+  http.patch("/api/v1/connect/traffic/listeners/:resourceId", async ({ request, params }) => {
+    const body = (await request.json()) as TrafficListenerMutationRequest;
+    const conflict = acceptTrafficRevision(body.revisionToken);
+    if (conflict) return conflict;
+    const index = mockTrafficConfiguration.listeners.findIndex(
+      (item) => item.id === String(params.resourceId),
+    );
+    if (index < 0) return llmFailure(404, "RESOURCE_NOT_FOUND", "Traffic listener was not found.");
+    const current = mockTrafficConfiguration.listeners[index];
+    const next = trafficListenerSetting(body.listener, current.bindId, current);
+    const changedKind =
+      (current.protocol === "TCP" || current.protocol === "TLS") !==
+      (next.protocol === "TCP" || next.protocol === "TLS");
+    if (changedKind && current.routeCount && !body.listener.deleteIncompatibleRoutes)
+      return llmFailure(409, "RESOURCE_REFERENCED", "Listener still has incompatible routes.");
+    if (changedKind)
+      mockTrafficConfiguration.routes = mockTrafficConfiguration.routes.filter(
+        (route) => route.listenerId !== current.id,
+      );
+    mockTrafficConfiguration.listeners[index] = next;
+    for (const route of mockTrafficConfiguration.routes.filter(
+      (item) => item.listenerId === next.id,
+    ))
+      route.listener = next.name;
+    return trafficReceipt("update-traffic-listener", next.name, "Traffic listener updated");
+  }),
+  http.delete("/api/v1/connect/traffic/listeners/:resourceId", async ({ request, params }) => {
+    const body = (await request.json()) as TrafficDeleteRequest;
+    const conflict = acceptTrafficRevision(body.revisionToken);
+    if (conflict) return conflict;
+    if (!body.confirmed) return llmFailure(400, "INVALID_REQUEST", "Deletion must be confirmed.");
+    const index = mockTrafficConfiguration.listeners.findIndex(
+      (item) => item.id === String(params.resourceId),
+    );
+    if (index < 0) return llmFailure(404, "RESOURCE_NOT_FOUND", "Traffic listener was not found.");
+    if (mockTrafficConfiguration.listeners[index].routeCount && !body.deleteChildren)
+      return llmFailure(409, "RESOURCE_REFERENCED", "Traffic listener still has routes.");
+    const [listener] = mockTrafficConfiguration.listeners.splice(index, 1);
+    mockTrafficConfiguration.routes = mockTrafficConfiguration.routes.filter(
+      (item) => item.listenerId !== listener.id,
+    );
+    return trafficReceipt("delete-traffic-listener", listener.name, "Traffic listener deleted");
+  }),
+  http.post("/api/v1/connect/traffic/routes", async ({ request }) => {
+    const body = (await request.json()) as TrafficRouteMutationRequest;
+    const conflict = acceptTrafficRevision(body.revisionToken);
+    if (conflict) return conflict;
+    const listenerId = body.listenerId ?? "";
+    if (!mockTrafficConfiguration.listeners.some((listener) => listener.id === listenerId))
+      return llmFailure(404, "RESOURCE_NOT_FOUND", "Traffic listener was not found.");
+    const route = trafficRouteSetting(body.route, listenerId);
+    mockTrafficConfiguration.routes.push(route);
+    return trafficReceipt("create-traffic-route", route.name, "Traffic route created");
+  }),
+  http.patch("/api/v1/connect/traffic/routes/:resourceId", async ({ request, params }) => {
+    const body = (await request.json()) as TrafficRouteMutationRequest;
+    const conflict = acceptTrafficRevision(body.revisionToken);
+    if (conflict) return conflict;
+    const index = mockTrafficConfiguration.routes.findIndex(
+      (item) => item.id === String(params.resourceId),
+    );
+    if (index < 0) return llmFailure(404, "RESOURCE_NOT_FOUND", "Traffic route was not found.");
+    const current = mockTrafficConfiguration.routes[index];
+    const route = trafficRouteSetting(body.route, current.listenerId, current);
+    mockTrafficConfiguration.routes[index] = route;
+    return trafficReceipt("update-traffic-route", route.name, "Traffic route updated");
+  }),
+  http.delete("/api/v1/connect/traffic/routes/:resourceId", async ({ request, params }) => {
+    const body = (await request.json()) as TrafficDeleteRequest;
+    const conflict = acceptTrafficRevision(body.revisionToken);
+    if (conflict) return conflict;
+    if (!body.confirmed) return llmFailure(400, "INVALID_REQUEST", "Deletion must be confirmed.");
+    const index = mockTrafficConfiguration.routes.findIndex(
+      (item) => item.id === String(params.resourceId),
+    );
+    if (index < 0) return llmFailure(404, "RESOURCE_NOT_FOUND", "Traffic route was not found.");
+    const [route] = mockTrafficConfiguration.routes.splice(index, 1);
+    return trafficReceipt("delete-traffic-route", route.name, "Traffic route deleted");
   }),
   http.get("/api/v1/connect/traffic/routes", ({ request }) =>
     pageResponse(request, connectData.routes, "agentgateway"),

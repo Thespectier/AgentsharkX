@@ -757,6 +757,31 @@ YAML 写入与最后一次读取到 POST 之间的窗口变成原子操作。
 
 建议提交：`feat(connect): manage verified agentgateway mcp settings`
 
+### Phase 10：Connect Traffic 配置管理
+
+目标：把 agentgateway v1.3.1 原生 Listener 和 Route 管理能力搬入
+`Connect / Traffic`，同时不在 AgentsharkX 中实现流量代理或新的策略引擎。
+
+任务：
+
+1. 在 OpenAPI 中定义完整 Traffic configuration、Bind/Listener/Route CRUD 和写入回执。
+2. BFF 从整份 `/api/config` 返回来源保真的 Bind、Listener、HTTP/TCP Route 对象。
+3. 支持所有原生 Listener 协议、TLS、HTTP match 数组、backend 变体/权重及三层 policy 对象。
+4. 使用与 LLM/MCP 共用的一次性 revision、进程内变更锁、单次 POST 和整文档回读比对。
+5. Listener 协议族切换及 Bind/Listener 删除需要明确确认，不静默保留不兼容 Route。
+6. Connect UI 提供 Listener/Route 双视图、搜索、完整表单、JSON 嵌套对象编辑和 CRUD 回执。
+7. 添加 adapter、BFF、Mock、浏览器流程、可访问性和桌面/移动布局测试，并更新兼容文档。
+
+验收：
+
+- Bind、Listener、HTTP/TCP Route 可新增、编辑和删除，来源、上游 ID 与 raw reference 保留。
+- HTTPS/TLS 配置、多 HTTP match、header/query 条件、backend weight 和完整 policy 对象可回读。
+- 修改单一 Traffic 资源保留 LLM、MCP、其他 Bind/Listener/Route 及未知顶层字段。
+- 陈旧 revision 不触发 POST；成功操作只 POST 一次并回读比对完整规范化文档。
+- 页面不代理业务流量，不解释或执行上游 policy，不引入数据库或新策略引擎。
+
+建议提交：`feat(connect): manage agentgateway traffic configuration`
+
 ---
 
 ## 12. Codex 每阶段执行协议

@@ -42,6 +42,8 @@ type Gateway interface {
 	ApplyLLMChange(context.Context, string, model.LLMChange) (string, error)
 	MCPConfiguration(context.Context) (model.MCPConfiguration, string, error)
 	ApplyMCPChange(context.Context, string, model.MCPChange) (string, error)
+	TrafficConfiguration(context.Context) (model.TrafficConfiguration, string, error)
+	ApplyTrafficChange(context.Context, string, model.TrafficChange) (string, error)
 }
 
 type revisionState struct {
@@ -95,6 +97,23 @@ func (service *Service) MCPConfiguration(ctx context.Context) (model.MCPConfigur
 	configuration.RevisionToken = token
 	configuration.Links = service.links
 	return model.MCPConfigurationEnvelope{
+		Data: configuration,
+		Meta: gatewayMeta(configuration.FetchedAt, false),
+	}, nil
+}
+
+func (service *Service) TrafficConfiguration(ctx context.Context) (model.TrafficConfigurationEnvelope, error) {
+	configuration, revision, err := service.gateway.TrafficConfiguration(ctx)
+	if err != nil {
+		return model.TrafficConfigurationEnvelope{}, err
+	}
+	token, err := service.issueRevision(revision)
+	if err != nil {
+		return model.TrafficConfigurationEnvelope{}, err
+	}
+	configuration.RevisionToken = token
+	configuration.Links = service.links
+	return model.TrafficConfigurationEnvelope{
 		Data: configuration,
 		Meta: gatewayMeta(configuration.FetchedAt, false),
 	}, nil
@@ -168,6 +187,69 @@ func (service *Service) DeleteMCPServer(ctx context.Context, id string, request 
 	return service.applyMCPChange(ctx, request.RevisionToken, model.MCPChange{
 		Operation: "delete-mcp-server", ResourceID: id,
 	}, id, "MCP server deleted")
+}
+
+func (service *Service) CreateTrafficBind(ctx context.Context, request model.TrafficBindMutationRequest) (model.TrafficMutationEnvelope, error) {
+	return service.applyTrafficChange(ctx, request.RevisionToken, model.TrafficChange{
+		Operation: "create-traffic-bind", Bind: request.Bind,
+	}, fmt.Sprintf("Port %d", request.Bind.Port), "Traffic bind created")
+}
+
+func (service *Service) UpdateTrafficBind(ctx context.Context, id string, request model.TrafficBindMutationRequest) (model.TrafficMutationEnvelope, error) {
+	return service.applyTrafficChange(ctx, request.RevisionToken, model.TrafficChange{
+		Operation: "update-traffic-bind", ResourceID: id, Bind: request.Bind,
+	}, fmt.Sprintf("Port %d", request.Bind.Port), "Traffic bind updated")
+}
+
+func (service *Service) DeleteTrafficBind(ctx context.Context, id string, request model.TrafficDeleteRequest) (model.TrafficMutationEnvelope, error) {
+	if !request.Confirmed {
+		return model.TrafficMutationEnvelope{}, ErrInvalidRequest
+	}
+	return service.applyTrafficChange(ctx, request.RevisionToken, model.TrafficChange{
+		Operation: "delete-traffic-bind", ResourceID: id, DeleteChildren: request.DeleteChildren,
+	}, id, "Traffic bind deleted")
+}
+
+func (service *Service) CreateTrafficListener(ctx context.Context, request model.TrafficListenerMutationRequest) (model.TrafficMutationEnvelope, error) {
+	return service.applyTrafficChange(ctx, request.RevisionToken, model.TrafficChange{
+		Operation: "create-traffic-listener", BindID: request.BindID, Listener: request.Listener,
+	}, "Listener", "Traffic listener created")
+}
+
+func (service *Service) UpdateTrafficListener(ctx context.Context, id string, request model.TrafficListenerMutationRequest) (model.TrafficMutationEnvelope, error) {
+	return service.applyTrafficChange(ctx, request.RevisionToken, model.TrafficChange{
+		Operation: "update-traffic-listener", ResourceID: id, Listener: request.Listener,
+	}, "Listener", "Traffic listener updated")
+}
+
+func (service *Service) DeleteTrafficListener(ctx context.Context, id string, request model.TrafficDeleteRequest) (model.TrafficMutationEnvelope, error) {
+	if !request.Confirmed {
+		return model.TrafficMutationEnvelope{}, ErrInvalidRequest
+	}
+	return service.applyTrafficChange(ctx, request.RevisionToken, model.TrafficChange{
+		Operation: "delete-traffic-listener", ResourceID: id, DeleteChildren: request.DeleteChildren,
+	}, id, "Traffic listener deleted")
+}
+
+func (service *Service) CreateTrafficRoute(ctx context.Context, request model.TrafficRouteMutationRequest) (model.TrafficMutationEnvelope, error) {
+	return service.applyTrafficChange(ctx, request.RevisionToken, model.TrafficChange{
+		Operation: "create-traffic-route", ListenerID: request.ListenerID, Route: request.Route,
+	}, "Route", "Traffic route created")
+}
+
+func (service *Service) UpdateTrafficRoute(ctx context.Context, id string, request model.TrafficRouteMutationRequest) (model.TrafficMutationEnvelope, error) {
+	return service.applyTrafficChange(ctx, request.RevisionToken, model.TrafficChange{
+		Operation: "update-traffic-route", ResourceID: id, Route: request.Route,
+	}, "Route", "Traffic route updated")
+}
+
+func (service *Service) DeleteTrafficRoute(ctx context.Context, id string, request model.TrafficDeleteRequest) (model.TrafficMutationEnvelope, error) {
+	if !request.Confirmed {
+		return model.TrafficMutationEnvelope{}, ErrInvalidRequest
+	}
+	return service.applyTrafficChange(ctx, request.RevisionToken, model.TrafficChange{
+		Operation: "delete-traffic-route", ResourceID: id,
+	}, id, "Traffic route deleted")
 }
 
 func (service *Service) applyLLMChange(ctx context.Context, token string, change model.LLMChange, target, message string) (model.LLMMutationEnvelope, error) {
@@ -254,6 +336,52 @@ func translateMCPError(err error) error {
 	case errors.Is(err, gateway.ErrMCPResourceNotFound):
 		return ErrNotFound
 	case errors.Is(err, gateway.ErrMCPResourceConflict):
+		return ErrConflict
+	default:
+		return err
+	}
+}
+
+func (service *Service) applyTrafficChange(ctx context.Context, token string, change model.TrafficChange, target, message string) (model.TrafficMutationEnvelope, error) {
+	if token == "" || len(token) > 128 || target == "" {
+		return model.TrafficMutationEnvelope{}, ErrInvalidRequest
+	}
+	revision, ok := service.consumeRevision(token)
+	if !ok {
+		return model.TrafficMutationEnvelope{}, ErrRevisionStale
+	}
+	if !service.beginMutation() {
+		return model.TrafficMutationEnvelope{}, ErrMutationInFlight
+	}
+	defer service.endMutation()
+	resolvedTarget, err := service.gateway.ApplyTrafficChange(ctx, revision, change)
+	if err != nil {
+		return model.TrafficMutationEnvelope{}, translateTrafficError(err)
+	}
+	if resolvedTarget != "" {
+		target = resolvedTarget
+	}
+	completedAt := time.Now().UTC()
+	return model.TrafficMutationEnvelope{
+		Data: model.TrafficMutationReceipt{
+			Operation: change.Operation, Status: "succeeded", Source: model.SourceAgentGateway,
+			Target: target, CompletedAt: completedAt, Message: message,
+		},
+		Meta: gatewayMeta(completedAt, false),
+	}, nil
+}
+
+func translateTrafficError(err error) error {
+	switch {
+	case errors.Is(err, gateway.ErrConfigurationChanged):
+		return ErrRevisionStale
+	case errors.Is(err, gateway.ErrTrafficInvalidRequest):
+		return ErrInvalidRequest
+	case errors.Is(err, gateway.ErrTrafficResourceNotFound):
+		return ErrNotFound
+	case errors.Is(err, gateway.ErrTrafficResourceReferenced):
+		return ErrReferenced
+	case errors.Is(err, gateway.ErrTrafficResourceConflict):
 		return ErrConflict
 	default:
 		return err

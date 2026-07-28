@@ -771,6 +771,35 @@ paths:
           $ref: '#/components/responses/BadGateway'
         '503':
           $ref: '#/components/responses/UpstreamUnavailable'
+    post:
+      tags: [Connect]
+      operationId: createTrafficRoute
+      summary: Add a verified HTTP or TCP route to an agentgateway listener
+      x-implementation-phase: 10
+      x-implementation-status: implemented
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TrafficRouteMutationRequest'
+      responses:
+        '201':
+          description: Route configuration written and verified
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrafficMutationEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+        '503':
+          $ref: '#/components/responses/UpstreamUnavailable'
 
   /api/v1/connect/traffic/routes/{resourceId}:
     get:
@@ -792,6 +821,291 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/NotFound'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+        '503':
+          $ref: '#/components/responses/UpstreamUnavailable'
+    patch:
+      tags: [Connect]
+      operationId: updateTrafficRoute
+      summary: Update a verified agentgateway route without replacing unrelated configuration
+      x-implementation-phase: 10
+      x-implementation-status: implemented
+      parameters:
+        - $ref: '#/components/parameters/ResourceId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TrafficRouteMutationRequest'
+      responses:
+        '200':
+          description: Route configuration written and verified
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrafficMutationEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+        '503':
+          $ref: '#/components/responses/UpstreamUnavailable'
+    delete:
+      tags: [Connect]
+      operationId: deleteTrafficRoute
+      summary: Delete a verified agentgateway route after explicit confirmation
+      x-implementation-phase: 10
+      x-implementation-status: implemented
+      parameters:
+        - $ref: '#/components/parameters/ResourceId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TrafficDeleteRequest'
+      responses:
+        '200':
+          description: Route deleted and configuration verified
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrafficMutationEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+        '503':
+          $ref: '#/components/responses/UpstreamUnavailable'
+
+  /api/v1/connect/traffic/configuration:
+    get:
+      tags: [Connect]
+      operationId: getTrafficConfiguration
+      summary: Return complete verified bind, listener, and route configuration
+      x-implementation-phase: 10
+      x-implementation-status: implemented
+      responses:
+        '200':
+          description: Complete traffic configuration
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrafficConfigurationEnvelope'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+        '503':
+          $ref: '#/components/responses/UpstreamUnavailable'
+
+  /api/v1/connect/traffic/binds:
+    post:
+      tags: [Connect]
+      operationId: createTrafficBind
+      summary: Add an agentgateway bind port
+      x-implementation-phase: 10
+      x-implementation-status: implemented
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TrafficBindMutationRequest'
+      responses:
+        '201':
+          description: Bind created and configuration verified
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrafficMutationEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+        '503':
+          $ref: '#/components/responses/UpstreamUnavailable'
+
+  /api/v1/connect/traffic/binds/{resourceId}:
+    patch:
+      tags: [Connect]
+      operationId: updateTrafficBind
+      summary: Update an agentgateway bind port
+      x-implementation-phase: 10
+      x-implementation-status: implemented
+      parameters:
+        - $ref: '#/components/parameters/ResourceId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TrafficBindMutationRequest'
+      responses:
+        '200':
+          description: Bind updated and configuration verified
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrafficMutationEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+        '503':
+          $ref: '#/components/responses/UpstreamUnavailable'
+    delete:
+      tags: [Connect]
+      operationId: deleteTrafficBind
+      summary: Delete an agentgateway bind and its listeners after explicit confirmation
+      x-implementation-phase: 10
+      x-implementation-status: implemented
+      parameters:
+        - $ref: '#/components/parameters/ResourceId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TrafficDeleteRequest'
+      responses:
+        '200':
+          description: Bind deleted and configuration verified
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrafficMutationEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+        '503':
+          $ref: '#/components/responses/UpstreamUnavailable'
+
+  /api/v1/connect/traffic/listeners:
+    post:
+      tags: [Connect]
+      operationId: createTrafficListener
+      summary: Add a complete agentgateway listener to a bind
+      x-implementation-phase: 10
+      x-implementation-status: implemented
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TrafficListenerMutationRequest'
+      responses:
+        '201':
+          description: Listener created and configuration verified
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrafficMutationEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+        '503':
+          $ref: '#/components/responses/UpstreamUnavailable'
+
+  /api/v1/connect/traffic/listeners/{resourceId}:
+    patch:
+      tags: [Connect]
+      operationId: updateTrafficListener
+      summary: Update a complete agentgateway listener while preserving compatible routes
+      x-implementation-phase: 10
+      x-implementation-status: implemented
+      parameters:
+        - $ref: '#/components/parameters/ResourceId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TrafficListenerMutationRequest'
+      responses:
+        '200':
+          description: Listener updated and configuration verified
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrafficMutationEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+        '503':
+          $ref: '#/components/responses/UpstreamUnavailable'
+    delete:
+      tags: [Connect]
+      operationId: deleteTrafficListener
+      summary: Delete an agentgateway listener and its routes after explicit confirmation
+      x-implementation-phase: 10
+      x-implementation-status: implemented
+      parameters:
+        - $ref: '#/components/parameters/ResourceId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TrafficDeleteRequest'
+      responses:
+        '200':
+          description: Listener deleted and configuration verified
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrafficMutationEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
         '502':
           $ref: '#/components/responses/BadGateway'
         '503':
@@ -2368,6 +2682,165 @@ components:
       required: [data, meta]
       properties:
         data: { $ref: '#/components/schemas/McpMutationReceipt' }
+        meta: { $ref: '#/components/schemas/Meta' }
+    TrafficConfigObject:
+      type: object
+      description: Complete source-owned configuration object verified against agentgateway v1.3.1.
+      additionalProperties: true
+    TrafficBindSetting:
+      type: object
+      additionalProperties: false
+      required:
+        [id, source, fetchedAt, rawRef, port, tunnelProtocol, listenerCount, routeCount, backendCount]
+      properties:
+        id: { type: string }
+        upstreamId: { type: string }
+        source: { $ref: '#/components/schemas/GatewaySource' }
+        fetchedAt: { type: string, format: date-time }
+        rawRef: { $ref: '#/components/schemas/RawRef' }
+        port: { type: integer, minimum: 1, maximum: 65535 }
+        tunnelProtocol: { type: string }
+        listenerCount: { type: integer, minimum: 0 }
+        routeCount: { type: integer, minimum: 0 }
+        backendCount: { type: integer, minimum: 0 }
+    TrafficListenerSetting:
+      type: object
+      additionalProperties: false
+      required:
+        [id, source, fetchedAt, rawRef, bindId, port, name, hostname, protocol, routeCount, backendCount, configuration]
+      properties:
+        id: { type: string }
+        upstreamId: { type: string }
+        source: { $ref: '#/components/schemas/GatewaySource' }
+        fetchedAt: { type: string, format: date-time }
+        rawRef: { $ref: '#/components/schemas/RawRef' }
+        bindId: { type: string }
+        port: { type: integer, minimum: 1, maximum: 65535 }
+        name: { type: string }
+        hostname: { type: string }
+        protocol: { type: string, enum: [HTTP, HTTPS, TLS, TCP, HBONE] }
+        routeCount: { type: integer, minimum: 0 }
+        backendCount: { type: integer, minimum: 0 }
+        configuration: { $ref: '#/components/schemas/TrafficConfigObject' }
+    TrafficRouteSetting:
+      type: object
+      additionalProperties: false
+      required:
+        [id, source, fetchedAt, rawRef, listenerId, listener, port, kind, name, hostnames, backendCount, configuration]
+      properties:
+        id: { type: string }
+        upstreamId: { type: string }
+        source: { $ref: '#/components/schemas/GatewaySource' }
+        fetchedAt: { type: string, format: date-time }
+        rawRef: { $ref: '#/components/schemas/RawRef' }
+        listenerId: { type: string }
+        listener: { type: string }
+        port: { type: integer, minimum: 1, maximum: 65535 }
+        kind: { type: string, enum: [http, tcp] }
+        name: { type: string }
+        hostnames:
+          type: array
+          items: { type: string }
+        backendCount: { type: integer, minimum: 0 }
+        configuration: { $ref: '#/components/schemas/TrafficConfigObject' }
+    TrafficConfiguration:
+      type: object
+      additionalProperties: false
+      required: [source, fetchedAt, revisionToken, binds, listeners, routes, links]
+      properties:
+        source: { $ref: '#/components/schemas/GatewaySource' }
+        fetchedAt: { type: string, format: date-time }
+        revisionToken: { type: string, minLength: 1, maxLength: 128 }
+        binds:
+          type: array
+          items: { $ref: '#/components/schemas/TrafficBindSetting' }
+        listeners:
+          type: array
+          items: { $ref: '#/components/schemas/TrafficListenerSetting' }
+        routes:
+          type: array
+          items: { $ref: '#/components/schemas/TrafficRouteSetting' }
+        links: { $ref: '#/components/schemas/ConsoleLinks' }
+    TrafficConfigurationEnvelope:
+      type: object
+      additionalProperties: false
+      required: [data, meta]
+      properties:
+        data: { $ref: '#/components/schemas/TrafficConfiguration' }
+        meta: { $ref: '#/components/schemas/Meta' }
+    TrafficBindDraft:
+      type: object
+      additionalProperties: false
+      required: [port]
+      properties:
+        port: { type: integer, minimum: 1, maximum: 65535 }
+    TrafficListenerDraft:
+      type: object
+      additionalProperties: false
+      required: [configuration]
+      properties:
+        configuration: { $ref: '#/components/schemas/TrafficConfigObject' }
+        deleteIncompatibleRoutes: { type: boolean, default: false }
+    TrafficRouteDraft:
+      type: object
+      additionalProperties: false
+      required: [kind, configuration]
+      properties:
+        kind: { type: string, enum: [http, tcp] }
+        configuration: { $ref: '#/components/schemas/TrafficConfigObject' }
+    TrafficBindMutationRequest:
+      type: object
+      additionalProperties: false
+      required: [revisionToken, bind]
+      properties:
+        revisionToken:
+          { type: string, minLength: 1, maxLength: 128, writeOnly: true }
+        bind: { $ref: '#/components/schemas/TrafficBindDraft' }
+    TrafficListenerMutationRequest:
+      type: object
+      additionalProperties: false
+      required: [revisionToken, listener]
+      properties:
+        revisionToken:
+          { type: string, minLength: 1, maxLength: 128, writeOnly: true }
+        bindId: { type: string }
+        listener: { $ref: '#/components/schemas/TrafficListenerDraft' }
+    TrafficRouteMutationRequest:
+      type: object
+      additionalProperties: false
+      required: [revisionToken, route]
+      properties:
+        revisionToken:
+          { type: string, minLength: 1, maxLength: 128, writeOnly: true }
+        listenerId: { type: string }
+        route: { $ref: '#/components/schemas/TrafficRouteDraft' }
+    TrafficDeleteRequest:
+      type: object
+      additionalProperties: false
+      required: [revisionToken, confirmed]
+      properties:
+        revisionToken:
+          { type: string, minLength: 1, maxLength: 128, writeOnly: true }
+        confirmed: { type: boolean }
+        deleteChildren: { type: boolean }
+    TrafficMutationReceipt:
+      type: object
+      additionalProperties: false
+      required: [operation, status, source, target, requestId, completedAt, message]
+      properties:
+        operation: { type: string }
+        status: { type: string, enum: [succeeded] }
+        source: { $ref: '#/components/schemas/GatewaySource' }
+        target: { type: string }
+        requestId: { type: string }
+        completedAt: { type: string, format: date-time }
+        message: { type: string }
+    TrafficMutationEnvelope:
+      type: object
+      additionalProperties: false
+      required: [data, meta]
+      properties:
+        data: { $ref: '#/components/schemas/TrafficMutationReceipt' }
         meta: { $ref: '#/components/schemas/Meta' }
     GatewayMCPServer:
       type: object

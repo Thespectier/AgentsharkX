@@ -432,6 +432,119 @@ type MCPMutationEnvelope struct {
 	Meta Meta               `json:"meta"`
 }
 
+type TrafficConfigObject map[string]any
+
+type TrafficBindSetting struct {
+	ConnectResource
+	Port           int    `json:"port"`
+	TunnelProtocol string `json:"tunnelProtocol"`
+	ListenerCount  int    `json:"listenerCount"`
+	RouteCount     int    `json:"routeCount"`
+	BackendCount   int    `json:"backendCount"`
+}
+
+type TrafficListenerSetting struct {
+	ConnectResource
+	BindID        string              `json:"bindId"`
+	Port          int                 `json:"port"`
+	Name          string              `json:"name"`
+	Hostname      string              `json:"hostname"`
+	Protocol      string              `json:"protocol"`
+	RouteCount    int                 `json:"routeCount"`
+	BackendCount  int                 `json:"backendCount"`
+	Configuration TrafficConfigObject `json:"configuration"`
+}
+
+type TrafficRouteSetting struct {
+	ConnectResource
+	ListenerID    string              `json:"listenerId"`
+	Listener      string              `json:"listener"`
+	Port          int                 `json:"port"`
+	Kind          string              `json:"kind"`
+	Name          string              `json:"name"`
+	Hostnames     []string            `json:"hostnames"`
+	BackendCount  int                 `json:"backendCount"`
+	Configuration TrafficConfigObject `json:"configuration"`
+}
+
+type TrafficConfiguration struct {
+	Source        Source                   `json:"source"`
+	FetchedAt     time.Time                `json:"fetchedAt"`
+	RevisionToken string                   `json:"revisionToken"`
+	Binds         []TrafficBindSetting     `json:"binds"`
+	Listeners     []TrafficListenerSetting `json:"listeners"`
+	Routes        []TrafficRouteSetting    `json:"routes"`
+	Links         ConsoleLinks             `json:"links"`
+}
+
+type TrafficConfigurationEnvelope struct {
+	Data TrafficConfiguration `json:"data"`
+	Meta Meta                 `json:"meta"`
+}
+
+type TrafficBindDraft struct {
+	Port int `json:"port"`
+}
+
+type TrafficListenerDraft struct {
+	Configuration            TrafficConfigObject `json:"configuration"`
+	DeleteIncompatibleRoutes bool                `json:"deleteIncompatibleRoutes,omitempty"`
+}
+
+type TrafficRouteDraft struct {
+	Kind          string              `json:"kind"`
+	Configuration TrafficConfigObject `json:"configuration"`
+}
+
+type TrafficBindMutationRequest struct {
+	RevisionToken string           `json:"revisionToken"`
+	Bind          TrafficBindDraft `json:"bind"`
+}
+
+type TrafficListenerMutationRequest struct {
+	RevisionToken string               `json:"revisionToken"`
+	BindID        string               `json:"bindId,omitempty"`
+	Listener      TrafficListenerDraft `json:"listener"`
+}
+
+type TrafficRouteMutationRequest struct {
+	RevisionToken string            `json:"revisionToken"`
+	ListenerID    string            `json:"listenerId,omitempty"`
+	Route         TrafficRouteDraft `json:"route"`
+}
+
+type TrafficDeleteRequest struct {
+	RevisionToken  string `json:"revisionToken"`
+	Confirmed      bool   `json:"confirmed"`
+	DeleteChildren bool   `json:"deleteChildren,omitempty"`
+}
+
+type TrafficChange struct {
+	Operation      string
+	ResourceID     string
+	BindID         string
+	ListenerID     string
+	DeleteChildren bool
+	Bind           TrafficBindDraft
+	Listener       TrafficListenerDraft
+	Route          TrafficRouteDraft
+}
+
+type TrafficMutationReceipt struct {
+	Operation   string    `json:"operation"`
+	Status      string    `json:"status"`
+	Source      Source    `json:"source"`
+	Target      string    `json:"target"`
+	RequestID   string    `json:"requestId"`
+	CompletedAt time.Time `json:"completedAt"`
+	Message     string    `json:"message"`
+}
+
+type TrafficMutationEnvelope struct {
+	Data TrafficMutationReceipt `json:"data"`
+	Meta Meta                   `json:"meta"`
+}
+
 type GatewayRoute struct {
 	ConnectResource
 	Name                    string   `json:"name"`

@@ -1,6 +1,6 @@
 # Architecture
 
-Status: Phase 9 Connect MCP management over the Phase 7 preview, verified 2026-07-28.
+Status: Phase 10 Connect Traffic management over the Phase 7 preview, verified 2026-07-28.
 
 ## Context
 
@@ -41,7 +41,7 @@ The Go BFF is organized into the following packages:
 - `auth`: one-admin session, strict cookie, CSRF, and write protection.
 - `gateway`: agentgateway management adapter.
 - `connect`: filtering, cursor pagination, details, setup verification,
-  short-lived configuration revision tokens, serialized typed LLM/MCP
+  short-lived configuration revision tokens, serialized typed LLM/MCP/Traffic
   mutations, and native-console links over verified gateway resources.
 - `guard`: AgentGuard management adapter.
 - `trust`: explicit AgentGuard identity/resource aggregation, filtering,
@@ -125,15 +125,15 @@ A gateway failure cannot suppress AgentGuard data, and an AgentGuard failure
 cannot suppress gateway data. Aggregated responses carry per-source metadata
 and stale markers rather than collapsing partial failures into a global 500.
 
-## Phase 9 runtime data and storage
+## Phase 10 runtime data and storage
 
 The BFF has no database. Background monitors poll the two health contracts and,
 every two seconds by default, the verified Audit read contracts. New normalized
 events enter a 1000-record ring and are published with a monotonic SSE sequence.
 Reconnecting clients send `Last-Event-ID` and receive only newer retained
 records. Both the ring and browser list dedupe by normalized source/event ID.
-Connect reads a bounded `/api/config` snapshot per request and never returns raw
-config, policy bodies, LLM credential values, or prompt payloads. The LLM
+Connect reads a bounded `/api/config` snapshot per request. It never returns LLM
+credential values or prompt payloads. The LLM
 management contract returns only verified provider/direct-model main-form fields,
 allow-listed params, custom format names/paths, and credential configured/kind
 state. Credential changes use typed, write-only inputs for native ambient,
@@ -146,9 +146,12 @@ listener/federation settings and target connection fields: Streamable HTTP/SSE
 URL, host/port/path, or backend reference, plus stdio command, arguments,
 environment map, and inherited-environment behavior. OpenAPI targets and MCP
 policy bodies are reported but stay advanced/read-only; route-owned inline MCP
-targets retain their route scope and remain read-only. Protect may summarize
-explicit route/backend policy keys and raw config paths, while policy
-editing stays in agentgateway. Trust reads the four
+targets retain their route scope and remain read-only. The authenticated Traffic
+configuration contract returns complete source-owned Listener and Route objects,
+including TLS and Listener/Route/Backend policy objects, so administrators can
+edit them without a second policy engine in AgentsharkX. Protect continues to
+summarize explicit route/backend policy keys and raw config paths rather than
+duplicating the Traffic editor. Trust reads the four
 AgentGuard session/resource routes independently, so one failed capability does
 not erase successful siblings. It whitelists display fields and never returns
 session keys, client URLs, arbitrary principal/metadata objects, descriptors,
@@ -156,7 +159,7 @@ file contents, MCP URLs, detector metadata, reasons, or LLM configuration.
 
 The pinned agentgateway exposes only whole-document `GET` and `POST /api/config`
 operations and no ETag. The BFF therefore issues bounded five-minute, one-use
-revision tokens, serializes all in-process LLM and MCP mutations, rereads
+revision tokens, serializes all in-process LLM, MCP, and Traffic mutations, rereads
 immediately before the change, preserves unowned fields and opaque credential
 values, posts exactly once, then refetches and verifies the requested result. A
 native-console or YAML
@@ -171,6 +174,14 @@ advanced routing.
 MCP writes cover the verified global settings and top-level Streamable HTTP,
 SSE, and stdio target forms. They preserve MCP policies, OpenAPI targets,
 route-owned inline targets, non-MCP configuration, and unrecognized fields.
+
+Traffic writes cover bind CRUD; HTTP, HTTPS, HBONE, TCP, and TLS Listener CRUD;
+and HTTP/TCP Route CRUD. Listener edits preserve compatible child routes and
+require an explicit destructive choice when switching protocol families.
+Route objects retain all verified match arrays, backend variants, weights, TLS,
+and source-owned policy objects. Each mutation changes only the selected raw
+configuration path, preserves the rest of the document, performs one upstream
+POST, and verifies the complete canonical document by refetching.
 
 Agent rows are an AgentsharkX view over explicit AgentGuard `agent_id` and
 `owner_agent_id` fields. No gateway log, timing window, name similarity, or

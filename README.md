@@ -7,11 +7,11 @@ information architecture for connection management, trusted runtime context,
 protection workflows, and audit views without entering the agent data plane or
 reimplementing either upstream.
 
-The repository is at the **0.7.0 Phase 7 preview** with the Phase 8 Connect LLM
-and Phase 9 Connect MCP management rounds applied. Connect reads explicit
+The repository is at the **0.7.0 Phase 7 preview** with the Phase 8 Connect LLM,
+Phase 9 Connect MCP, and Phase 10 Connect Traffic management rounds applied. Connect reads explicit
 agentgateway providers, models, MCP targets, and routes, and manages verified
 shared-provider, direct-model, MCP listener/federation, and top-level MCP target
-settings through the BFF. Existing LLM credentials are never returned to
+settings plus bind, listener, and HTTP/TCP route configuration through the BFF. Existing LLM credentials are never returned to
 the browser. New credentials support the native ambient, environment-variable,
 file, write-only literal, AWS static, GCP credential-file, and Azure managed
 identity modes. Direct models also support incoming, explicit, stripped-prefix,
@@ -19,8 +19,11 @@ and custom CEL outgoing-model mappings. Deleting a shared provider can remove
 its directly referenced models in the same confirmed configuration write; the
 operation remains blocked when a Virtual Model targets one of those models.
 MCP management covers Streamable HTTP, legacy SSE, and stdio targets, including
-their complete typed connection/process fields. OpenAPI targets, target/global
-policy bodies, virtual models, and advanced routing, TLS, and raw configuration
+their complete typed connection/process fields. Traffic management covers bind
+ports; HTTP, HTTPS, HBONE, TCP, and TLS listeners; TLS configuration; HTTP
+matches; backend variants and weights; and complete listener, route, and backend
+policy objects. OpenAPI MCP targets, MCP target/global policy bodies, virtual
+models, top-level services/backends/route groups, and arbitrary raw configuration
 remain in the native agentgateway console. Trust now reads AgentGuard sessions,
 tools, skills, and MCP resources, builds Agents only from explicit AgentGuard
 identity fields, and supports tool-label updates plus polled Skill/MCP detection
