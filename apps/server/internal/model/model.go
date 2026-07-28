@@ -545,6 +545,66 @@ type TrafficMutationEnvelope struct {
 	Meta Meta                   `json:"meta"`
 }
 
+type GatewayPolicySetting struct {
+	ProtectResourceBase
+	Family      string `json:"family"`
+	Target      string `json:"target"`
+	Key         string `json:"key"`
+	Title       string `json:"title"`
+	Group       string `json:"group"`
+	Description string `json:"description"`
+	Scope       string `json:"scope"`
+	Phase       string `json:"phase"`
+	Action      string `json:"action"`
+	Enabled     bool   `json:"enabled"`
+	Editable    bool   `json:"editable"`
+	Value       any    `json:"value"`
+}
+
+type GatewayPolicyConfiguration struct {
+	Source        Source                 `json:"source"`
+	FetchedAt     time.Time              `json:"fetchedAt"`
+	RevisionToken string                 `json:"revisionToken"`
+	Settings      []GatewayPolicySetting `json:"settings"`
+	Links         ConsoleLinks           `json:"links"`
+}
+
+type GatewayPolicyConfigurationEnvelope struct {
+	Data GatewayPolicyConfiguration `json:"data"`
+	Meta Meta                       `json:"meta"`
+}
+
+type GatewayPolicyMutationRequest struct {
+	RevisionToken string `json:"revisionToken"`
+	Value         any    `json:"value"`
+}
+
+type GatewayPolicyDeleteRequest struct {
+	RevisionToken string `json:"revisionToken"`
+	Confirmed     bool   `json:"confirmed"`
+}
+
+type GatewayPolicyChange struct {
+	Operation  string
+	ResourceID string
+	Value      any
+}
+
+type GatewayPolicyMutationReceipt struct {
+	Operation   string    `json:"operation"`
+	Status      string    `json:"status"`
+	Source      Source    `json:"source"`
+	Target      string    `json:"target"`
+	RequestID   string    `json:"requestId"`
+	CompletedAt time.Time `json:"completedAt"`
+	Message     string    `json:"message"`
+}
+
+type GatewayPolicyMutationEnvelope struct {
+	Data GatewayPolicyMutationReceipt `json:"data"`
+	Meta Meta                         `json:"meta"`
+}
+
 type GatewayRoute struct {
 	ConnectResource
 	Name                    string   `json:"name"`

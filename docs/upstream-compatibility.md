@@ -2,11 +2,11 @@
 
 Last verified: 2026-07-28.
 
-Phase 10 still prevents direct browser contact with either upstream. The
-agentgateway adapter reads request-log summary, complete detail, and Analytics contracts and now
-performs the Provider/direct-Model, MCP, and Traffic configuration workflows. The
-AgentGuard adapter reads Trust, Protect, and Audit
-resources and invokes
+Phase 11 still prevents direct browser contact with either upstream. The
+agentgateway adapter reads request-log summary, complete detail, and Analytics
+contracts and now performs the Provider/direct-Model, MCP, Traffic, and verified
+Protect policy configuration workflows. The AgentGuard adapter reads Trust,
+Protect, and Audit resources and invokes
 verified label, detection, runtime-rule, and approval mutations with
 `X-Api-Key`, source-scoped errors, strict response bounds, and no automatic
 write retries. The pinned agentgateway admin token setting is not transmitted
@@ -152,8 +152,8 @@ MCP configuration. The pinned `LocalSimpleMcpConfig` contract verifies `port`,
 legacy SSE (`sse`), stdio, and OpenAPI shapes. AgentsharkX returns complete
 typed network and stdio fields to the authenticated console and manages the
 same three target kinds exposed by the native main editor. It preserves target
-and global policies without returning their bodies. OpenAPI target editing and
-route-owned inline targets remain advanced/read-only. MCP and LLM writes share
+and global policies. OpenAPI target editing and route-owned inline targets remain
+advanced/read-only. MCP and LLM writes share
 one process-local mutation lock because both replace the same `/api/config`
 document.
 
@@ -171,20 +171,45 @@ changes require explicit removal of incompatible routes. A successful mutation
 changes only the selected path, posts once, then compares the refetched complete
 canonical document with the intended document.
 
-LLM, MCP, and Traffic mutations use the same process-local lock because every
-operation replaces `/api/config`. The upstream still has no conditional write,
-so an external native-console or YAML write can race between the final revision
-check and POST; detectable stale revisions are rejected and ambiguous writes are
-never retried automatically.
+Phase 11 adds an authenticated Protect configuration projection over exact
+v1.3.1 policy paths. The **LLM / MODEL** group covers the twelve native global
+LLM entries (`oidc`, `jwtAuth`, `authorization`, `extAuthz`, `extProc`, `cors`,
+`transformations`, `basicAuth`, `apiKey`, `guardrails`, `localRateLimit`, and
+`remoteRateLimit`) and thirteen direct-model fields (`authorization`, `defaults`,
+`overrides`, `transformation`, `requestHeaders`, `responseHeaders`, `tls`, the
+compatible `backendTLS` alias, `auth`, `health`, `backendTunnel`, `guardrails`,
+and `promptCaching`). The **MCP** group covers the native global entries
+`mcpAuthentication`, `mcpAuthorization`, `mcpGuardrails`, `authorization`,
+`cors`, `extAuthz`, `jwtAuth`, `localRateLimit`, `remoteRateLimit`,
+`transformations`, and `extProc`.
 
-For Phase 3 and the Phase 8/9/10 configuration-write rounds, the populated config shape, UI
-routes, client hook, and file-backed write implementation were checked against
-the exact pinned source revision. The sanitized
+The BFF returns the complete source-owned JSON value for those entries and uses
+one generic upsert/delete operation per exact raw path from the current
+revision. Direct models are addressed by configuration index, and mutually
+exclusive TLS aliases are not combined. Delete follows the native editor:
+global LLM entries retain a `null` marker except that `localRateLimit` is
+removed, while global MCP and direct-model entries are removed. Unknown policy
+keys are preserved but remain read-only. Virtual-model
+policies, MCP target policies, and route-owned policy scopes are excluded from
+the Protect editor; verified Listener/Route/Backend policy objects remain in
+Connect Traffic. AgentsharkX neither evaluates nor translates any policy.
+
+LLM, MCP, Traffic, and Protect policy mutations use the same process-local lock
+because every operation replaces `/api/config`. Each Protect mutation consumes
+one revision, changes only the selected verified path, sends one POST, and
+compares the complete canonical refetch. The upstream still has no conditional
+write, so an external native-console or YAML write can race between the final
+revision check and POST; detectable stale revisions are rejected and ambiguous
+writes are never retried automatically.
+
+For Phase 3 and the Phase 8/9/10/11 configuration-write rounds, the populated
+config shape, UI routes, client hook, and file-backed write implementation were
+checked against the exact pinned source revision. The sanitized
 `config-populated.response.json` freezes string, reference, and custom provider
 shapes plus direct and virtual models,
-top-level MCP targets, HTTP/TCP routes, and sanitized route/backend policy
-placement while excluding secret params, policy bodies, API keys, and other
-sensitive values. Contract tests fail
+top-level MCP targets, HTTP/TCP routes, sanitized route/backend policy placement,
+and representative non-secret global/model/MCP policy bodies while excluding
+secret params, API keys, and other sensitive values. Contract tests fail
 with a field-scoped error when required names, provider shapes, routing
 strategies, or MCP transport shapes change.
 

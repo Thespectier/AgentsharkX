@@ -834,6 +834,107 @@ func TestConnectTrafficConfigurationReadsAndWritesCompleteRoutes(t *testing.T) {
 	}
 }
 
+func TestProtectGatewayPoliciesReturnCompleteValuesAndWriteWithoutLoggingBodies(t *testing.T) {
+	t.Parallel()
+
+	const sourceOwnedValue = "complete-policy-value-visible-to-admin"
+	const submittedValue = "submitted-policy-value-never-logged"
+	var mu sync.Mutex
+	configuration := []byte(`{"llm":{"providers":[],"models":[{"name":"fast","provider":{"reference":"shared"},"defaults":{"temperature":0.2}}],"policies":{"cors":{"allowOrigins":["https://admin.example"]}}},"mcp":{"targets":[],"policies":{"mcpAuthorization":{"rules":[{"action":"allow","resource":"` + sourceOwnedValue + `"}]}}},"binds":[],"unowned":{"preserve":true}}`)
+	mutationCalls := 0
+	gatewayServer := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		writer.Header().Set("Content-Type", "application/json")
+		if request.URL.Path != "/api/config" {
+			http.NotFound(writer, request)
+			return
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		if request.Method == http.MethodPost {
+			body, err := io.ReadAll(request.Body)
+			if err != nil {
+				t.Error(err)
+				http.Error(writer, "read failed", http.StatusInternalServerError)
+				return
+			}
+			configuration = body
+			mutationCalls++
+			_, _ = io.WriteString(writer, `{"status":"success"}`)
+			return
+		}
+		_, _ = writer.Write(configuration)
+	}))
+	defer gatewayServer.Close()
+
+	gatewayClient, err := gateway.New(gatewayServer.URL, gatewayServer.Client(), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var logs bytes.Buffer
+	server := httptest.NewServer(New(ServerConfig{
+		Connect: connect.New(gatewayClient, "http://localhost:15000/ui"),
+		Logger:  slog.New(slog.NewTextHandler(&logs, nil)), AuthEnabled: false,
+	}))
+	defer server.Close()
+
+	var current model.GatewayPolicyConfigurationEnvelope
+	protectJSON(t, server.Client(), http.MethodGet, server.URL+"/api/v1/protect/gateway-policies/configuration", "", http.StatusOK, &current)
+	currentJSON := marshalIntegrationValue(t, current)
+	if current.Data.RevisionToken == "" || !bytes.Contains(currentJSON, []byte(sourceOwnedValue)) {
+		t.Fatalf("complete authenticated gateway policies were not returned: %#v", current.Data)
+	}
+	find := func(family, key string) model.GatewayPolicySetting {
+		for _, setting := range current.Data.Settings {
+			if setting.Family == family && setting.Key == key {
+				return setting
+			}
+		}
+		t.Fatalf("missing %s/%s gateway policy", family, key)
+		return model.GatewayPolicySetting{}
+	}
+	if setting := find("llm", "cors"); !setting.Enabled || setting.RawRef.ID != "/llm/policies/cors" {
+		t.Fatalf("unexpected LLM policy setting: %#v", setting)
+	}
+	if setting := find("model", "defaults"); !setting.Enabled || setting.Target != "fast" || setting.RawRef.ID != "/llm/models/0/defaults" {
+		t.Fatalf("unexpected model policy setting: %#v", setting)
+	}
+	if setting := find("mcp", "mcpAuthorization"); !setting.Enabled || setting.RawRef.ID != "/mcp/policies/mcpAuthorization" {
+		t.Fatalf("unexpected MCP policy setting: %#v", setting)
+	}
+
+	localRateLimit := find("llm", "localRateLimit")
+	requestBody, err := json.Marshal(model.GatewayPolicyMutationRequest{
+		RevisionToken: current.Data.RevisionToken,
+		Value:         []any{map[string]any{"requests": 100, "key": submittedValue}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var receipt model.GatewayPolicyMutationEnvelope
+	protectJSON(t, server.Client(), http.MethodPatch, server.URL+"/api/v1/protect/gateway-policies/"+localRateLimit.ID, string(requestBody), http.StatusOK, &receipt)
+	if receipt.Data.Operation != "upsert-gateway-policy" || strings.Contains(string(marshalIntegrationValue(t, receipt)), submittedValue) {
+		t.Fatalf("unexpected gateway policy receipt: %#v", receipt.Data)
+	}
+	if strings.Contains(logs.String(), sourceOwnedValue) || strings.Contains(logs.String(), submittedValue) {
+		t.Fatalf("gateway policy body reached application logs: %s", logs.String())
+	}
+
+	var refreshed model.GatewayPolicyConfigurationEnvelope
+	protectJSON(t, server.Client(), http.MethodGet, server.URL+"/api/v1/protect/gateway-policies/configuration", "", http.StatusOK, &refreshed)
+	deleteBody, err := json.Marshal(model.GatewayPolicyDeleteRequest{RevisionToken: refreshed.Data.RevisionToken, Confirmed: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	protectJSON(t, server.Client(), http.MethodDelete, server.URL+"/api/v1/protect/gateway-policies/"+localRateLimit.ID, string(deleteBody), http.StatusOK, &receipt)
+	mu.Lock()
+	written := append([]byte(nil), configuration...)
+	writes := mutationCalls
+	mu.Unlock()
+	if writes != 2 || bytes.Contains(written, []byte(submittedValue)) || !bytes.Contains(written, []byte(sourceOwnedValue)) || !bytes.Contains(written, []byte(`"unowned":{"preserve":true}`)) {
+		t.Fatalf("unexpected gateway policy writes=%d document=%s", writes, written)
+	}
+}
+
 func TestTrustResourcesLabelsAndScanFlowThroughAuthenticatedBFF(t *testing.T) {
 	t.Parallel()
 

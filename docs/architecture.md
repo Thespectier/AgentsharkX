@@ -1,6 +1,6 @@
 # Architecture
 
-Status: Phase 10 Connect Traffic management over the Phase 7 preview, verified 2026-07-28.
+Status: Phase 11 Protect gateway-policy management over the Phase 7 preview, verified 2026-07-28.
 
 ## Context
 
@@ -41,14 +41,15 @@ The Go BFF is organized into the following packages:
 - `auth`: one-admin session, strict cookie, CSRF, and write protection.
 - `gateway`: agentgateway management adapter.
 - `connect`: filtering, cursor pagination, details, setup verification,
-  short-lived configuration revision tokens, serialized typed LLM/MCP/Traffic
-  mutations, and native-console links over verified gateway resources.
+  short-lived configuration revision tokens, one shared serialized coordinator
+  for typed LLM/MCP/Traffic/Policy mutations, and native-console links over
+  verified gateway resources.
 - `guard`: AgentGuard management adapter.
 - `trust`: explicit AgentGuard identity/resource aggregation, filtering,
   pagination, label writes, and bounded scan-job orchestration.
-- `protect`: independent gateway policy and AgentGuard rule/plugin aggregation,
-  short-lived rule-check tokens, guarded mutations, approval pagination, and
-  duplicate-operation locks.
+- `protect`: authenticated complete gateway-policy configuration workflows,
+  independent AgentGuard rule/plugin aggregation, short-lived rule-check tokens,
+  guarded mutations, approval pagination, and duplicate-operation locks.
 - `audit`: independent polling, source-scoped failures, normalized summaries,
   authenticated complete source detail, exact-ID session counts, metrics,
   trends, and a bounded activity snapshot.
@@ -125,7 +126,7 @@ A gateway failure cannot suppress AgentGuard data, and an AgentGuard failure
 cannot suppress gateway data. Aggregated responses carry per-source metadata
 and stale markers rather than collapsing partial failures into a global 500.
 
-## Phase 10 runtime data and storage
+## Phase 11 runtime data and storage
 
 The BFF has no database. Background monitors poll the two health contracts and,
 every two seconds by default, the verified Audit read contracts. New normalized
@@ -144,25 +145,28 @@ outgoing-model mappings.
 The authenticated MCP management contract returns complete verified top-level
 listener/federation settings and target connection fields: Streamable HTTP/SSE
 URL, host/port/path, or backend reference, plus stdio command, arguments,
-environment map, and inherited-environment behavior. OpenAPI targets and MCP
-policy bodies are reported but stay advanced/read-only; route-owned inline MCP
-targets retain their route scope and remain read-only. The authenticated Traffic
-configuration contract returns complete source-owned Listener and Route objects,
-including TLS and Listener/Route/Backend policy objects, so administrators can
-edit them without a second policy engine in AgentsharkX. Protect continues to
-summarize explicit route/backend policy keys and raw config paths rather than
-duplicating the Traffic editor. Trust reads the four
-AgentGuard session/resource routes independently, so one failed capability does
+environment map, and inherited-environment behavior. OpenAPI targets and
+route-owned inline MCP targets retain their scope and remain read-only. The
+authenticated Protect policy contract separately returns the complete
+source-owned JSON value for every verified global MCP policy path. The
+authenticated Traffic configuration contract returns complete source-owned
+Listener and Route objects, including TLS and Listener/Route/Backend policy
+objects, so administrators can
+edit them without a second policy engine in AgentsharkX. Protect Policies is
+split into **LLM / MODEL** and **MCP** views. It manages the exact verified
+global LLM, direct-model, and native global MCP policy paths without interpreting
+their JSON, while route/backend policies remain in Connect Traffic. Trust reads
+the four AgentGuard session/resource routes independently, so one failed capability does
 not erase successful siblings. It whitelists display fields and never returns
 session keys, client URLs, arbitrary principal/metadata objects, descriptors,
 file contents, MCP URLs, detector metadata, reasons, or LLM configuration.
 
 The pinned agentgateway exposes only whole-document `GET` and `POST /api/config`
 operations and no ETag. The BFF therefore issues bounded five-minute, one-use
-revision tokens, serializes all in-process LLM, MCP, and Traffic mutations, rereads
-immediately before the change, preserves unowned fields and opaque credential
-values, posts exactly once, then refetches and verifies the requested result. A
-native-console or YAML
+revision tokens, serializes all in-process LLM, MCP, Traffic, and Protect policy
+mutations, rereads immediately before the change, preserves unowned fields and
+opaque credential values, posts exactly once, then refetches and verifies the
+requested result. A native-console or YAML
 write can still race between the final read and whole-document POST; the BFF
 rejects detectable stale revisions but cannot make that upstream gap atomic.
 Provider type and model provider binding are immutable during Phase 8 edits.
@@ -171,9 +175,10 @@ Models in the same whole-document write. If a Virtual Model targets any of
 those Models, the BFF rejects the operation instead of mutating upstream-owned
 advanced routing.
 
-MCP writes cover the verified global settings and top-level Streamable HTTP,
-SSE, and stdio target forms. They preserve MCP policies, OpenAPI targets,
-route-owned inline targets, non-MCP configuration, and unrecognized fields.
+Connect MCP writes cover the verified global settings and top-level Streamable
+HTTP, SSE, and stdio target forms. They preserve MCP policies, OpenAPI targets,
+route-owned inline targets, non-MCP configuration, and unrecognized fields;
+Phase 11 Protect writes may change only one verified global MCP policy path.
 
 Traffic writes cover bind CRUD; HTTP, HTTPS, HBONE, TCP, and TLS Listener CRUD;
 and HTTP/TCP Route CRUD. Listener edits preserve compatible child routes and
@@ -199,12 +204,21 @@ automatically retried.
 Protect reads AgentGuard rules and pending approvals, then fans out plugin
 config/available reads only for explicit Trust agent IDs with fixed agent and
 concurrency bounds. Gateway policy failures remain independent from AgentGuard
-rule/plugin failures. Rule source is submitted only to AgentGuard check/publish
-and is never returned by list APIs or logged. A publish token stores only the
-source digest, expires after five minutes, is consumed once, and is held in a
-100-entry in-memory bound. Dangerous writes require a non-empty operator note
-and explicit confirmation; approval/rule locks prevent concurrent duplicate
-actions in one BFF process. Upstream mutations are not automatically retried.
+rule/plugin failures. Its authenticated gateway-policy configuration returns
+complete JSON values for the verified agentgateway v1.3.1 catalog: twelve global
+LLM policies, thirteen direct-model policy fields (including the compatible
+`tls`/`backendTLS` alternatives), and eleven native global MCP policies. Each
+upsert or delete addresses one stable raw path, shares the Connect configuration
+revision and lock, performs exactly one whole-document POST, and verifies the
+complete canonical refetch. Unknown policy keys are preserved and exposed only
+as read-only facts; virtual-model, MCP-target, and route-owned policy scopes are
+not edited from this page. Rule source is submitted only to AgentGuard
+check/publish and is never returned by list APIs or logged. A publish token
+stores only the source digest, expires after five minutes, is consumed once,
+and is held in a 100-entry in-memory bound. Dangerous AgentGuard writes require
+a non-empty operator note and explicit confirmation; approval/rule locks prevent
+concurrent duplicate actions in one BFF process. Upstream mutations are not
+automatically retried.
 
 The Audit poller requests agentgateway summary logs with
 `includeAttributes=false`; it does not pull payloads into periodic list or SSE
@@ -260,6 +274,9 @@ vault, replay engine, or traffic collector.
 - Authenticated Audit detail returns complete verified upstream event records.
   Application access logs record method/path/status only and do not copy event
   bodies; list, overview, and SSE responses omit raw detail.
+- Authenticated Protect policy configuration returns complete source-owned policy
+  JSON. Application logs and mutation receipts contain only operation metadata;
+  policy bodies are not copied into summary lists or SSE responses.
 - The default Phase 7 preview runs the pinned agentgateway binary on the host
   and publishes the remaining management services on loopback. It is a
   development topology, not an internet-facing deployment.

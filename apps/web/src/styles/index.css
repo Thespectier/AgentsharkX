@@ -921,6 +921,7 @@ kbd {
   text-transform: capitalize;
 }
 .status-badge--active,
+.status-badge--enabled,
 .status-badge--healthy,
 .status-badge--clean,
 .status-badge--supported,
@@ -2297,6 +2298,193 @@ kbd {
   color: var(--text-tertiary);
   font-size: 10px;
 }
+.gateway-policy-manager {
+  min-width: 0;
+}
+.gateway-policy-toolbar {
+  display: grid;
+  grid-template-columns: minmax(250px, 360px) minmax(220px, 1fr);
+  gap: 12px;
+  align-items: center;
+}
+.gateway-policy-toolbar .mcp-segmented button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+}
+.gateway-policy-search input {
+  width: 100%;
+  min-height: 42px;
+  padding: 8px 11px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: #090f18;
+  color: var(--text-primary);
+  font: inherit;
+}
+.gateway-policy-groups {
+  display: grid;
+  gap: 14px;
+}
+.gateway-policy-card {
+  min-width: 0;
+}
+.gateway-policy-card__summary {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  white-space: nowrap;
+}
+.gateway-policy-card__summary > span {
+  color: var(--text-tertiary);
+  font-size: 10px;
+}
+.gateway-policy-card .data-table {
+  min-width: 930px;
+}
+.gateway-policy-card .data-table td {
+  height: auto;
+  min-height: 58px;
+  vertical-align: top;
+}
+.gateway-policy-card .gateway-policy-column--policy,
+.gateway-policy-card .gateway-policy-column--placement,
+.gateway-policy-card .gateway-policy-column--value {
+  white-space: normal;
+}
+.gateway-policy-column--policy {
+  width: 28%;
+  min-width: 250px;
+}
+.gateway-policy-column--placement {
+  width: 24%;
+  min-width: 210px;
+}
+.gateway-policy-column--value {
+  width: 18%;
+  min-width: 170px;
+}
+.gateway-policy-column--actions {
+  width: 76px;
+}
+.gateway-policy-name {
+  align-items: flex-start;
+}
+.gateway-policy-name > span,
+.gateway-policy-name small {
+  min-width: 0;
+}
+.gateway-policy-name small {
+  display: grid;
+  gap: 3px;
+  max-width: 360px;
+  white-space: normal;
+}
+.gateway-policy-name small span {
+  overflow-wrap: anywhere;
+  line-height: 1.45;
+}
+.gateway-policy-name code {
+  width: fit-content;
+  color: #95a9c1;
+}
+.gateway-policy-group {
+  display: inline-block;
+  max-width: 150px;
+  color: #c0cede;
+  line-height: 1.45;
+  white-space: normal;
+}
+.gateway-policy-placement {
+  display: grid;
+  max-width: 300px;
+  gap: 5px;
+  line-height: 1.35;
+}
+.gateway-policy-placement > div {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.gateway-policy-placement strong {
+  color: #d3deeb;
+  overflow-wrap: anywhere;
+}
+.gateway-policy-placement > span {
+  color: var(--text-secondary);
+  font-size: 10px;
+  overflow-wrap: anywhere;
+}
+.gateway-policy-placement > code {
+  color: var(--text-tertiary);
+  font-size: 9px;
+  overflow-wrap: anywhere;
+}
+.gateway-policy-unset {
+  color: var(--text-tertiary);
+  font-size: 11px;
+}
+.gateway-policy-value {
+  max-width: 340px;
+}
+.gateway-policy-value summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: #9eb8e8;
+  cursor: pointer;
+  font-size: 11px;
+  list-style: none;
+}
+.gateway-policy-value summary::-webkit-details-marker {
+  display: none;
+}
+.gateway-policy-value[open] summary {
+  margin-bottom: 7px;
+}
+.gateway-policy-value pre {
+  max-width: min(420px, 52vw);
+  max-height: 250px;
+  margin: 0;
+  padding: 9px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  background: #070c13;
+  color: #b9c9df;
+  font-size: 10px;
+  line-height: 1.5;
+  overflow: auto;
+  white-space: pre;
+}
+.gateway-policy-actions {
+  display: flex;
+  width: 68px;
+  gap: 2px;
+}
+.gateway-policy-actions .button {
+  width: 30px;
+  padding: 0;
+}
+.gateway-policy-actions .button:last-child:not(:disabled) {
+  color: #ff8ca0;
+}
+.gateway-policy-editor .definition-list,
+.gateway-policy-delete .definition-list {
+  margin-top: 0;
+}
+.gateway-policy-json-field {
+  display: grid;
+  gap: 7px;
+}
+.gateway-policy-json-field textarea {
+  min-height: 300px;
+  resize: vertical;
+  tab-size: 2;
+}
+.gateway-policy-delete .confirm-field {
+  margin-inline: 0;
+}
 .linkout-card {
   display: flex;
   min-height: 252px;
@@ -3522,6 +3710,19 @@ kbd {
 
   .traffic-manager__bar {
     grid-template-columns: 1fr;
+  }
+
+  .gateway-policy-toolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .gateway-policy-card .card-header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .gateway-policy-card__summary {
+    justify-content: space-between;
   }
 
   .traffic-bind > header {

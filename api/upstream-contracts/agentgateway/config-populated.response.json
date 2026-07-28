@@ -1,6 +1,23 @@
 {
   "llm": {
     "port": 4000,
+    "policies": {
+      "cors": {
+        "allowOrigins": ["https://console.example.invalid"],
+        "allowMethods": ["POST"]
+      },
+      "authorization": {
+        "rules": ["jwt.email.endsWith(\"@example.invalid\")"]
+      },
+      "localRateLimit": [
+        {
+          "type": "tokens",
+          "fillInterval": "1s",
+          "tokensPerFill": 10,
+          "maxTokens": 100
+        }
+      ]
+    },
     "providers": [
       { "name": "openai-shared", "provider": "openai" },
       {
@@ -14,7 +31,26 @@
     ],
     "models": [
       { "name": "openai/*", "provider": "openai" },
-      { "name": "fast", "provider": { "reference": "openai-shared" }, "params": { "model": "gpt-5.4-nano" } }
+      {
+        "name": "fast",
+        "provider": { "reference": "openai-shared" },
+        "params": { "model": "gpt-5.4-nano" },
+        "defaults": { "temperature": 0.2 },
+        "overrides": { "stream": false },
+        "transformation": { "user": "llmRequest.user" },
+        "requestHeaders": { "set": { "x-policy-scope": "admin" } },
+        "responseHeaders": { "remove": ["server"] },
+        "health": {
+          "unhealthyExpression": "response.code >= 500",
+          "eviction": { "duration": "30s" }
+        },
+        "authorization": { "rules": ["jwt.sub != ''"] },
+        "promptCaching": {
+          "cacheSystem": true,
+          "cacheMessages": true,
+          "minTokens": 1024
+        }
+      }
     ],
     "virtualModels": [
       {
@@ -31,6 +67,15 @@
     ]
   },
   "mcp": {
+    "policies": {
+      "cors": {
+        "allowOrigins": ["https://console.example.invalid"],
+        "exposeHeaders": ["Mcp-Session-Id"]
+      },
+      "mcpAuthorization": {
+        "rules": ["mcp.tool.name == \"get_weather\""]
+      }
+    },
     "targets": [
       { "name": "everything", "mcp": { "host": "http://localhost:3001/mcp" } }
     ]

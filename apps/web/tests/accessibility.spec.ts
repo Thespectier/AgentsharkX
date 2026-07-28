@@ -31,3 +31,21 @@ for (const path of pages) {
     expect(blocking.length, JSON.stringify(summary, null, 2)).toBe(0);
   });
 }
+
+test("gateway policy editor has no serious or critical accessibility violations", async ({
+  page,
+}) => {
+  await page.goto("/protect/policies");
+  await page
+    .getByRole("row", { name: /Basic auth/ })
+    .getByRole("button", { name: "Configure policy: Basic auth" })
+    .click();
+  const dialog = page.getByRole("dialog", { name: "Configure Basic auth" });
+  await expect(dialog).toBeVisible();
+  await expect(dialog).toHaveCSS("opacity", "1");
+  const results = await new AxeBuilder({ page }).include("[role=dialog]").analyze();
+  const blocking = results.violations.filter(({ impact }) =>
+    impact ? ["serious", "critical"].includes(impact) : false,
+  );
+  expect(blocking, JSON.stringify(blocking, null, 2)).toEqual([]);
+});

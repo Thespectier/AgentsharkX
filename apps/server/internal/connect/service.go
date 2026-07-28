@@ -44,6 +44,8 @@ type Gateway interface {
 	ApplyMCPChange(context.Context, string, model.MCPChange) (string, error)
 	TrafficConfiguration(context.Context) (model.TrafficConfiguration, string, error)
 	ApplyTrafficChange(context.Context, string, model.TrafficChange) (string, error)
+	PolicyConfiguration(context.Context) (model.GatewayPolicyConfiguration, string, error)
+	ApplyPolicyChange(context.Context, string, model.GatewayPolicyChange) (string, error)
 }
 
 type revisionState struct {
@@ -114,6 +116,23 @@ func (service *Service) TrafficConfiguration(ctx context.Context) (model.Traffic
 	configuration.RevisionToken = token
 	configuration.Links = service.links
 	return model.TrafficConfigurationEnvelope{
+		Data: configuration,
+		Meta: gatewayMeta(configuration.FetchedAt, false),
+	}, nil
+}
+
+func (service *Service) GatewayPolicyConfiguration(ctx context.Context) (model.GatewayPolicyConfigurationEnvelope, error) {
+	configuration, revision, err := service.gateway.PolicyConfiguration(ctx)
+	if err != nil {
+		return model.GatewayPolicyConfigurationEnvelope{}, err
+	}
+	token, err := service.issueRevision(revision)
+	if err != nil {
+		return model.GatewayPolicyConfigurationEnvelope{}, err
+	}
+	configuration.RevisionToken = token
+	configuration.Links = service.links
+	return model.GatewayPolicyConfigurationEnvelope{
 		Data: configuration,
 		Meta: gatewayMeta(configuration.FetchedAt, false),
 	}, nil
@@ -250,6 +269,66 @@ func (service *Service) DeleteTrafficRoute(ctx context.Context, id string, reque
 	return service.applyTrafficChange(ctx, request.RevisionToken, model.TrafficChange{
 		Operation: "delete-traffic-route", ResourceID: id,
 	}, id, "Traffic route deleted")
+}
+
+func (service *Service) UpsertGatewayPolicy(ctx context.Context, id string, request model.GatewayPolicyMutationRequest) (model.GatewayPolicyMutationEnvelope, error) {
+	if request.Value == nil {
+		return model.GatewayPolicyMutationEnvelope{}, ErrInvalidRequest
+	}
+	return service.applyGatewayPolicyChange(ctx, request.RevisionToken, model.GatewayPolicyChange{
+		Operation: "upsert-gateway-policy", ResourceID: id, Value: request.Value,
+	}, "Gateway policy saved")
+}
+
+func (service *Service) DeleteGatewayPolicy(ctx context.Context, id string, request model.GatewayPolicyDeleteRequest) (model.GatewayPolicyMutationEnvelope, error) {
+	if !request.Confirmed {
+		return model.GatewayPolicyMutationEnvelope{}, ErrInvalidRequest
+	}
+	return service.applyGatewayPolicyChange(ctx, request.RevisionToken, model.GatewayPolicyChange{
+		Operation: "delete-gateway-policy", ResourceID: id,
+	}, "Gateway policy deleted")
+}
+
+func (service *Service) applyGatewayPolicyChange(ctx context.Context, token string, change model.GatewayPolicyChange, message string) (model.GatewayPolicyMutationEnvelope, error) {
+	if token == "" || len(token) > 128 || change.ResourceID == "" || len(change.ResourceID) > 512 {
+		return model.GatewayPolicyMutationEnvelope{}, ErrInvalidRequest
+	}
+	revision, ok := service.consumeRevision(token)
+	if !ok {
+		return model.GatewayPolicyMutationEnvelope{}, ErrRevisionStale
+	}
+	if !service.beginMutation() {
+		return model.GatewayPolicyMutationEnvelope{}, ErrMutationInFlight
+	}
+	defer service.endMutation()
+	target, err := service.gateway.ApplyPolicyChange(ctx, revision, change)
+	if err != nil {
+		return model.GatewayPolicyMutationEnvelope{}, translateGatewayPolicyError(err)
+	}
+	if target == "" {
+		target = change.ResourceID
+	}
+	completedAt := time.Now().UTC()
+	return model.GatewayPolicyMutationEnvelope{
+		Data: model.GatewayPolicyMutationReceipt{
+			Operation: change.Operation, Status: "succeeded", Source: model.SourceAgentGateway,
+			Target: target, CompletedAt: completedAt, Message: message,
+		},
+		Meta: gatewayMeta(completedAt, false),
+	}, nil
+}
+
+func translateGatewayPolicyError(err error) error {
+	switch {
+	case errors.Is(err, gateway.ErrConfigurationChanged):
+		return ErrRevisionStale
+	case errors.Is(err, gateway.ErrGatewayPolicyInvalidRequest):
+		return ErrInvalidRequest
+	case errors.Is(err, gateway.ErrGatewayPolicyNotFound):
+		return ErrNotFound
+	default:
+		return err
+	}
 }
 
 func (service *Service) applyLLMChange(ctx context.Context, token string, change model.LLMChange, target, message string) (model.LLMMutationEnvelope, error) {

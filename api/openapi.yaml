@@ -5,12 +5,13 @@ info:
   description: |
     Source-preserving management API above agentgateway and AgentGuard.
     Authentication, independent upstream health and capability probes, and
-    agentgateway resource reads and typed LLM configuration writes provide the
-    management foundation. Trust adds
+    agentgateway resource reads and revision-controlled LLM, MCP, Traffic, and
+    gateway-policy configuration writes provide the management foundation. Trust adds
     source-preserving AgentGuard identities, resources, label updates, and
-    bounded asynchronous scan orchestration. Protect adds source-grouped
-    gateway policy summaries, AgentGuard runtime-rule check/publish/delete,
-    per-agent plugin phases, and guarded approval decisions. Audit adds bounded
+    bounded asynchronous scan orchestration. Protect adds authenticated complete
+    LLM/model/MCP policy configuration, source-grouped summaries, AgentGuard
+    runtime-rule check/publish/delete, per-agent plugin phases, and guarded
+    approval decisions. Audit adds bounded
     gateway traffic and AgentGuard audit/session projections, source-scoped
     analytics, confirmed approval-resolution evidence, authenticated complete
     upstream detail, and
@@ -1404,6 +1405,109 @@ paths:
                 $ref: '#/components/schemas/ProtectSnapshotEnvelope'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+        '503':
+          $ref: '#/components/responses/UpstreamUnavailable'
+
+  /api/v1/protect/gateway-policies/configuration:
+    get:
+      tags: [Protect]
+      operationId: getGatewayPolicyConfiguration
+      summary: Return complete verified LLM, model, and MCP policy configuration
+      description: |
+        Returns authenticated source-owned agentgateway policy values. Complete
+        policy values are never copied into application logs, list summaries,
+        or SSE responses.
+      x-implementation-phase: 11
+      x-implementation-status: implemented
+      responses:
+        '200':
+          description: Complete agentgateway policy configuration and a one-use revision token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GatewayPolicyConfigurationEnvelope'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+        '503':
+          $ref: '#/components/responses/UpstreamUnavailable'
+
+  /api/v1/protect/gateway-policies/{resourceId}:
+    patch:
+      tags: [Protect]
+      operationId: upsertGatewayPolicy
+      summary: Create or replace one verified agentgateway policy value
+      description: |
+        Writes only the path identified by resourceId while preserving all
+        unrelated source-owned configuration. The result is read back and
+        verified before success is returned.
+      x-implementation-phase: 11
+      x-implementation-status: implemented
+      parameters:
+        - $ref: '#/components/parameters/ResourceId'
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GatewayPolicyMutationRequest'
+      responses:
+        '200':
+          description: Policy value written and verified
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GatewayPolicyMutationEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+        '503':
+          $ref: '#/components/responses/UpstreamUnavailable'
+    delete:
+      tags: [Protect]
+      operationId: deleteGatewayPolicy
+      summary: Delete one verified agentgateway policy value after explicit confirmation
+      x-implementation-phase: 11
+      x-implementation-status: implemented
+      parameters:
+        - $ref: '#/components/parameters/ResourceId'
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GatewayPolicyDeleteRequest'
+      responses:
+        '200':
+          description: Policy value deleted and configuration verified
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GatewayPolicyMutationEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
         '502':
           $ref: '#/components/responses/BadGateway'
         '503':
@@ -3428,6 +3532,118 @@ components:
         phase: { type: string }
         action: { type: string }
         status: { type: string, enum: [read-only] }
+    GatewayPolicyValue:
+      description: Complete source-owned JSON value for one verified agentgateway policy path.
+      oneOf:
+        - type: object
+          additionalProperties: true
+        - type: array
+          items: {}
+        - type: string
+        - type: number
+        - type: boolean
+    GatewayPolicySetting:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          id,
+          upstreamId,
+          source,
+          fetchedAt,
+          rawRef,
+          family,
+          target,
+          key,
+          title,
+          group,
+          description,
+          scope,
+          phase,
+          action,
+          enabled,
+          editable,
+          value,
+        ]
+      properties:
+        id: { type: string }
+        upstreamId: { type: string }
+        source: { $ref: '#/components/schemas/GatewaySource' }
+        fetchedAt: { type: string, format: date-time }
+        rawRef: { $ref: '#/components/schemas/RawRef' }
+        family: { type: string, enum: [llm, model, mcp] }
+        target:
+          type: string
+          description: Global LLM/MCP scope or the explicitly verified direct model name.
+        key: { type: string }
+        title: { type: string }
+        group: { type: string }
+        description: { type: string }
+        scope: { type: string }
+        phase: { type: string }
+        action: { type: string }
+        enabled: { type: boolean }
+        editable: { type: boolean }
+        value:
+          oneOf:
+            - $ref: '#/components/schemas/GatewayPolicyValue'
+            - type: 'null'
+    GatewayPolicyConfiguration:
+      type: object
+      additionalProperties: false
+      required: [source, fetchedAt, revisionToken, settings, links]
+      properties:
+        source: { $ref: '#/components/schemas/GatewaySource' }
+        fetchedAt: { type: string, format: date-time }
+        revisionToken: { type: string, minLength: 1, maxLength: 128 }
+        settings:
+          type: array
+          items: { $ref: '#/components/schemas/GatewayPolicySetting' }
+        links: { $ref: '#/components/schemas/ConsoleLinks' }
+    GatewayPolicyConfigurationEnvelope:
+      type: object
+      additionalProperties: false
+      required: [data, meta]
+      properties:
+        data: { $ref: '#/components/schemas/GatewayPolicyConfiguration' }
+        meta: { $ref: '#/components/schemas/Meta' }
+    GatewayPolicyMutationRequest:
+      type: object
+      additionalProperties: false
+      required: [revisionToken, value]
+      properties:
+        revisionToken:
+          { type: string, minLength: 1, maxLength: 128, writeOnly: true }
+        value: { $ref: '#/components/schemas/GatewayPolicyValue' }
+    GatewayPolicyDeleteRequest:
+      type: object
+      additionalProperties: false
+      required: [revisionToken, confirmed]
+      properties:
+        revisionToken:
+          { type: string, minLength: 1, maxLength: 128, writeOnly: true }
+        confirmed: { type: boolean }
+    GatewayPolicyMutationReceipt:
+      type: object
+      additionalProperties: false
+      required: [operation, status, source, target, requestId, completedAt, message]
+      properties:
+        operation:
+          type: string
+          enum: [upsert-gateway-policy, delete-gateway-policy]
+        status: { type: string, enum: [succeeded] }
+        source: { $ref: '#/components/schemas/GatewaySource' }
+        target: { type: string }
+        requestId: { type: string }
+        completedAt: { type: string, format: date-time }
+        message: { type: string }
+    GatewayPolicyMutationEnvelope:
+      type: object
+      additionalProperties: false
+      required: [data, meta]
+      properties:
+        data: { $ref: '#/components/schemas/GatewayPolicyMutationReceipt' }
+        meta: { $ref: '#/components/schemas/Meta' }
     RuntimeRule:
       type: object
       additionalProperties: false

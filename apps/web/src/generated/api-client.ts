@@ -749,6 +749,54 @@ export type ProtectPolicy = {
   status: "read-only";
 };
 
+export type GatewayPolicyValue = unknown;
+
+export type GatewayPolicySetting = {
+  id: string;
+  upstreamId: string;
+  source: GatewaySource;
+  fetchedAt: string;
+  rawRef: RawRef;
+  family: "llm" | "model" | "mcp";
+  target: string;
+  key: string;
+  title: string;
+  group: string;
+  description: string;
+  scope: string;
+  phase: string;
+  action: string;
+  enabled: boolean;
+  editable: boolean;
+  value: unknown;
+};
+
+export type GatewayPolicyConfiguration = {
+  source: GatewaySource;
+  fetchedAt: string;
+  revisionToken: string;
+  settings: Array<GatewayPolicySetting>;
+  links: ConsoleLinks;
+};
+
+export type GatewayPolicyConfigurationEnvelope = { data: GatewayPolicyConfiguration; meta: Meta };
+
+export type GatewayPolicyMutationRequest = { revisionToken: string; value: GatewayPolicyValue };
+
+export type GatewayPolicyDeleteRequest = { revisionToken: string; confirmed: boolean };
+
+export type GatewayPolicyMutationReceipt = {
+  operation: "upsert-gateway-policy" | "delete-gateway-policy";
+  status: "succeeded";
+  source: GatewaySource;
+  target: string;
+  requestId: string;
+  completedAt: string;
+  message: string;
+};
+
+export type GatewayPolicyMutationEnvelope = { data: GatewayPolicyMutationReceipt; meta: Meta };
+
 export type RuntimeRule = {
   id: string;
   upstreamId: string;
@@ -924,6 +972,7 @@ export const implementedOperations = {
   createTrafficBind: { method: "POST", path: "/api/v1/connect/traffic/binds" },
   createTrafficListener: { method: "POST", path: "/api/v1/connect/traffic/listeners" },
   createTrafficRoute: { method: "POST", path: "/api/v1/connect/traffic/routes" },
+  deleteGatewayPolicy: { method: "DELETE", path: "/api/v1/protect/gateway-policies/{resourceId}" },
   deleteLlmModel: { method: "DELETE", path: "/api/v1/connect/llm/models/{resourceId}" },
   deleteLlmProvider: { method: "DELETE", path: "/api/v1/connect/llm/providers/{resourceId}" },
   deleteMcpServer: { method: "DELETE", path: "/api/v1/connect/mcp/servers/{resourceId}" },
@@ -948,6 +997,10 @@ export const implementedOperations = {
   getConnectAnalytics: { method: "GET", path: "/api/v1/connect/analytics" },
   getConnectSummary: { method: "GET", path: "/api/v1/connect/summary" },
   getGatewayMcpServer: { method: "GET", path: "/api/v1/connect/mcp/servers/{resourceId}" },
+  getGatewayPolicyConfiguration: {
+    method: "GET",
+    path: "/api/v1/protect/gateway-policies/configuration",
+  },
   getLiveness: { method: "GET", path: "/healthz" },
   getLlmConfiguration: { method: "GET", path: "/api/v1/connect/llm/configuration" },
   getMcpConfiguration: { method: "GET", path: "/api/v1/connect/mcp/configuration" },
@@ -983,6 +1036,7 @@ export const implementedOperations = {
     path: "/api/v1/connect/traffic/listeners/{resourceId}",
   },
   updateTrafficRoute: { method: "PATCH", path: "/api/v1/connect/traffic/routes/{resourceId}" },
+  upsertGatewayPolicy: { method: "PATCH", path: "/api/v1/protect/gateway-policies/{resourceId}" },
   verifyGatewaySetup: { method: "GET", path: "/api/v1/connect/setup" },
 } as const;
 
@@ -996,6 +1050,7 @@ export interface OperationResponses {
   createTrafficBind: TrafficMutationEnvelope;
   createTrafficListener: TrafficMutationEnvelope;
   createTrafficRoute: TrafficMutationEnvelope;
+  deleteGatewayPolicy: GatewayPolicyMutationEnvelope;
   deleteLlmModel: LlmMutationEnvelope;
   deleteLlmProvider: LlmMutationEnvelope;
   deleteMcpServer: McpMutationEnvelope;
@@ -1014,6 +1069,7 @@ export interface OperationResponses {
   getConnectAnalytics: AnalyticsEnvelope;
   getConnectSummary: ConnectSummaryEnvelope;
   getGatewayMcpServer: MCPEnvelope;
+  getGatewayPolicyConfiguration: GatewayPolicyConfigurationEnvelope;
   getLiveness: Liveness;
   getLlmConfiguration: LlmConfigurationEnvelope;
   getMcpConfiguration: McpConfigurationEnvelope;
@@ -1046,6 +1102,7 @@ export interface OperationResponses {
   updateTrafficBind: TrafficMutationEnvelope;
   updateTrafficListener: TrafficMutationEnvelope;
   updateTrafficRoute: TrafficMutationEnvelope;
+  upsertGatewayPolicy: GatewayPolicyMutationEnvelope;
   verifyGatewaySetup: ConnectSetupEnvelope;
 }
 
@@ -1059,6 +1116,7 @@ export interface OperationBodies {
   createTrafficBind: TrafficBindMutationRequest;
   createTrafficListener: TrafficListenerMutationRequest;
   createTrafficRoute: TrafficRouteMutationRequest;
+  deleteGatewayPolicy: GatewayPolicyDeleteRequest;
   deleteLlmModel: LlmDeleteRequest;
   deleteLlmProvider: LlmProviderDeleteRequest;
   deleteMcpServer: McpDeleteRequest;
@@ -1078,6 +1136,7 @@ export interface OperationBodies {
   updateTrafficBind: TrafficBindMutationRequest;
   updateTrafficListener: TrafficListenerMutationRequest;
   updateTrafficRoute: TrafficRouteMutationRequest;
+  upsertGatewayPolicy: GatewayPolicyMutationRequest;
 }
 
 export type ImplementedOperationId = keyof typeof implementedOperations;

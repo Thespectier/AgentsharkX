@@ -472,6 +472,93 @@ test("Protect requires a current syntax check and returns rule mutation receipts
   );
 });
 
+test("Protect manages complete LLM, model, and MCP policy values", async ({ page }) => {
+  await page.goto("/protect/policies");
+  await expect(page.getByRole("tab", { name: "LLM / MODEL" })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+
+  let row = page.getByRole("row", { name: /Basic auth/ });
+  await row.getByRole("button", { name: "Configure policy: Basic auth" }).click();
+  let dialog = page.getByRole("dialog", { name: "Configure Basic auth" });
+  const editor = dialog.getByLabel(/Complete policy value/);
+  await editor.fill("{invalid");
+  await dialog.getByRole("button", { name: "Save policy" }).click();
+  await expect(dialog.getByRole("alert")).toBeVisible();
+  await editor.fill('{"users":{"admin":"$2y$mock"}}');
+  await dialog.getByRole("button", { name: "Save policy" }).click();
+  await expect(page.getByRole("status").filter({ hasText: "Gateway policy saved" })).toBeVisible();
+  await expect(row).toContainText("Enabled");
+
+  await row.getByRole("button", { name: "Edit policy: Basic auth" }).click();
+  dialog = page.getByRole("dialog", { name: "Edit Basic auth" });
+  await expect(dialog.getByLabel(/Complete policy value/)).toContainText("$2y$mock");
+  await dialog.getByLabel(/Complete policy value/).fill('{"users":{"admin":"$2y$updated"}}');
+  await dialog.getByRole("button", { name: "Save policy" }).click();
+  await expect(page.getByRole("status").filter({ hasText: "Gateway policy saved" })).toBeVisible();
+
+  row = page.getByRole("row", { name: /Request overrides/ });
+  await row.getByRole("button", { name: "Configure policy: Request overrides" }).click();
+  dialog = page.getByRole("dialog", { name: "Configure Request overrides" });
+  await dialog.getByLabel(/Complete policy value/).fill('{"stream":false,"temperature":0.1}');
+  await dialog.getByRole("button", { name: "Save policy" }).click();
+  await expect(row).toContainText("Enabled");
+
+  await page.getByRole("tab", { name: "MCP", exact: true }).click();
+  await expect(page.getByRole("tab", { name: "MCP", exact: true })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  row = page.getByRole("row", { name: /MCP authentication/ });
+  await row.getByRole("button", { name: "Configure policy: MCP authentication" }).click();
+  dialog = page.getByRole("dialog", { name: "Configure MCP authentication" });
+  await dialog
+    .getByLabel(/Complete policy value/)
+    .fill('{"issuer":"https://identity.example","audiences":["tools"]}');
+  await dialog.getByRole("button", { name: "Save policy" }).click();
+  await expect(row).toContainText("Enabled");
+
+  await row.getByRole("button", { name: "Delete policy: MCP authentication" }).click();
+  const deletion = page.getByRole("dialog", { name: "Delete gateway policy" });
+  await deletion.getByLabel("I confirm this agentgateway policy should be removed.").check();
+  await deletion.getByRole("button", { name: "Delete policy" }).click();
+  await expect(
+    page.getByRole("status").filter({ hasText: "Gateway policy deleted" }),
+  ).toBeVisible();
+  await expect(row).toContainText("Disabled");
+});
+
+test("Protect policy manager stays contained on mobile", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/protect/policies");
+  await expect(page.getByRole("tab", { name: "LLM / MODEL" })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
+    true,
+  );
+  await page
+    .getByRole("row", { name: /Basic auth/ })
+    .getByRole("button", { name: "Configure policy: Basic auth" })
+    .click();
+  const dialog = page.getByRole("dialog", { name: "Configure Basic auth" });
+  const bounds = await dialog.evaluate((element) => {
+    const rect = element.getBoundingClientRect();
+    const footer = element.querySelector("footer")?.getBoundingClientRect();
+    return {
+      contained:
+        rect.left >= 0 && rect.right <= window.innerWidth && rect.bottom <= window.innerHeight,
+      footerContained: Boolean(
+        footer &&
+        footer.left >= rect.left &&
+        footer.right <= rect.right &&
+        footer.bottom <= rect.bottom,
+      ),
+      horizontalOverflow: element.scrollWidth > element.clientWidth,
+    };
+  });
+  expect(bounds).toEqual({ contained: true, footerContained: true, horizontalOverflow: false });
+});
+
 test("runtime rule composer stays contained and clears stale publication state", async ({
   page,
 }) => {

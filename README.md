@@ -8,11 +8,13 @@ protection workflows, and audit views without entering the agent data plane or
 reimplementing either upstream.
 
 The repository is at the **0.7.0 Phase 7 preview** with the Phase 8 Connect LLM,
-Phase 9 Connect MCP, and Phase 10 Connect Traffic management rounds applied. Connect reads explicit
+Phase 9 Connect MCP, Phase 10 Connect Traffic, and Phase 11 Protect gateway-policy
+management rounds applied. Connect reads explicit
 agentgateway providers, models, MCP targets, and routes, and manages verified
 shared-provider, direct-model, MCP listener/federation, and top-level MCP target
-settings plus bind, listener, and HTTP/TCP route configuration through the BFF. Existing LLM credentials are never returned to
-the browser. New credentials support the native ambient, environment-variable,
+settings plus bind, listener, and HTTP/TCP route configuration through the BFF.
+Existing LLM credentials are never returned to the browser. New credentials
+support the native ambient, environment-variable,
 file, write-only literal, AWS static, GCP credential-file, and Azure managed
 identity modes. Direct models also support incoming, explicit, stripped-prefix,
 and custom CEL outgoing-model mappings. Deleting a shared provider can remove
@@ -22,16 +24,23 @@ MCP management covers Streamable HTTP, legacy SSE, and stdio targets, including
 their complete typed connection/process fields. Traffic management covers bind
 ports; HTTP, HTTPS, HBONE, TCP, and TLS listeners; TLS configuration; HTTP
 matches; backend variants and weights; and complete listener, route, and backend
-policy objects. OpenAPI MCP targets, MCP target/global policy bodies, virtual
-models, top-level services/backends/route groups, and arbitrary raw configuration
-remain in the native agentgateway console. Trust now reads AgentGuard sessions,
+policy objects. The authenticated Protect Policies workspace exposes complete
+source-owned JSON for the verified agentgateway v1.3.1 global LLM policies,
+direct-model policy fields, and native MCP policies, grouped as **LLM / MODEL**
+and **MCP**, with create, update, and delete actions at their exact configuration
+paths. Unknown policy keys are preserved but remain read-only. Virtual models,
+MCP target policies, route-owned policies outside Connect Traffic, OpenAPI MCP
+targets, top-level services/backends/route groups, and arbitrary raw
+configuration remain in the native agentgateway console. Trust now reads
+AgentGuard sessions,
 tools, skills, and MCP resources, builds Agents only from explicit AgentGuard
 identity fields, and supports tool-label updates plus polled Skill/MCP detection
-jobs. Protect now displays read-only agentgateway policy/guardrail summaries,
-AgentGuard runtime rules and per-agent plugin phases, and supports syntax-gated
-rule publication/deletion plus guarded approval decisions. Every dangerous
-write requires a note, explicit confirmation, CSRF, a request ID, and a result
-receipt. Audit now polls agentgateway request-log summaries/Analytics and
+jobs. Protect also displays AgentGuard runtime rules and per-agent plugin phases,
+and supports syntax-gated rule publication/deletion plus guarded approval
+decisions. AgentGuard rule and approval writes require a note, explicit
+confirmation, CSRF, a request ID, and a result receipt; destructive gateway
+configuration actions require explicit confirmation. Audit now polls
+agentgateway request-log summaries/Analytics and
 AgentGuard Traffic/Audit/Sessions independently, retains a bounded 1000-event
 window, streams normalized events with SSE resume and client-side dedupe, and
 returns complete source-owned event detail to authenticated administrators.
@@ -150,9 +159,10 @@ session cookie. The token is not persisted in browser storage. After a reload,
 the authenticated session endpoint restores only the in-memory CSRF value.
 Production
 deployments must keep `AGENTSHARK_COOKIE_SECURE=true` and terminate HTTPS before
-the BFF. Trust, Protect, and Connect LLM write requests additionally require the
-session CSRF token. LLM configuration writes also require a short-lived, one-use
-revision token and are verified by a fresh upstream read. Rule check tokens,
+the BFF. Trust, Protect, and Connect write requests additionally require the
+session CSRF token. Agentgateway configuration writes require a short-lived,
+one-use revision token, share one in-process LLM/MCP/Traffic/Policy mutation
+lock, and are verified by a fresh canonical upstream read. Rule check tokens,
 scan jobs, and the Audit event window are bounded in
 memory and are lost when the BFF restarts. AgentGuard mutations are never
 automatically retried. The Audit poller keeps gateway payloads out of list and

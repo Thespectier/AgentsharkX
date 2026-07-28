@@ -13,6 +13,10 @@ import type {
 import type {
   ConfirmedActionRequest,
   DiagnosticsData,
+  GatewayPolicyConfiguration,
+  GatewayPolicyDeleteRequest,
+  GatewayPolicyMutationRequest,
+  GatewayPolicySetting,
   LabelUpdate,
   LlmConfiguration,
   LlmCredentialState,
@@ -310,6 +314,365 @@ async function pageResponse<T>(request: Request, data: T[], source: Source) {
 let mockTrustResources = trustResources.map((resource) => structuredClone(resource));
 let mockProtectSnapshot = structuredClone(protectSnapshot);
 let mockProtectApprovals = structuredClone(protectApprovals);
+let mockGatewayPolicyRevision = 1;
+
+type MockPolicyCatalogEntry = {
+  key: string;
+  title: string;
+  group: string;
+  description: string;
+  phase: string;
+  action: string;
+  value?: unknown;
+};
+
+const mockLlmPolicyCatalog: MockPolicyCatalogEntry[] = [
+  {
+    key: "cors",
+    title: "CORS",
+    group: "Access",
+    description: "Handle CORS requests and response headers.",
+    phase: "Request",
+    action: "Authorize",
+    value: { allowOrigins: ["https://console.example"] },
+  },
+  {
+    key: "apiKey",
+    title: "API keys",
+    group: "Access",
+    description: "Authenticate incoming requests with API keys.",
+    phase: "Request",
+    action: "Authenticate",
+  },
+  {
+    key: "basicAuth",
+    title: "Basic auth",
+    group: "Access",
+    description: "Authenticate incoming requests with Basic Auth.",
+    phase: "Request",
+    action: "Authenticate",
+  },
+  {
+    key: "jwtAuth",
+    title: "JWT auth",
+    group: "Access",
+    description: "Authenticate incoming requests with JWT bearer tokens.",
+    phase: "Request",
+    action: "Authenticate",
+  },
+  {
+    key: "oidc",
+    title: "OIDC",
+    group: "Access",
+    description: "Authenticate browser requests with OIDC.",
+    phase: "Request",
+    action: "Authenticate",
+  },
+  {
+    key: "authorization",
+    title: "Authorization",
+    group: "Access",
+    description: "Apply authorization rules to incoming requests.",
+    phase: "Request",
+    action: "Authorize",
+  },
+  {
+    key: "extAuthz",
+    title: "External authorization",
+    group: "Access",
+    description: "Call an external authorization service.",
+    phase: "Request",
+    action: "Authorize",
+  },
+  {
+    key: "guardrails",
+    title: "Guardrails",
+    group: "Safety",
+    description: "Apply prompt and response guardrails.",
+    phase: "Request + Response",
+    action: "Inspect",
+    value: { request: [{ type: "regex", pattern: "secret" }] },
+  },
+  {
+    key: "localRateLimit",
+    title: "Local rate limit",
+    group: "Traffic Shaping",
+    description: "Apply local rate limits.",
+    phase: "Request",
+    action: "Limit",
+    value: [{ requests: 120, unit: "Minute" }],
+  },
+  {
+    key: "remoteRateLimit",
+    title: "Remote rate limit",
+    group: "Traffic Shaping",
+    description: "Run remote rate-limit checks.",
+    phase: "Request",
+    action: "Limit",
+  },
+  {
+    key: "transformations",
+    title: "Transformations",
+    group: "Mutation",
+    description: "Modify requests and responses.",
+    phase: "Request + Response",
+    action: "Transform",
+  },
+  {
+    key: "extProc",
+    title: "External processor",
+    group: "Mutation",
+    description: "Call an external processing service.",
+    phase: "Request + Response",
+    action: "Process",
+  },
+];
+
+const mockModelPolicyCatalog: MockPolicyCatalogEntry[] = [
+  {
+    key: "authorization",
+    title: "Authorization",
+    group: "Access",
+    description: "Authorize requests for this direct model.",
+    phase: "Request",
+    action: "Authorize",
+  },
+  {
+    key: "defaults",
+    title: "Request defaults",
+    group: "Request Mutation",
+    description: "Set default request-body values.",
+    phase: "Request",
+    action: "Transform",
+    value: { temperature: 0.2 },
+  },
+  {
+    key: "overrides",
+    title: "Request overrides",
+    group: "Request Mutation",
+    description: "Replace request-body values.",
+    phase: "Request",
+    action: "Transform",
+  },
+  {
+    key: "transformation",
+    title: "Request transformation",
+    group: "Request Mutation",
+    description: "Compute request values with CEL.",
+    phase: "Request",
+    action: "Transform",
+  },
+  {
+    key: "requestHeaders",
+    title: "Request headers",
+    group: "Request Mutation",
+    description: "Modify provider request headers.",
+    phase: "Request",
+    action: "Transform",
+    value: { set: { "x-model-tier": "fast" } },
+  },
+  {
+    key: "responseHeaders",
+    title: "Response headers",
+    group: "Response Mutation",
+    description: "Modify model response headers.",
+    phase: "Response",
+    action: "Transform",
+  },
+  {
+    key: "tls",
+    title: "Backend TLS",
+    group: "Backend",
+    description: "Configure TLS for the model backend.",
+    phase: "Backend",
+    action: "Secure",
+  },
+  {
+    key: "backendTLS",
+    title: "Backend TLS compatibility alias",
+    group: "Backend",
+    description: "Configure the verified TLS compatibility alias.",
+    phase: "Backend",
+    action: "Secure",
+  },
+  {
+    key: "auth",
+    title: "Backend authentication",
+    group: "Backend",
+    description: "Configure backend authentication.",
+    phase: "Backend",
+    action: "Authenticate",
+  },
+  {
+    key: "health",
+    title: "Backend health",
+    group: "Backend",
+    description: "Configure backend outlier detection.",
+    phase: "Backend",
+    action: "Monitor",
+  },
+  {
+    key: "backendTunnel",
+    title: "Backend tunnel",
+    group: "Backend",
+    description: "Configure a backend tunnel.",
+    phase: "Backend",
+    action: "Tunnel",
+  },
+  {
+    key: "guardrails",
+    title: "Guardrails",
+    group: "Safety",
+    description: "Apply direct-model guardrails.",
+    phase: "Request + Response",
+    action: "Inspect",
+  },
+  {
+    key: "promptCaching",
+    title: "Prompt caching",
+    group: "Caching",
+    description: "Configure prompt cache points.",
+    phase: "Request",
+    action: "Cache",
+    value: { minTokens: 1024 },
+  },
+];
+
+const mockMcpPolicyCatalog: MockPolicyCatalogEntry[] = [
+  {
+    key: "mcpAuthentication",
+    title: "MCP authentication",
+    group: "MCP",
+    description: "Authenticate MCP clients.",
+    phase: "Request",
+    action: "Authenticate",
+  },
+  {
+    key: "mcpAuthorization",
+    title: "MCP authorization",
+    group: "MCP",
+    description: "Authorize MCP requests.",
+    phase: "Request",
+    action: "Authorize",
+    value: { rules: [{ action: "allow", resource: "tools/*" }] },
+  },
+  {
+    key: "mcpGuardrails",
+    title: "MCP guardrails",
+    group: "MCP",
+    description: "Apply processors to MCP traffic.",
+    phase: "Request + Response",
+    action: "Inspect",
+  },
+  {
+    key: "authorization",
+    title: "Authorization",
+    group: "Access",
+    description: "Apply HTTP authorization rules.",
+    phase: "Request",
+    action: "Authorize",
+  },
+  {
+    key: "cors",
+    title: "CORS",
+    group: "Access",
+    description: "Handle MCP CORS requests.",
+    phase: "Request",
+    action: "Authorize",
+    value: { allowOrigins: ["https://console.example"] },
+  },
+  {
+    key: "extAuthz",
+    title: "External authorization",
+    group: "Access",
+    description: "Call an external authorization service.",
+    phase: "Request",
+    action: "Authorize",
+  },
+  {
+    key: "jwtAuth",
+    title: "JWT auth",
+    group: "Access",
+    description: "Authenticate with JWT bearer tokens.",
+    phase: "Request",
+    action: "Authenticate",
+  },
+  {
+    key: "localRateLimit",
+    title: "Local rate limit",
+    group: "Traffic Shaping",
+    description: "Apply local MCP rate limits.",
+    phase: "Request",
+    action: "Limit",
+  },
+  {
+    key: "remoteRateLimit",
+    title: "Remote rate limit",
+    group: "Traffic Shaping",
+    description: "Run remote MCP rate-limit checks.",
+    phase: "Request",
+    action: "Limit",
+  },
+  {
+    key: "transformations",
+    title: "Transformations",
+    group: "Mutation",
+    description: "Modify MCP requests and responses.",
+    phase: "Request + Response",
+    action: "Transform",
+  },
+  {
+    key: "extProc",
+    title: "External processor",
+    group: "Mutation",
+    description: "Call an external MCP processor.",
+    phase: "Request + Response",
+    action: "Process",
+  },
+];
+
+function mockPolicySettings(
+  family: GatewayPolicySetting["family"],
+  target: string,
+  scope: string,
+  basePath: string,
+  catalog: MockPolicyCatalogEntry[],
+): GatewayPolicySetting[] {
+  return catalog.map((entry) => {
+    const rawPath = `${basePath}/${entry.key}`;
+    return {
+      id: `mock-${family}-${target.toLowerCase().replaceAll(/[^a-z0-9]+/g, "-")}-${entry.key}`,
+      upstreamId: rawPath,
+      source: "agentgateway",
+      fetchedAt: capturedAt,
+      rawRef: { source: "agentgateway", id: rawPath },
+      family,
+      target,
+      key: entry.key,
+      title: entry.title,
+      group: entry.group,
+      description: entry.description,
+      scope,
+      phase: entry.phase,
+      action: entry.action,
+      enabled: entry.value !== undefined,
+      editable: true,
+      value: entry.value === undefined ? null : structuredClone(entry.value),
+    };
+  });
+}
+
+let mockGatewayPolicyConfiguration: GatewayPolicyConfiguration = {
+  source: "agentgateway",
+  fetchedAt: capturedAt,
+  revisionToken: "mock-gateway-policy-revision-1",
+  settings: [
+    ...mockPolicySettings("llm", "LLM Gateway", "Gateway", "/llm/policies", mockLlmPolicyCatalog),
+    ...mockPolicySettings("model", "fast", "Model", "/llm/models/1", mockModelPolicyCatalog),
+    ...mockPolicySettings("mcp", "MCP Gateway", "Gateway", "/mcp/policies", mockMcpPolicyCatalog),
+  ],
+  links: connectData.summary.links,
+};
 let mockLlmRevision = 1;
 let nextLlmResource = 100;
 let mockLlmConfiguration: LlmConfiguration = {
@@ -591,6 +954,39 @@ function protectReceipt(operation: string, target: string, message: string) {
       message,
     },
     meta: { ...meta("agentguard"), fetchedAt: completedAt },
+  });
+}
+
+function acceptGatewayPolicyRevision(revisionToken: string): Response | undefined {
+  if (revisionToken !== mockGatewayPolicyConfiguration.revisionToken) {
+    return llmFailure(
+      409,
+      "CONFIGURATION_CHANGED",
+      "agentgateway configuration changed. Refresh and retry the operation.",
+    );
+  }
+  return undefined;
+}
+
+function gatewayPolicyReceipt(operation: string, target: string, message: string) {
+  mockGatewayPolicyRevision += 1;
+  const completedAt = new Date().toISOString();
+  mockGatewayPolicyConfiguration.revisionToken = `mock-gateway-policy-revision-${mockGatewayPolicyRevision}`;
+  mockGatewayPolicyConfiguration.fetchedAt = completedAt;
+  mockMcpConfiguration.settings.hasPolicies = mockGatewayPolicyConfiguration.settings.some(
+    (setting) => setting.family === "mcp" && setting.enabled,
+  );
+  return HttpResponse.json({
+    data: {
+      operation,
+      status: "succeeded",
+      source: "agentgateway",
+      target,
+      requestId: `req_mock_${operation.replaceAll("-", "_")}`,
+      completedAt,
+      message,
+    },
+    meta: { ...meta("agentgateway"), fetchedAt: completedAt },
   });
 }
 
@@ -1496,6 +1892,58 @@ export const handlers = [
   http.get("/api/v1/protect/policies", ({ request }) =>
     respond(request, mockProtectSnapshot, emptyProtect),
   ),
+  http.get("/api/v1/protect/gateway-policies/configuration", ({ request }) =>
+    respond(
+      request,
+      structuredClone(mockGatewayPolicyConfiguration),
+      { ...structuredClone(mockGatewayPolicyConfiguration), settings: [] },
+      "agentgateway",
+    ),
+  ),
+  http.patch("/api/v1/protect/gateway-policies/:resourceId", async ({ request, params }) => {
+    const input = (await request.json()) as GatewayPolicyMutationRequest;
+    const conflict = acceptGatewayPolicyRevision(input.revisionToken);
+    if (conflict) return conflict;
+    if (input.value === null || input.value === undefined) {
+      return llmFailure(400, "INVALID_REQUEST", "A non-null JSON policy value is required.");
+    }
+    const setting = mockGatewayPolicyConfiguration.settings.find(
+      (item) => item.id === String(params.resourceId),
+    );
+    if (!setting) return llmFailure(404, "NOT_FOUND", "Gateway policy was not found.");
+    if (!setting.editable) {
+      return llmFailure(400, "INVALID_REQUEST", "This source-owned policy is read-only.");
+    }
+    await delay(120);
+    setting.value = structuredClone(input.value);
+    setting.enabled = true;
+    setting.fetchedAt = new Date().toISOString();
+    return gatewayPolicyReceipt("upsert-gateway-policy", setting.rawRef.id, "Gateway policy saved");
+  }),
+  http.delete("/api/v1/protect/gateway-policies/:resourceId", async ({ request, params }) => {
+    const input = (await request.json()) as GatewayPolicyDeleteRequest;
+    if (!input.confirmed) {
+      return llmFailure(400, "INVALID_REQUEST", "Explicit confirmation is required.");
+    }
+    const conflict = acceptGatewayPolicyRevision(input.revisionToken);
+    if (conflict) return conflict;
+    const setting = mockGatewayPolicyConfiguration.settings.find(
+      (item) => item.id === String(params.resourceId),
+    );
+    if (!setting) return llmFailure(404, "NOT_FOUND", "Gateway policy was not found.");
+    if (!setting.editable) {
+      return llmFailure(400, "INVALID_REQUEST", "This source-owned policy is read-only.");
+    }
+    await delay(120);
+    setting.value = null;
+    setting.enabled = false;
+    setting.fetchedAt = new Date().toISOString();
+    return gatewayPolicyReceipt(
+      "delete-gateway-policy",
+      setting.rawRef.id,
+      "Gateway policy deleted",
+    );
+  }),
   http.post("/api/v1/protect/runtime-rules/check", async ({ request }) => {
     const scenario = scenarioFrom(request);
     if (scenario === "loading") await delay(30_000);

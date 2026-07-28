@@ -281,7 +281,8 @@ Agent 身份必须来自 AgentGuard 明确字段。agentgateway 日志中的客�
 
 页面：
 
-- Policies：按 Gateway 与 Runtime 分组，不合并成虚假的统一 DSL。
+- Policies：agentgateway 配置按 **LLM / MODEL** 与 **MCP** 两类展示完整上游
+  JSON；AgentGuard Runtime Rule 保持独立页面，不合并成虚假的统一 DSL。
 - Guardrails：展示 agentgateway 内容防护摘要并跳转高级配置。
 - Runtime Rules：规则列表、语法检查、生成、发布和删除。
 - Plugins：按执行阶段查看启用状态。
@@ -395,6 +396,9 @@ POST /api/v1/trust/agents/{agentId}/skills/detect
 POST /api/v1/trust/agents/{agentId}/mcps/detect
 
 GET  /api/v1/protect/policies
+GET  /api/v1/protect/gateway-policies/configuration
+PATCH /api/v1/protect/gateway-policies/{resourceId}
+DELETE /api/v1/protect/gateway-policies/{resourceId}
 POST /api/v1/protect/runtime-rules/check
 POST /api/v1/protect/agents/{agentId}/runtime-rules
 DELETE /api/v1/protect/agents/{agentId}/runtime-rules/{ruleId}
@@ -649,7 +653,8 @@ AgentGuard 为 GPLv3，agentgateway 为 Apache-2.0。实现上保持独立进程
 3. 接入 Approvals 队列及 approve/deny。
 4. 为每次写操作加入确认、备注、请求 ID 和结果回执。
 5. 防止重复点击与重复审批。
-6. Guardrails 和 Gateway Policy 先只读或 link-out，除非契约在 Phase 0 已确认稳定。
+6. 本阶段 Guardrails 和 Gateway Policy 保持摘要只读或 link-out；后续只有在精确契约
+   冻结后才能新增独立可写阶段（已由 Phase 11 覆盖核实路径）。
 
 验收：
 
@@ -782,6 +787,41 @@ YAML 写入与最后一次读取到 POST 之间的窗口变成原子操作。
 
 建议提交：`feat(connect): manage agentgateway traffic configuration`
 
+### Phase 11：Protect agentgateway Policy 配置管理
+
+目标：把 agentgateway v1.3.1 已核实的 LLM/MODEL Policies 与 MCP Policies
+能力搬入 `Protect / Policies`，保留上游策略语义，不在 AgentsharkX 中新增策略引擎。
+
+任务：
+
+1. 在 OpenAPI 中定义已认证的完整 gateway policy configuration、通用单路径
+   upsert/delete 和写入回执，UI 分为 **LLM / MODEL** 与 **MCP** 两类。
+2. LLM 全局目录严格覆盖 `llm.policies` 的十二个原生字段；Model 目录严格覆盖
+   直连 Model 的十三个策略字段，并按配置数组索引生成稳定 raw reference。
+3. MCP 目录严格覆盖原生 Policies 页的十一个 `mcp.policies` 字段；返回每个已核实
+   条目的完整 source-owned JSON 值，不做脱敏、投影、翻译或重新解释。
+4. 创建、更新和删除每次只改变一个已核实路径，并与 LLM/MCP/Traffic 共用五分钟
+   一次性 revision、进程内变更锁、单次整文档 POST 和完整 canonical refetch 比对。
+5. 保留未知 policy 字段并只读显示；Virtual Model policy、MCP target policy 和
+   route-owned policy 不从本页修改，已核实的 Listener/Route/Backend policy 继续由
+   `Connect / Traffic` 管理。
+6. 完整 policy body 只通过已认证 configuration/detail 请求返回；应用日志、写入
+   回执、摘要列表和 SSE 不复制正文。添加 adapter、service、BFF、Mock、浏览器、
+   删除确认、可访问性和契约回归测试，并更新能力矩阵与兼容文档。
+
+验收：
+
+- 两个 UI 类别可查看、搜索并对所有已核实路径执行创建、完整 JSON 更新和删除。
+- 每条记录保留 `source`、上游/路径 ID、`scope`、`phase`、`action` 与 raw reference；
+  JSON 数组、对象及其他已验证值形态不会被表单截断。
+- 陈旧或重复 revision 不触发 POST；并发 LLM/MCP/Traffic/Policy 写入由同一锁串行化。
+- 成功操作只 POST 一次，回读比对完整规范化文档，并保留其他策略、凭据和未知字段。
+- Virtual Model、MCP target 和 route-owned policy 不会被本页误改；AgentsharkX 不执行、
+  推断或合并 agentgateway/AgentGuard 策略语义。
+- policy body 不出现在应用日志、写入回执、摘要列表或 SSE 中。
+
+建议提交：`feat(protect): manage verified agentgateway policies`
+
 ---
 
 ## 12. Codex 每阶段执行协议
@@ -801,7 +841,8 @@ YAML 写入与最后一次读取到 POST 之间的窗口变成原子操作。
 1. 只完成当前 Phase，不提前加入 Task Graph、Replay、数据库或自研策略引擎。
 2. 所有 UI 数据必须标明来源，动态效果必须绑定真实或明确标识的 Mock 状态。
 3. 保持一个上游故障时另一个上游仍可用。
-4. 不把 secret、完整敏感 payload 或 Authorization Header 输出到浏览器和日志。
+4. secret 和 Authorization Header 不得输出到浏览器或日志；完整 source-owned body
+   只允许通过已认证 detail/configuration 接口返回，不得复制到应用日志、摘要列表或 SSE。
 5. 先补测试再完成实现，并保持改动可独立提交。
 
 结束前：

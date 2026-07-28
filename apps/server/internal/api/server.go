@@ -115,6 +115,9 @@ func (server *server) routes() {
 	server.mux.Handle("POST /api/v1/trust/agents/{agentId}/skills/detect", server.requireAuth(server.requireCSRF(http.HandlerFunc(server.detectSkills))))
 	server.mux.Handle("POST /api/v1/trust/agents/{agentId}/mcps/detect", server.requireAuth(server.requireCSRF(http.HandlerFunc(server.detectMCPs))))
 	server.mux.Handle("GET /api/v1/protect/policies", server.requireAuth(http.HandlerFunc(server.protectPolicies)))
+	server.mux.Handle("GET /api/v1/protect/gateway-policies/configuration", server.requireAuth(http.HandlerFunc(server.gatewayPolicyConfiguration)))
+	server.mux.Handle("PATCH /api/v1/protect/gateway-policies/{resourceId}", server.requireAuth(server.requireCSRF(http.HandlerFunc(server.upsertGatewayPolicy))))
+	server.mux.Handle("DELETE /api/v1/protect/gateway-policies/{resourceId}", server.requireAuth(server.requireCSRF(http.HandlerFunc(server.deleteGatewayPolicy))))
 	server.mux.Handle("POST /api/v1/protect/runtime-rules/check", server.requireAuth(server.requireCSRF(http.HandlerFunc(server.checkRuntimeRule))))
 	server.mux.Handle("POST /api/v1/protect/agents/{agentId}/runtime-rules", server.requireAuth(server.requireCSRF(http.HandlerFunc(server.publishRuntimeRule))))
 	server.mux.Handle("DELETE /api/v1/protect/agents/{agentId}/runtime-rules/{ruleId}", server.requireAuth(server.requireCSRF(http.HandlerFunc(server.deleteRuntimeRule))))
@@ -510,6 +513,32 @@ func (server *server) deleteTrafficRoute(writer http.ResponseWriter, request *ht
 	server.writeConnectTrafficMutation(writer, request, http.StatusOK, envelope, err)
 }
 
+func (server *server) gatewayPolicyConfiguration(writer http.ResponseWriter, request *http.Request) {
+	if !server.connectAvailable(writer, request) {
+		return
+	}
+	envelope, err := server.config.Connect.GatewayPolicyConfiguration(request.Context())
+	server.writeConnectResult(writer, request, envelope, err)
+}
+
+func (server *server) upsertGatewayPolicy(writer http.ResponseWriter, request *http.Request) {
+	var input model.GatewayPolicyMutationRequest
+	if !server.connectAvailable(writer, request) || !server.decodeMutation(writer, request, &input) {
+		return
+	}
+	envelope, err := server.config.Connect.UpsertGatewayPolicy(request.Context(), request.PathValue("resourceId"), input)
+	server.writeGatewayPolicyMutation(writer, request, envelope, err)
+}
+
+func (server *server) deleteGatewayPolicy(writer http.ResponseWriter, request *http.Request) {
+	var input model.GatewayPolicyDeleteRequest
+	if !server.connectAvailable(writer, request) || !server.decodeMutation(writer, request, &input) {
+		return
+	}
+	envelope, err := server.config.Connect.DeleteGatewayPolicy(request.Context(), request.PathValue("resourceId"), input)
+	server.writeGatewayPolicyMutation(writer, request, envelope, err)
+}
+
 func (server *server) trustAgents(writer http.ResponseWriter, request *http.Request) {
 	query, ok := server.resourceQuery(writer, request)
 	if !ok || !server.trustAvailable(writer, request) {
@@ -844,7 +873,7 @@ func (server *server) writeConnectResult(writer http.ResponseWriter, request *ht
 		server.writeError(writer, request, http.StatusConflict, "MUTATION_IN_FLIGHT", "another agentgateway configuration change is still in progress", source(model.SourceAgentGateway), false)
 		return
 	}
-	if errors.Is(err, gateway.ErrLLMWriteUnverified) || errors.Is(err, gateway.ErrMCPWriteUnverified) || errors.Is(err, gateway.ErrTrafficWriteUnverified) {
+	if errors.Is(err, gateway.ErrLLMWriteUnverified) || errors.Is(err, gateway.ErrMCPWriteUnverified) || errors.Is(err, gateway.ErrTrafficWriteUnverified) || errors.Is(err, gateway.ErrGatewayPolicyWriteUnverified) {
 		server.writeError(writer, request, http.StatusServiceUnavailable, "WRITE_UNVERIFIED", "the write result could not be verified; refresh before making another change", source(model.SourceAgentGateway), false)
 		return
 	}
@@ -904,6 +933,21 @@ func (server *server) writeConnectTrafficMutation(writer http.ResponseWriter, re
 		"status", envelope.Data.Status,
 	)
 	server.writeJSON(writer, status, envelope)
+}
+
+func (server *server) writeGatewayPolicyMutation(writer http.ResponseWriter, request *http.Request, envelope model.GatewayPolicyMutationEnvelope, err error) {
+	if err != nil {
+		server.writeConnectResult(writer, request, nil, err)
+		return
+	}
+	envelope.Data.RequestID = requestID(request.Context())
+	server.config.Logger.Info("protect gateway policy operation completed",
+		"request_id", envelope.Data.RequestID,
+		"operation", envelope.Data.Operation,
+		"target", envelope.Data.Target,
+		"status", envelope.Data.Status,
+	)
+	server.writeJSON(writer, http.StatusOK, envelope)
 }
 
 func (server *server) writeTrustResult(writer http.ResponseWriter, request *http.Request, status int, envelope any, err error) {

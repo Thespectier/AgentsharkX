@@ -28,8 +28,12 @@ pinned standalone management surface.
 
 The populated shape and native console routes were cross-checked against
 agentgateway tag `v1.3.1`, commit
-`dbaaf7ed73671e7aec9195e35e7f726c0b14b84a`. Sensitive `params`, policy bodies,
-and API-key fixture values are intentionally excluded from the frozen sample.
+`dbaaf7ed73671e7aec9195e35e7f726c0b14b84a`. Sensitive `params` and API-key
+fixture values are intentionally excluded from the frozen sample. Phase 11
+adds non-secret representative `llm.policies`, direct-Model policy fields, and
+`mcp.policies` bodies taken from the exact pinned schema and upstream test
+configurations so policy attachment paths and lossless management reads are
+frozen without committing credentials.
 The `provider.custom` object discriminator was additionally verified from the
 running pinned `/api/config` contract on 2026-07-27; only its non-sensitive
 format names are retained.

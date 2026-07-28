@@ -35,7 +35,6 @@ import type {
   Approval,
   ApprovalPageEnvelope,
   ProtectMutationReceipt,
-  ProtectPolicy,
   ProtectSnapshot,
   RuntimeRule,
   RuntimeRuleCheck,
@@ -51,6 +50,7 @@ import { formatTimeWithZone } from "../../lib/format";
 import { useI18n } from "../../lib/i18n";
 import { synchronizeAgentGuardData } from "../../lib/query-sync";
 import type { Severity } from "../../types";
+import { GatewayPolicyManager } from "./gateway-policy-manager";
 
 type PolicyRow = {
   id: string;
@@ -137,7 +137,7 @@ export function ProtectPage() {
         title="Enforce every critical boundary"
       />
       <PartialBanner meta={meta} />
-      {section === "policies" ? <PolicyView data={data} /> : null}
+      {section === "policies" ? <GatewayPolicyManager /> : null}
       {section === "guardrails" ? <GuardrailView data={data} /> : null}
       {section === "runtime-rules" ? <RuntimeRulesView data={data} /> : null}
       {section === "plugins" ? <PluginsView data={data} /> : null}
@@ -152,61 +152,8 @@ export function ProtectPage() {
   );
 }
 
-function gatewayRow(policy: ProtectPolicy): PolicyRow {
-  return { ...policy };
-}
-
 function runtimeRow(rule: RuntimeRule): PolicyRow {
   return { ...rule, type: "Runtime Rule" };
-}
-
-function PolicyView({ data }: { data: ProtectSnapshot }) {
-  const gateway = data.gatewayPolicies.map(gatewayRow);
-  const runtime = data.runtimeRules.map(runtimeRow);
-  if (!gateway.length && !runtime.length) {
-    return (
-      <EmptyState
-        description="No gateway policies or AgentGuard rules are currently reported. The sources remain independently visible when one is unavailable."
-        title="No policies reported"
-      />
-    );
-  }
-  return (
-    <div className="stack">
-      <Card>
-        <CardHeader
-          action={<SourceBadge source="agentgateway" />}
-          description="Read-only summaries of exact keys in agentgateway route and backend configuration."
-          title="Gateway controls"
-        />
-        {gateway.length ? (
-          <DataTable columns={policyColumns} data={gateway} label="agentgateway policies" />
-        ) : (
-          <EmptyState
-            compact
-            description="No explicit gateway policies."
-            title="No gateway controls"
-          />
-        )}
-      </Card>
-      <Card>
-        <CardHeader
-          action={<SourceBadge source="agentguard" />}
-          description="Runtime rules retain AgentGuard action and phase semantics. Rule source is not returned."
-          title="Runtime controls"
-        />
-        {runtime.length ? (
-          <DataTable columns={policyColumns} data={runtime} label="AgentGuard runtime rules" />
-        ) : (
-          <EmptyState
-            compact
-            description="No explicit runtime rules."
-            title="No runtime controls"
-          />
-        )}
-      </Card>
-    </div>
-  );
 }
 
 function GuardrailView({ data }: { data: ProtectSnapshot }) {

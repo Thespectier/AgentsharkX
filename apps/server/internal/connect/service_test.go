@@ -16,10 +16,12 @@ type fakeGateway struct {
 	configuration        model.LLMConfiguration
 	mcpConfiguration     model.MCPConfiguration
 	trafficConfiguration model.TrafficConfiguration
+	policyConfiguration  model.GatewayPolicyConfiguration
 	revision             string
 	apply                func(context.Context, string, model.LLMChange) error
 	applyMCP             func(context.Context, string, model.MCPChange) error
 	applyTraffic         func(context.Context, string, model.TrafficChange) error
+	applyPolicy          func(context.Context, string, model.GatewayPolicyChange) error
 }
 
 func (fake fakeGateway) Health(context.Context) model.SourceHealth { return fake.health }
@@ -69,6 +71,17 @@ func (fake fakeGateway) TrafficConfiguration(context.Context) (model.TrafficConf
 func (fake fakeGateway) ApplyTrafficChange(ctx context.Context, revision string, change model.TrafficChange) (string, error) {
 	if fake.applyTraffic != nil {
 		if err := fake.applyTraffic(ctx, revision, change); err != nil {
+			return "", err
+		}
+	}
+	return change.ResourceID, nil
+}
+func (fake fakeGateway) PolicyConfiguration(context.Context) (model.GatewayPolicyConfiguration, string, error) {
+	return fake.policyConfiguration, fake.revision, nil
+}
+func (fake fakeGateway) ApplyPolicyChange(ctx context.Context, revision string, change model.GatewayPolicyChange) (string, error) {
+	if fake.applyPolicy != nil {
+		if err := fake.applyPolicy(ctx, revision, change); err != nil {
 			return "", err
 		}
 	}
@@ -280,5 +293,103 @@ func TestTrafficConfigurationIssuesOneTimeRevisionAndAppliesChange(t *testing.T)
 	}
 	if _, err := service.CreateTrafficRoute(t.Context(), request); !errors.Is(err, ErrRevisionStale) {
 		t.Fatalf("one-time revision error = %v", err)
+	}
+}
+
+func TestGatewayPolicyConfigurationIssuesOneTimeRevisionAndAppliesCompleteValue(t *testing.T) {
+	t.Parallel()
+	fetchedAt := time.Date(2026, 7, 28, 10, 0, 0, 0, time.UTC)
+	var applied model.GatewayPolicyChange
+	service := New(fakeGateway{
+		policyConfiguration: model.GatewayPolicyConfiguration{
+			Source: model.SourceAgentGateway, FetchedAt: fetchedAt,
+			Settings: []model.GatewayPolicySetting{{
+				ProtectResourceBase: model.ProtectResourceBase{
+					ID: "policy-1", UpstreamID: "/llm/policies/cors", Source: model.SourceAgentGateway,
+					FetchedAt: fetchedAt, RawRef: model.RawRef{Source: model.SourceAgentGateway, ID: "/llm/policies/cors"},
+				},
+				Family: "llm", Target: "LLM Gateway", Key: "cors", Title: "CORS", Group: "Access",
+				Description: "CORS policy", Scope: "Gateway", Phase: "Request", Action: "Authorize",
+				Enabled: true, Editable: true, Value: map[string]any{"allowOrigins": []any{"https://admin.example"}},
+			}},
+		},
+		revision: "revision-policy-a",
+		applyPolicy: func(_ context.Context, revision string, change model.GatewayPolicyChange) error {
+			if revision != "revision-policy-a" {
+				t.Fatalf("revision = %q", revision)
+			}
+			applied = change
+			return nil
+		},
+	}, "http://localhost:15000/ui")
+
+	configuration, err := service.GatewayPolicyConfiguration(t.Context())
+	if err != nil || configuration.Data.RevisionToken == "" || configuration.Data.Links.RawConfig == "" || len(configuration.Data.Settings) != 1 {
+		t.Fatalf("unexpected gateway policy configuration: %#v err=%v", configuration, err)
+	}
+	value := []any{map[string]any{"requests": 100}}
+	receipt, err := service.UpsertGatewayPolicy(t.Context(), "policy-1", model.GatewayPolicyMutationRequest{
+		RevisionToken: configuration.Data.RevisionToken, Value: value,
+	})
+	if err != nil || receipt.Data.Operation != "upsert-gateway-policy" || applied.ResourceID != "policy-1" {
+		t.Fatalf("unexpected gateway policy mutation: receipt=%#v change=%#v err=%v", receipt, applied, err)
+	}
+	if _, ok := applied.Value.([]any); !ok {
+		t.Fatalf("complete array policy value was not preserved: %#v", applied.Value)
+	}
+	if _, err := service.UpsertGatewayPolicy(t.Context(), "policy-1", model.GatewayPolicyMutationRequest{
+		RevisionToken: configuration.Data.RevisionToken, Value: value,
+	}); !errors.Is(err, ErrRevisionStale) {
+		t.Fatalf("one-time revision error = %v", err)
+	}
+}
+
+func TestGatewayPolicyMutationSharesConfigurationLock(t *testing.T) {
+	t.Parallel()
+	started := make(chan struct{})
+	release := make(chan struct{})
+	service := New(fakeGateway{
+		policyConfiguration: model.GatewayPolicyConfiguration{Source: model.SourceAgentGateway, FetchedAt: time.Now().UTC(), Settings: []model.GatewayPolicySetting{}},
+		configuration: model.LLMConfiguration{
+			Source: model.SourceAgentGateway, FetchedAt: time.Now().UTC(),
+			Providers: []model.LLMProviderSetting{}, Models: []model.LLMModelSetting{}, VirtualModels: []model.GatewayModel{},
+		},
+		revision: "shared-revision",
+		applyPolicy: func(context.Context, string, model.GatewayPolicyChange) error {
+			close(started)
+			<-release
+			return nil
+		},
+	}, "http://localhost:15000/ui")
+
+	policyConfiguration, err := service.GatewayPolicyConfiguration(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	llmConfiguration, err := service.LLMConfiguration(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	mutationDone := make(chan error, 1)
+	go func() {
+		_, mutationErr := service.UpsertGatewayPolicy(context.Background(), "policy-1", model.GatewayPolicyMutationRequest{
+			RevisionToken: policyConfiguration.Data.RevisionToken, Value: map[string]any{},
+		})
+		mutationDone <- mutationErr
+	}()
+	<-started
+	_, err = service.CreateProvider(t.Context(), model.LLMProviderMutationRequest{
+		RevisionToken: llmConfiguration.Data.RevisionToken,
+		Provider: model.LLMProviderDraft{
+			Name: "shared", ProviderType: "openai", Formats: []model.LLMProviderFormat{},
+			Credential: model.LLMCredentialInput{Mode: "ambient"},
+		},
+	})
+	if !errors.Is(err, ErrMutationInFlight) {
+		t.Fatalf("concurrent LLM mutation error = %v", err)
+	}
+	close(release)
+	if err := <-mutationDone; err != nil {
+		t.Fatalf("gateway policy mutation error = %v", err)
 	}
 }
