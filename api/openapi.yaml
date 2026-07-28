@@ -532,6 +532,62 @@ paths:
         '503':
           $ref: '#/components/responses/UpstreamUnavailable'
 
+  /api/v1/connect/mcp/configuration:
+    get:
+      tags: [Connect]
+      operationId: getMcpConfiguration
+      summary: Read verified agentgateway MCP settings and targets
+      x-implementation-phase: 9
+      x-implementation-status: implemented
+      responses:
+        '200':
+          description: MCP configuration and a short-lived revision token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/McpConfigurationEnvelope'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+        '503':
+          $ref: '#/components/responses/UpstreamUnavailable'
+
+  /api/v1/connect/mcp/configuration/settings:
+    patch:
+      tags: [Connect]
+      operationId: updateMcpSettings
+      summary: Update verified agentgateway MCP listener and federation settings
+      x-implementation-phase: 9
+      x-implementation-status: implemented
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/McpSettingsMutationRequest'
+      responses:
+        '200':
+          description: MCP settings saved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/McpMutationEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+        '503':
+          $ref: '#/components/responses/UpstreamUnavailable'
+
   /api/v1/connect/mcp/servers:
     get:
       tags: [Connect]
@@ -558,6 +614,39 @@ paths:
           $ref: '#/components/responses/BadGateway'
         '503':
           $ref: '#/components/responses/UpstreamUnavailable'
+    post:
+      tags: [Connect]
+      operationId: createMcpServer
+      summary: Create one verified top-level agentgateway MCP target
+      x-implementation-phase: 9
+      x-implementation-status: implemented
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/McpServerMutationRequest'
+      responses:
+        '201':
+          description: MCP target created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/McpMutationEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+        '503':
+          $ref: '#/components/responses/UpstreamUnavailable'
 
   /api/v1/connect/mcp/servers/{resourceId}:
     get:
@@ -579,6 +668,78 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/NotFound'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+        '503':
+          $ref: '#/components/responses/UpstreamUnavailable'
+    patch:
+      tags: [Connect]
+      operationId: updateMcpServer
+      summary: Update one verified top-level agentgateway MCP target
+      x-implementation-phase: 9
+      x-implementation-status: implemented
+      parameters:
+        - $ref: '#/components/parameters/ResourceId'
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/McpServerMutationRequest'
+      responses:
+        '200':
+          description: MCP target updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/McpMutationEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+        '503':
+          $ref: '#/components/responses/UpstreamUnavailable'
+    delete:
+      tags: [Connect]
+      operationId: deleteMcpServer
+      summary: Delete one verified top-level agentgateway MCP target
+      x-implementation-phase: 9
+      x-implementation-status: implemented
+      parameters:
+        - $ref: '#/components/parameters/ResourceId'
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/McpDeleteRequest'
+      responses:
+        '200':
+          description: MCP target deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/McpMutationEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
         '502':
           $ref: '#/components/responses/BadGateway'
         '503':
@@ -2065,6 +2226,148 @@ components:
       required: [data, meta]
       properties:
         data: { $ref: '#/components/schemas/LlmMutationReceipt' }
+        meta: { $ref: '#/components/schemas/Meta' }
+    McpNetworkTarget:
+      type: object
+      additionalProperties: false
+      required: [mode]
+      properties:
+        mode: { type: string, enum: [url, host, backend] }
+        host: { type: string, maxLength: 2048 }
+        port: { type: [integer, 'null'], minimum: 0, maximum: 65535 }
+        path: { type: string, maxLength: 2048 }
+        backend: { type: string, maxLength: 256 }
+    McpStdioTarget:
+      type: object
+      additionalProperties: false
+      required: [command, arguments, environment, clearEnvironment]
+      properties:
+        command: { type: string, minLength: 1, maxLength: 4096 }
+        arguments:
+          type: array
+          maxItems: 256
+          items: { type: string, maxLength: 4096 }
+        environment:
+          type: object
+          maxProperties: 256
+          additionalProperties: { type: string, maxLength: 16384 }
+        clearEnvironment: { type: boolean }
+    McpServerSetting:
+      type: object
+      additionalProperties: false
+      required:
+        [id, upstreamId, source, fetchedAt, rawRef, name, transport, scope, hasPolicies, editable]
+      properties:
+        id: { type: string }
+        upstreamId: { type: string }
+        source: { $ref: '#/components/schemas/GatewaySource' }
+        fetchedAt: { type: string, format: date-time }
+        rawRef: { $ref: '#/components/schemas/RawRef' }
+        name: { type: string }
+        transport: { type: string, enum: [sse, mcp, stdio, openapi] }
+        scope: { type: string }
+        network: { $ref: '#/components/schemas/McpNetworkTarget' }
+        stdio: { $ref: '#/components/schemas/McpStdioTarget' }
+        hasPolicies: { type: boolean }
+        editable: { type: boolean }
+    McpGlobalSettings:
+      type: object
+      additionalProperties: false
+      required: [port, statefulMode, prefixMode, failureMode, hasPolicies]
+      properties:
+        port: { type: [integer, 'null'], minimum: 0, maximum: 65535 }
+        statefulMode: { type: string, enum: [stateless, stateful] }
+        prefixMode: { type: string, enum: [none, always, conditional] }
+        failureMode: { type: string, enum: [failClosed, failOpen] }
+        hasPolicies: { type: boolean }
+    McpConfiguration:
+      type: object
+      additionalProperties: false
+      required:
+        [source, fetchedAt, revisionToken, settings, servers, inlineServers, links]
+      properties:
+        source: { $ref: '#/components/schemas/GatewaySource' }
+        fetchedAt: { type: string, format: date-time }
+        revisionToken: { type: string, minLength: 1, maxLength: 128 }
+        settings: { $ref: '#/components/schemas/McpGlobalSettings' }
+        servers:
+          type: array
+          items: { $ref: '#/components/schemas/McpServerSetting' }
+        inlineServers:
+          type: array
+          items: { $ref: '#/components/schemas/GatewayMCPServer' }
+        links: { $ref: '#/components/schemas/ConsoleLinks' }
+    McpConfigurationEnvelope:
+      type: object
+      additionalProperties: false
+      required: [data, meta]
+      properties:
+        data: { $ref: '#/components/schemas/McpConfiguration' }
+        meta: { $ref: '#/components/schemas/Meta' }
+    McpServerDraft:
+      type: object
+      additionalProperties: false
+      required: [name, transport]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 253, pattern: '^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$' }
+        transport: { type: string, enum: [sse, mcp, stdio] }
+        network: { $ref: '#/components/schemas/McpNetworkTarget' }
+        stdio: { $ref: '#/components/schemas/McpStdioTarget' }
+    McpServerMutationRequest:
+      type: object
+      additionalProperties: false
+      required: [revisionToken, server]
+      properties:
+        revisionToken:
+          { type: string, minLength: 1, maxLength: 128, writeOnly: true }
+        server: { $ref: '#/components/schemas/McpServerDraft' }
+    McpGlobalSettingsDraft:
+      type: object
+      additionalProperties: false
+      required: [port, statefulMode, prefixMode, failureMode]
+      properties:
+        port: { type: [integer, 'null'], minimum: 0, maximum: 65535 }
+        statefulMode: { type: string, enum: [stateless, stateful] }
+        prefixMode: { type: string, enum: [none, always, conditional] }
+        failureMode: { type: string, enum: [failClosed, failOpen] }
+    McpSettingsMutationRequest:
+      type: object
+      additionalProperties: false
+      required: [revisionToken, settings]
+      properties:
+        revisionToken:
+          { type: string, minLength: 1, maxLength: 128, writeOnly: true }
+        settings: { $ref: '#/components/schemas/McpGlobalSettingsDraft' }
+    McpDeleteRequest:
+      type: object
+      additionalProperties: false
+      required: [revisionToken, confirmed]
+      properties:
+        revisionToken:
+          { type: string, minLength: 1, maxLength: 128, writeOnly: true }
+        confirmed: { type: boolean }
+    McpMutationReceipt:
+      type: object
+      additionalProperties: false
+      required:
+        [operation, status, source, target, requestId, completedAt, message]
+      properties:
+        operation:
+          type: string
+          enum:
+            [update-mcp-settings, create-mcp-server, update-mcp-server, delete-mcp-server]
+        status: { type: string, enum: [succeeded] }
+        source: { $ref: '#/components/schemas/GatewaySource' }
+        target: { type: string }
+        requestId: { type: string }
+        completedAt: { type: string, format: date-time }
+        message: { type: string }
+    McpMutationEnvelope:
+      type: object
+      additionalProperties: false
+      required: [data, meta]
+      properties:
+        data: { $ref: '#/components/schemas/McpMutationReceipt' }
         meta: { $ref: '#/components/schemas/Meta' }
     GatewayMCPServer:
       type: object

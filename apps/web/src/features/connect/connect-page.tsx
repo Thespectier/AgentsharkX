@@ -41,6 +41,7 @@ import { formatCount, formatTimeWithZone } from "../../lib/format";
 import { formatError, getScenario, requestOperation } from "../../lib/api";
 import { useI18n } from "../../lib/i18n";
 import { LlmManager } from "./llm-manager";
+import { McpManager } from "./mcp-manager";
 
 type Selection =
   | { kind: "provider"; id: string }
@@ -88,7 +89,7 @@ export function ConnectPage() {
             </ExternalButton>
           ) : undefined
         }
-        description="Manage verified LLM providers and direct models here. Advanced routing and policy editing stay in the native console."
+        description="Manage verified LLM and MCP settings here. Advanced routing and policy editing stay in the native console."
         eyebrow="Connect / agentgateway"
         title="Connect agents to every destination"
       />
@@ -97,7 +98,7 @@ export function ConnectPage() {
         <ConnectOverview summary={data} fetchedAt={meta.fetchedAt} />
       ) : null}
       {section === "llm" ? <LlmManager /> : null}
-      {section === "mcp" ? <McpView onOpen={open} /> : null}
+      {section === "mcp" ? <McpManager /> : null}
       {section === "traffic" ? <TrafficView onOpen={open} /> : null}
       {section === "setup" ? <SetupView /> : null}
       <ResourceDetail
@@ -181,64 +182,6 @@ function ConnectOverview({ summary, fetchedAt }: { summary: ConnectSummary; fetc
       </div>
       <NativeLinks links={summary.links} />
     </>
-  );
-}
-
-function McpView({
-  onOpen,
-}: {
-  onOpen: (selection: Selection, trigger: HTMLTableRowElement) => void;
-}) {
-  const pager = usePager();
-  const query = useQuery({
-    queryKey: ["connect-mcp", pager.search, pager.cursor, getScenario()],
-    queryFn: ({ signal }) =>
-      requestOperation("listGatewayMcpServers", {
-        signal,
-        query: { q: pager.search, cursor: pager.cursor, limit: 10 },
-      }),
-    retry: false,
-  });
-  const columns: Column<GatewayMCPServer>[] = [
-    {
-      key: "name",
-      header: "MCP server",
-      render: (item) => (
-        <Primary
-          icon={Waypoints}
-          title={item.name}
-          subtitle={item.upstreamId ?? "No upstream ID"}
-        />
-      ),
-    },
-    {
-      key: "transport",
-      header: "Transport",
-      render: (item) => <StatusBadge status={item.transport} />,
-    },
-    { key: "scope", header: "Scope", render: (item) => <code>{item.scope}</code> },
-    { key: "source", header: "Source", render: (item) => <SourceBadge source={item.source} /> },
-    {
-      key: "fetched",
-      header: "Fetched",
-      render: (item) => formatTimeWithZone(item.fetchedAt),
-    },
-  ];
-  return (
-    <ResourceCard
-      title="MCP federation"
-      description="Gateway MCP targets remain distinct from AgentGuard resources."
-      query={query}
-      pager={pager}
-      render={(page) => (
-        <DataTable
-          columns={columns}
-          data={page.items}
-          label="Gateway MCP servers"
-          onRowClick={(item, trigger) => onOpen({ kind: "mcp", id: item.id }, trigger)}
-        />
-      )}
-    />
   );
 }
 

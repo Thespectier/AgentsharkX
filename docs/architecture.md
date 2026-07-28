@@ -1,6 +1,6 @@
 # Architecture
 
-Status: Phase 8 Connect LLM management over the Phase 7 preview, verified 2026-07-27.
+Status: Phase 9 Connect MCP management over the Phase 7 preview, verified 2026-07-28.
 
 ## Context
 
@@ -41,8 +41,8 @@ The Go BFF is organized into the following packages:
 - `auth`: one-admin session, strict cookie, CSRF, and write protection.
 - `gateway`: agentgateway management adapter.
 - `connect`: filtering, cursor pagination, details, setup verification,
-  short-lived LLM revision tokens, serialized typed provider/direct-model
-  mutations, and native-console links over sanitized gateway resources.
+  short-lived configuration revision tokens, serialized typed LLM/MCP
+  mutations, and native-console links over verified gateway resources.
 - `guard`: AgentGuard management adapter.
 - `trust`: explicit AgentGuard identity/resource aggregation, filtering,
   pagination, label writes, and bounded scan-job orchestration.
@@ -125,7 +125,7 @@ A gateway failure cannot suppress AgentGuard data, and an AgentGuard failure
 cannot suppress gateway data. Aggregated responses carry per-source metadata
 and stale markers rather than collapsing partial failures into a global 500.
 
-## Phase 8 runtime data and storage
+## Phase 9 runtime data and storage
 
 The BFF has no database. Background monitors poll the two health contracts and,
 every two seconds by default, the verified Audit read contracts. New normalized
@@ -133,15 +133,21 @@ events enter a 1000-record ring and are published with a monotonic SSE sequence.
 Reconnecting clients send `Last-Event-ID` and receive only newer retained
 records. Both the ring and browser list dedupe by normalized source/event ID.
 Connect reads a bounded `/api/config` snapshot per request and never returns raw
-config, policy bodies, credential values, or prompt payloads. The LLM management
-contract returns only verified provider/direct-model main-form fields,
+config, policy bodies, LLM credential values, or prompt payloads. The LLM
+management contract returns only verified provider/direct-model main-form fields,
 allow-listed params, custom format names/paths, and credential configured/kind
 state. Credential changes use typed, write-only inputs for native ambient,
 environment-variable, file, literal, AWS static, GCP credential-file, and Azure
 managed identity modes; values are never included in a read response. Direct
 models expose the verified incoming, explicit, stripped-prefix, and custom CEL
-outgoing-model mappings. Protect may
-summarize explicit route/backend policy keys and raw config paths, while policy
+outgoing-model mappings.
+The authenticated MCP management contract returns complete verified top-level
+listener/federation settings and target connection fields: Streamable HTTP/SSE
+URL, host/port/path, or backend reference, plus stdio command, arguments,
+environment map, and inherited-environment behavior. OpenAPI targets and MCP
+policy bodies are reported but stay advanced/read-only; route-owned inline MCP
+targets retain their route scope and remain read-only. Protect may summarize
+explicit route/backend policy keys and raw config paths, while policy
 editing stays in agentgateway. Trust reads the four
 AgentGuard session/resource routes independently, so one failed capability does
 not erase successful siblings. It whitelists display fields and never returns
@@ -150,9 +156,10 @@ file contents, MCP URLs, detector metadata, reasons, or LLM configuration.
 
 The pinned agentgateway exposes only whole-document `GET` and `POST /api/config`
 operations and no ETag. The BFF therefore issues bounded five-minute, one-use
-revision tokens, serializes in-process LLM mutations, rereads immediately before
-the change, preserves unowned fields and opaque credential values, posts exactly
-once, then refetches and verifies the requested result. A native-console or YAML
+revision tokens, serializes all in-process LLM and MCP mutations, rereads
+immediately before the change, preserves unowned fields and opaque credential
+values, posts exactly once, then refetches and verifies the requested result. A
+native-console or YAML
 write can still race between the final read and whole-document POST; the BFF
 rejects detectable stale revisions but cannot make that upstream gap atomic.
 Provider type and model provider binding are immutable during Phase 8 edits.
@@ -160,6 +167,10 @@ An explicitly confirmed Provider deletion may remove its directly referenced
 Models in the same whole-document write. If a Virtual Model targets any of
 those Models, the BFF rejects the operation instead of mutating upstream-owned
 advanced routing.
+
+MCP writes cover the verified global settings and top-level Streamable HTTP,
+SSE, and stdio target forms. They preserve MCP policies, OpenAPI targets,
+route-owned inline targets, non-MCP configuration, and unrecognized fields.
 
 Agent rows are an AgentsharkX view over explicit AgentGuard `agent_id` and
 `owner_agent_id` fields. No gateway log, timing window, name similarity, or

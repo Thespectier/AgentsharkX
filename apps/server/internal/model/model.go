@@ -332,6 +332,106 @@ type GatewayMCPServer struct {
 	Scope     string `json:"scope"`
 }
 
+type MCPNetworkTarget struct {
+	Mode    string `json:"mode"`
+	Host    string `json:"host,omitempty"`
+	Port    *int   `json:"port,omitempty"`
+	Path    string `json:"path,omitempty"`
+	Backend string `json:"backend,omitempty"`
+}
+
+type MCPStdioTarget struct {
+	Command          string            `json:"command"`
+	Arguments        []string          `json:"arguments"`
+	Environment      map[string]string `json:"environment"`
+	ClearEnvironment bool              `json:"clearEnvironment"`
+}
+
+type MCPServerSetting struct {
+	ConnectResource
+	Name        string            `json:"name"`
+	Transport   string            `json:"transport"`
+	Scope       string            `json:"scope"`
+	Network     *MCPNetworkTarget `json:"network,omitempty"`
+	Stdio       *MCPStdioTarget   `json:"stdio,omitempty"`
+	HasPolicies bool              `json:"hasPolicies"`
+	Editable    bool              `json:"editable"`
+}
+
+type MCPGlobalSettings struct {
+	Port         *int   `json:"port"`
+	StatefulMode string `json:"statefulMode"`
+	PrefixMode   string `json:"prefixMode"`
+	FailureMode  string `json:"failureMode"`
+	HasPolicies  bool   `json:"hasPolicies"`
+}
+
+type MCPGlobalSettingsDraft struct {
+	Port         *int   `json:"port"`
+	StatefulMode string `json:"statefulMode"`
+	PrefixMode   string `json:"prefixMode"`
+	FailureMode  string `json:"failureMode"`
+}
+
+type MCPConfiguration struct {
+	Source        Source             `json:"source"`
+	FetchedAt     time.Time          `json:"fetchedAt"`
+	RevisionToken string             `json:"revisionToken"`
+	Settings      MCPGlobalSettings  `json:"settings"`
+	Servers       []MCPServerSetting `json:"servers"`
+	InlineServers []GatewayMCPServer `json:"inlineServers"`
+	Links         ConsoleLinks       `json:"links"`
+}
+
+type MCPConfigurationEnvelope struct {
+	Data MCPConfiguration `json:"data"`
+	Meta Meta             `json:"meta"`
+}
+
+type MCPServerDraft struct {
+	Name      string            `json:"name"`
+	Transport string            `json:"transport"`
+	Network   *MCPNetworkTarget `json:"network,omitempty"`
+	Stdio     *MCPStdioTarget   `json:"stdio,omitempty"`
+}
+
+type MCPServerMutationRequest struct {
+	RevisionToken string         `json:"revisionToken"`
+	Server        MCPServerDraft `json:"server"`
+}
+
+type MCPSettingsMutationRequest struct {
+	RevisionToken string                 `json:"revisionToken"`
+	Settings      MCPGlobalSettingsDraft `json:"settings"`
+}
+
+type MCPDeleteRequest struct {
+	RevisionToken string `json:"revisionToken"`
+	Confirmed     bool   `json:"confirmed"`
+}
+
+type MCPChange struct {
+	Operation  string
+	ResourceID string
+	Server     MCPServerDraft
+	Settings   MCPGlobalSettingsDraft
+}
+
+type MCPMutationReceipt struct {
+	Operation   string    `json:"operation"`
+	Status      string    `json:"status"`
+	Source      Source    `json:"source"`
+	Target      string    `json:"target"`
+	RequestID   string    `json:"requestId"`
+	CompletedAt time.Time `json:"completedAt"`
+	Message     string    `json:"message"`
+}
+
+type MCPMutationEnvelope struct {
+	Data MCPMutationReceipt `json:"data"`
+	Meta Meta               `json:"meta"`
+}
+
 type GatewayRoute struct {
 	ConnectResource
 	Name                    string   `json:"name"`

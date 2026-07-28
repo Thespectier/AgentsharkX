@@ -300,6 +300,92 @@ export type LlmMutationReceipt = {
 
 export type LlmMutationEnvelope = { data: LlmMutationReceipt; meta: Meta };
 
+export type McpNetworkTarget = {
+  mode: "url" | "host" | "backend";
+  host?: string;
+  port?: number | null;
+  path?: string;
+  backend?: string;
+};
+
+export type McpStdioTarget = {
+  command: string;
+  arguments: Array<string>;
+  environment: { [key: string]: string };
+  clearEnvironment: boolean;
+};
+
+export type McpServerSetting = {
+  id: string;
+  upstreamId: string;
+  source: GatewaySource;
+  fetchedAt: string;
+  rawRef: RawRef;
+  name: string;
+  transport: "sse" | "mcp" | "stdio" | "openapi";
+  scope: string;
+  network?: McpNetworkTarget;
+  stdio?: McpStdioTarget;
+  hasPolicies: boolean;
+  editable: boolean;
+};
+
+export type McpGlobalSettings = {
+  port: number | null;
+  statefulMode: "stateless" | "stateful";
+  prefixMode: "none" | "always" | "conditional";
+  failureMode: "failClosed" | "failOpen";
+  hasPolicies: boolean;
+};
+
+export type McpConfiguration = {
+  source: GatewaySource;
+  fetchedAt: string;
+  revisionToken: string;
+  settings: McpGlobalSettings;
+  servers: Array<McpServerSetting>;
+  inlineServers: Array<GatewayMCPServer>;
+  links: ConsoleLinks;
+};
+
+export type McpConfigurationEnvelope = { data: McpConfiguration; meta: Meta };
+
+export type McpServerDraft = {
+  name: string;
+  transport: "sse" | "mcp" | "stdio";
+  network?: McpNetworkTarget;
+  stdio?: McpStdioTarget;
+};
+
+export type McpServerMutationRequest = { revisionToken: string; server: McpServerDraft };
+
+export type McpGlobalSettingsDraft = {
+  port: number | null;
+  statefulMode: "stateless" | "stateful";
+  prefixMode: "none" | "always" | "conditional";
+  failureMode: "failClosed" | "failOpen";
+};
+
+export type McpSettingsMutationRequest = {
+  revisionToken: string;
+  settings: McpGlobalSettingsDraft;
+};
+
+export type McpDeleteRequest = { revisionToken: string; confirmed: boolean };
+
+export type McpMutationReceipt = {
+  operation:
+    "update-mcp-settings" | "create-mcp-server" | "update-mcp-server" | "delete-mcp-server";
+  status: "succeeded";
+  source: GatewaySource;
+  target: string;
+  requestId: string;
+  completedAt: string;
+  message: string;
+};
+
+export type McpMutationEnvelope = { data: McpMutationReceipt; meta: Meta };
+
 export type GatewayMCPServer = {
   id: string;
   upstreamId?: string;
@@ -734,8 +820,10 @@ export const implementedOperations = {
   createAdminSession: { method: "POST", path: "/api/v1/auth/session" },
   createLlmModel: { method: "POST", path: "/api/v1/connect/llm/models" },
   createLlmProvider: { method: "POST", path: "/api/v1/connect/llm/providers" },
+  createMcpServer: { method: "POST", path: "/api/v1/connect/mcp/servers" },
   deleteLlmModel: { method: "DELETE", path: "/api/v1/connect/llm/models/{resourceId}" },
   deleteLlmProvider: { method: "DELETE", path: "/api/v1/connect/llm/providers/{resourceId}" },
+  deleteMcpServer: { method: "DELETE", path: "/api/v1/connect/mcp/servers/{resourceId}" },
   deleteRuntimeRule: {
     method: "DELETE",
     path: "/api/v1/protect/agents/{agentId}/runtime-rules/{ruleId}",
@@ -753,6 +841,7 @@ export const implementedOperations = {
   getGatewayMcpServer: { method: "GET", path: "/api/v1/connect/mcp/servers/{resourceId}" },
   getLiveness: { method: "GET", path: "/healthz" },
   getLlmConfiguration: { method: "GET", path: "/api/v1/connect/llm/configuration" },
+  getMcpConfiguration: { method: "GET", path: "/api/v1/connect/mcp/configuration" },
   getModel: { method: "GET", path: "/api/v1/connect/llm/models/{resourceId}" },
   getOverview: { method: "GET", path: "/api/v1/overview" },
   getProvider: { method: "GET", path: "/api/v1/connect/llm/providers/{resourceId}" },
@@ -775,6 +864,8 @@ export const implementedOperations = {
   streamEvents: { method: "GET", path: "/api/v1/stream" },
   updateLlmModel: { method: "PATCH", path: "/api/v1/connect/llm/models/{resourceId}" },
   updateLlmProvider: { method: "PATCH", path: "/api/v1/connect/llm/providers/{resourceId}" },
+  updateMcpServer: { method: "PATCH", path: "/api/v1/connect/mcp/servers/{resourceId}" },
+  updateMcpSettings: { method: "PATCH", path: "/api/v1/connect/mcp/configuration/settings" },
   updateToolLabels: { method: "PATCH", path: "/api/v1/trust/agents/{agentId}/tools/{tool}/labels" },
   verifyGatewaySetup: { method: "GET", path: "/api/v1/connect/setup" },
 } as const;
@@ -785,8 +876,10 @@ export interface OperationResponses {
   createAdminSession: undefined;
   createLlmModel: LlmMutationEnvelope;
   createLlmProvider: LlmMutationEnvelope;
+  createMcpServer: McpMutationEnvelope;
   deleteLlmModel: LlmMutationEnvelope;
   deleteLlmProvider: LlmMutationEnvelope;
+  deleteMcpServer: McpMutationEnvelope;
   deleteRuntimeRule: ProtectMutationEnvelope;
   denyTicket: ProtectMutationEnvelope;
   detectMcps: TrustScanEnvelope;
@@ -801,6 +894,7 @@ export interface OperationResponses {
   getGatewayMcpServer: MCPEnvelope;
   getLiveness: Liveness;
   getLlmConfiguration: LlmConfigurationEnvelope;
+  getMcpConfiguration: McpConfigurationEnvelope;
   getModel: ModelEnvelope;
   getOverview: OverviewEnvelope;
   getProvider: ProviderEnvelope;
@@ -823,6 +917,8 @@ export interface OperationResponses {
   streamEvents: string;
   updateLlmModel: LlmMutationEnvelope;
   updateLlmProvider: LlmMutationEnvelope;
+  updateMcpServer: McpMutationEnvelope;
+  updateMcpSettings: McpMutationEnvelope;
   updateToolLabels: TrustResourceEnvelope;
   verifyGatewaySetup: ConnectSetupEnvelope;
 }
@@ -833,8 +929,10 @@ export interface OperationBodies {
   createAdminSession: LoginRequest;
   createLlmModel: LlmModelMutationRequest;
   createLlmProvider: LlmProviderMutationRequest;
+  createMcpServer: McpServerMutationRequest;
   deleteLlmModel: LlmDeleteRequest;
   deleteLlmProvider: LlmProviderDeleteRequest;
+  deleteMcpServer: McpDeleteRequest;
   deleteRuntimeRule: ConfirmedActionRequest;
   denyTicket: ConfirmedActionRequest;
   detectMcps: MCPDetectionRequest;
@@ -842,6 +940,8 @@ export interface OperationBodies {
   publishRuntimeRule: RuntimeRulePublishRequest;
   updateLlmModel: LlmModelMutationRequest;
   updateLlmProvider: LlmProviderMutationRequest;
+  updateMcpServer: McpServerMutationRequest;
+  updateMcpSettings: McpSettingsMutationRequest;
   updateToolLabels: LabelUpdate;
 }
 

@@ -668,6 +668,83 @@ func TestConnectLLMConfigurationWritesThroughBFFWithoutExposingCredentials(t *te
 	}
 }
 
+func TestConnectMCPConfigurationReadsAndWritesCompleteVerifiedTargets(t *testing.T) {
+	t.Parallel()
+
+	var mu sync.Mutex
+	configuration := []byte(`{"llm":{"providers":[],"models":[],"virtualModels":[]},"mcp":{"port":3000,"statefulMode":"stateful","targets":[{"name":"filesystem","stdio":{"cmd":"npx","args":["-y","server"],"env":{"ACCESS_TOKEN":"complete-admin-value"},"clear_env":true},"policies":{"requestHeaderModifier":{"set":{"x-scope":"admin"}}}}]},"binds":[]}`)
+	mutationCalls := 0
+	gatewayServer := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		writer.Header().Set("Content-Type", "application/json")
+		if request.URL.Path != "/api/config" {
+			http.NotFound(writer, request)
+			return
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		if request.Method == http.MethodPost {
+			body, err := io.ReadAll(request.Body)
+			if err != nil {
+				t.Error(err)
+				http.Error(writer, "read failed", http.StatusInternalServerError)
+				return
+			}
+			configuration = body
+			mutationCalls++
+			_, _ = io.WriteString(writer, `{"status":"success"}`)
+			return
+		}
+		_, _ = writer.Write(configuration)
+	}))
+	defer gatewayServer.Close()
+
+	gatewayClient, err := gateway.New(gatewayServer.URL, gatewayServer.Client(), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(New(ServerConfig{
+		Connect: connect.New(gatewayClient, "http://localhost:15000/ui"),
+		Logger:  slog.New(slog.DiscardHandler), AuthEnabled: false,
+	}))
+	defer server.Close()
+
+	var current model.MCPConfigurationEnvelope
+	protectJSON(t, server.Client(), http.MethodGet, server.URL+"/api/v1/connect/mcp/configuration", "", http.StatusOK, &current)
+	if len(current.Data.Servers) != 1 || current.Data.Servers[0].Stdio == nil ||
+		current.Data.Servers[0].Stdio.Environment["ACCESS_TOKEN"] != "complete-admin-value" ||
+		!current.Data.Servers[0].HasPolicies || current.Data.RevisionToken == "" {
+		t.Fatalf("unexpected complete MCP configuration: %#v", current.Data)
+	}
+
+	requestBody, err := json.Marshal(model.MCPServerMutationRequest{
+		RevisionToken: current.Data.RevisionToken,
+		Server: model.MCPServerDraft{
+			Name: "weather", Transport: "mcp",
+			Network: &model.MCPNetworkTarget{Mode: "url", Host: "https://weather.example/mcp"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var receipt model.MCPMutationEnvelope
+	protectJSON(t, server.Client(), http.MethodPost, server.URL+"/api/v1/connect/mcp/servers", string(requestBody), http.StatusCreated, &receipt)
+	if receipt.Data.Operation != "create-mcp-server" || receipt.Data.Target != "weather" {
+		t.Fatalf("unexpected MCP mutation receipt: %#v", receipt.Data)
+	}
+	mu.Lock()
+	written := append([]byte(nil), configuration...)
+	writes := mutationCalls
+	mu.Unlock()
+	for _, expected := range [][]byte{[]byte("complete-admin-value"), []byte("x-scope"), []byte("weather.example")} {
+		if !bytes.Contains(written, expected) {
+			t.Fatalf("MCP write did not preserve/apply %q: %s", expected, written)
+		}
+	}
+	if writes != 1 {
+		t.Fatalf("upstream writes = %d", writes)
+	}
+}
+
 func TestTrustResourcesLabelsAndScanFlowThroughAuthenticatedBFF(t *testing.T) {
 	t.Parallel()
 

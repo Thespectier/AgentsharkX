@@ -1,4 +1,4 @@
-// Package connect implements the read-only agentgateway resource BFF.
+// Package connect implements the agentgateway management BFF.
 package connect
 
 import (
@@ -31,7 +31,7 @@ var (
 	ErrRevisionStale    = errors.New("configuration revision is stale")
 	ErrConflict         = errors.New("configuration resource conflicts with current state")
 	ErrReferenced       = errors.New("configuration resource is still referenced")
-	ErrMutationInFlight = errors.New("LLM configuration mutation already in progress")
+	ErrMutationInFlight = errors.New("agentgateway configuration mutation already in progress")
 )
 
 type Gateway interface {
@@ -40,6 +40,8 @@ type Gateway interface {
 	Analytics(context.Context) (model.GatewayAnalytics, error)
 	LLMConfiguration(context.Context) (model.LLMConfiguration, string, error)
 	ApplyLLMChange(context.Context, string, model.LLMChange) (string, error)
+	MCPConfiguration(context.Context) (model.MCPConfiguration, string, error)
+	ApplyMCPChange(context.Context, string, model.MCPChange) (string, error)
 }
 
 type revisionState struct {
@@ -76,6 +78,23 @@ func (service *Service) LLMConfiguration(ctx context.Context) (model.LLMConfigur
 	configuration.RevisionToken = token
 	configuration.Links = service.links
 	return model.LLMConfigurationEnvelope{
+		Data: configuration,
+		Meta: gatewayMeta(configuration.FetchedAt, false),
+	}, nil
+}
+
+func (service *Service) MCPConfiguration(ctx context.Context) (model.MCPConfigurationEnvelope, error) {
+	configuration, revision, err := service.gateway.MCPConfiguration(ctx)
+	if err != nil {
+		return model.MCPConfigurationEnvelope{}, err
+	}
+	token, err := service.issueRevision(revision)
+	if err != nil {
+		return model.MCPConfigurationEnvelope{}, err
+	}
+	configuration.RevisionToken = token
+	configuration.Links = service.links
+	return model.MCPConfigurationEnvelope{
 		Data: configuration,
 		Meta: gatewayMeta(configuration.FetchedAt, false),
 	}, nil
@@ -124,6 +143,33 @@ func (service *Service) DeleteModel(ctx context.Context, id string, request mode
 	}, id, "LLM model deleted")
 }
 
+func (service *Service) UpdateMCPSettings(ctx context.Context, request model.MCPSettingsMutationRequest) (model.MCPMutationEnvelope, error) {
+	return service.applyMCPChange(ctx, request.RevisionToken, model.MCPChange{
+		Operation: "update-mcp-settings", Settings: request.Settings,
+	}, "MCP settings", "MCP settings updated")
+}
+
+func (service *Service) CreateMCPServer(ctx context.Context, request model.MCPServerMutationRequest) (model.MCPMutationEnvelope, error) {
+	return service.applyMCPChange(ctx, request.RevisionToken, model.MCPChange{
+		Operation: "create-mcp-server", Server: request.Server,
+	}, request.Server.Name, "MCP server created")
+}
+
+func (service *Service) UpdateMCPServer(ctx context.Context, id string, request model.MCPServerMutationRequest) (model.MCPMutationEnvelope, error) {
+	return service.applyMCPChange(ctx, request.RevisionToken, model.MCPChange{
+		Operation: "update-mcp-server", ResourceID: id, Server: request.Server,
+	}, request.Server.Name, "MCP server updated")
+}
+
+func (service *Service) DeleteMCPServer(ctx context.Context, id string, request model.MCPDeleteRequest) (model.MCPMutationEnvelope, error) {
+	if !request.Confirmed {
+		return model.MCPMutationEnvelope{}, ErrInvalidRequest
+	}
+	return service.applyMCPChange(ctx, request.RevisionToken, model.MCPChange{
+		Operation: "delete-mcp-server", ResourceID: id,
+	}, id, "MCP server deleted")
+}
+
 func (service *Service) applyLLMChange(ctx context.Context, token string, change model.LLMChange, target, message string) (model.LLMMutationEnvelope, error) {
 	if token == "" || len(token) > 128 || target == "" {
 		return model.LLMMutationEnvelope{}, ErrInvalidRequest
@@ -164,6 +210,50 @@ func translateLLMError(err error) error {
 	case errors.Is(err, gateway.ErrLLMResourceReferenced):
 		return ErrReferenced
 	case errors.Is(err, gateway.ErrLLMResourceConflict):
+		return ErrConflict
+	default:
+		return err
+	}
+}
+
+func (service *Service) applyMCPChange(ctx context.Context, token string, change model.MCPChange, target, message string) (model.MCPMutationEnvelope, error) {
+	if token == "" || len(token) > 128 || target == "" {
+		return model.MCPMutationEnvelope{}, ErrInvalidRequest
+	}
+	revision, ok := service.consumeRevision(token)
+	if !ok {
+		return model.MCPMutationEnvelope{}, ErrRevisionStale
+	}
+	if !service.beginMutation() {
+		return model.MCPMutationEnvelope{}, ErrMutationInFlight
+	}
+	defer service.endMutation()
+	resolvedTarget, err := service.gateway.ApplyMCPChange(ctx, revision, change)
+	if err != nil {
+		return model.MCPMutationEnvelope{}, translateMCPError(err)
+	}
+	if resolvedTarget != "" {
+		target = resolvedTarget
+	}
+	completedAt := time.Now().UTC()
+	return model.MCPMutationEnvelope{
+		Data: model.MCPMutationReceipt{
+			Operation: change.Operation, Status: "succeeded", Source: model.SourceAgentGateway,
+			Target: target, CompletedAt: completedAt, Message: message,
+		},
+		Meta: gatewayMeta(completedAt, false),
+	}, nil
+}
+
+func translateMCPError(err error) error {
+	switch {
+	case errors.Is(err, gateway.ErrConfigurationChanged):
+		return ErrRevisionStale
+	case errors.Is(err, gateway.ErrMCPInvalidRequest):
+		return ErrInvalidRequest
+	case errors.Is(err, gateway.ErrMCPResourceNotFound):
+		return ErrNotFound
+	case errors.Is(err, gateway.ErrMCPResourceConflict):
 		return ErrConflict
 	default:
 		return err

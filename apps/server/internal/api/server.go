@@ -29,7 +29,7 @@ import (
 )
 
 const maxLoginBodyBytes = 4096
-const maxMutationBodyBytes = 32 * 1024
+const maxMutationBodyBytes = 1 << 20
 
 type contextKey string
 
@@ -87,8 +87,13 @@ func (server *server) routes() {
 	server.mux.Handle("GET /api/v1/connect/llm/models/{resourceId}", server.requireAuth(http.HandlerFunc(server.gatewayModel)))
 	server.mux.Handle("PATCH /api/v1/connect/llm/models/{resourceId}", server.requireAuth(server.requireCSRF(http.HandlerFunc(server.updateLLMModel))))
 	server.mux.Handle("DELETE /api/v1/connect/llm/models/{resourceId}", server.requireAuth(server.requireCSRF(http.HandlerFunc(server.deleteLLMModel))))
+	server.mux.Handle("GET /api/v1/connect/mcp/configuration", server.requireAuth(http.HandlerFunc(server.mcpConfiguration)))
+	server.mux.Handle("PATCH /api/v1/connect/mcp/configuration/settings", server.requireAuth(server.requireCSRF(http.HandlerFunc(server.updateMCPSettings))))
 	server.mux.Handle("GET /api/v1/connect/mcp/servers", server.requireAuth(http.HandlerFunc(server.mcpServers)))
+	server.mux.Handle("POST /api/v1/connect/mcp/servers", server.requireAuth(server.requireCSRF(http.HandlerFunc(server.createMCPServer))))
 	server.mux.Handle("GET /api/v1/connect/mcp/servers/{resourceId}", server.requireAuth(http.HandlerFunc(server.mcpServer)))
+	server.mux.Handle("PATCH /api/v1/connect/mcp/servers/{resourceId}", server.requireAuth(server.requireCSRF(http.HandlerFunc(server.updateMCPServer))))
+	server.mux.Handle("DELETE /api/v1/connect/mcp/servers/{resourceId}", server.requireAuth(server.requireCSRF(http.HandlerFunc(server.deleteMCPServer))))
 	server.mux.Handle("GET /api/v1/connect/traffic/routes", server.requireAuth(http.HandlerFunc(server.trafficRoutes)))
 	server.mux.Handle("GET /api/v1/connect/traffic/routes/{resourceId}", server.requireAuth(http.HandlerFunc(server.route)))
 	server.mux.Handle("GET /api/v1/trust/agents", server.requireAuth(http.HandlerFunc(server.trustAgents)))
@@ -325,12 +330,68 @@ func (server *server) mcpServers(writer http.ResponseWriter, request *http.Reque
 	server.writeConnectResult(writer, request, envelope, err)
 }
 
+func (server *server) mcpConfiguration(writer http.ResponseWriter, request *http.Request) {
+	if !server.connectAvailable(writer, request) {
+		return
+	}
+	envelope, err := server.config.Connect.MCPConfiguration(request.Context())
+	server.writeConnectResult(writer, request, envelope, err)
+}
+
+func (server *server) updateMCPSettings(writer http.ResponseWriter, request *http.Request) {
+	if !server.connectAvailable(writer, request) {
+		return
+	}
+	var input model.MCPSettingsMutationRequest
+	if !server.decodeMutation(writer, request, &input) {
+		return
+	}
+	envelope, err := server.config.Connect.UpdateMCPSettings(request.Context(), input)
+	server.writeConnectMCPMutation(writer, request, http.StatusOK, envelope, err)
+}
+
+func (server *server) createMCPServer(writer http.ResponseWriter, request *http.Request) {
+	if !server.connectAvailable(writer, request) {
+		return
+	}
+	var input model.MCPServerMutationRequest
+	if !server.decodeMutation(writer, request, &input) {
+		return
+	}
+	envelope, err := server.config.Connect.CreateMCPServer(request.Context(), input)
+	server.writeConnectMCPMutation(writer, request, http.StatusCreated, envelope, err)
+}
+
 func (server *server) mcpServer(writer http.ResponseWriter, request *http.Request) {
 	if !server.connectAvailable(writer, request) {
 		return
 	}
 	envelope, err := server.config.Connect.MCPServer(request.Context(), request.PathValue("resourceId"))
 	server.writeConnectResult(writer, request, envelope, err)
+}
+
+func (server *server) updateMCPServer(writer http.ResponseWriter, request *http.Request) {
+	if !server.connectAvailable(writer, request) {
+		return
+	}
+	var input model.MCPServerMutationRequest
+	if !server.decodeMutation(writer, request, &input) {
+		return
+	}
+	envelope, err := server.config.Connect.UpdateMCPServer(request.Context(), request.PathValue("resourceId"), input)
+	server.writeConnectMCPMutation(writer, request, http.StatusOK, envelope, err)
+}
+
+func (server *server) deleteMCPServer(writer http.ResponseWriter, request *http.Request) {
+	if !server.connectAvailable(writer, request) {
+		return
+	}
+	var input model.MCPDeleteRequest
+	if !server.decodeMutation(writer, request, &input) {
+		return
+	}
+	envelope, err := server.config.Connect.DeleteMCPServer(request.Context(), request.PathValue("resourceId"), input)
+	server.writeConnectMCPMutation(writer, request, http.StatusOK, envelope, err)
 }
 
 func (server *server) trafficRoutes(writer http.ResponseWriter, request *http.Request) {
@@ -665,7 +726,7 @@ func (server *server) writeConnectResult(writer http.ResponseWriter, request *ht
 		return
 	}
 	if errors.Is(err, connect.ErrInvalidRequest) {
-		server.writeError(writer, request, http.StatusBadRequest, "INVALID_REQUEST", "the LLM configuration request is invalid", source(model.SourceAgentGateway), false)
+		server.writeError(writer, request, http.StatusBadRequest, "INVALID_REQUEST", "the agentgateway configuration request is invalid", source(model.SourceAgentGateway), false)
 		return
 	}
 	if errors.Is(err, connect.ErrRevisionStale) {
@@ -677,14 +738,14 @@ func (server *server) writeConnectResult(writer http.ResponseWriter, request *ht
 		return
 	}
 	if errors.Is(err, connect.ErrConflict) {
-		server.writeError(writer, request, http.StatusConflict, "RESOURCE_CONFLICT", "an LLM configuration resource already uses that name", source(model.SourceAgentGateway), false)
+		server.writeError(writer, request, http.StatusConflict, "RESOURCE_CONFLICT", "an agentgateway configuration resource already uses that name", source(model.SourceAgentGateway), false)
 		return
 	}
 	if errors.Is(err, connect.ErrMutationInFlight) {
-		server.writeError(writer, request, http.StatusConflict, "MUTATION_IN_FLIGHT", "another LLM configuration change is still in progress", source(model.SourceAgentGateway), false)
+		server.writeError(writer, request, http.StatusConflict, "MUTATION_IN_FLIGHT", "another agentgateway configuration change is still in progress", source(model.SourceAgentGateway), false)
 		return
 	}
-	if errors.Is(err, gateway.ErrLLMWriteUnverified) {
+	if errors.Is(err, gateway.ErrLLMWriteUnverified) || errors.Is(err, gateway.ErrMCPWriteUnverified) {
 		server.writeError(writer, request, http.StatusServiceUnavailable, "WRITE_UNVERIFIED", "the write result could not be verified; refresh before making another change", source(model.SourceAgentGateway), false)
 		return
 	}
@@ -702,6 +763,21 @@ func (server *server) writeConnectResult(writer http.ResponseWriter, request *ht
 }
 
 func (server *server) writeConnectMutation(writer http.ResponseWriter, request *http.Request, status int, envelope model.LLMMutationEnvelope, err error) {
+	if err != nil {
+		server.writeConnectResult(writer, request, nil, err)
+		return
+	}
+	envelope.Data.RequestID = requestID(request.Context())
+	server.config.Logger.Info("connect operation completed",
+		"request_id", envelope.Data.RequestID,
+		"operation", envelope.Data.Operation,
+		"target", envelope.Data.Target,
+		"status", envelope.Data.Status,
+	)
+	server.writeJSON(writer, status, envelope)
+}
+
+func (server *server) writeConnectMCPMutation(writer http.ResponseWriter, request *http.Request, status int, envelope model.MCPMutationEnvelope, err error) {
 	if err != nil {
 		server.writeConnectResult(writer, request, nil, err)
 		return

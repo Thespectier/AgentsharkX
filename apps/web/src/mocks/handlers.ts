@@ -24,6 +24,12 @@ import type {
   LlmProviderDeleteRequest,
   LlmProviderMutationRequest,
   LlmProviderSetting,
+  McpConfiguration,
+  McpDeleteRequest,
+  McpServerDraft,
+  McpServerMutationRequest,
+  McpServerSetting,
+  McpSettingsMutationRequest,
   MCPDetectionRequest,
   ProtectSnapshot,
   RuntimeRule,
@@ -356,6 +362,68 @@ let mockLlmConfiguration: LlmConfiguration = {
   virtualModels: connectData.models.filter((model) => model.kind === "virtual"),
   links: connectData.summary.links,
 };
+let mockMcpRevision = 1;
+let nextMcpResource = 100;
+let mockMcpConfiguration: McpConfiguration = {
+  source: "agentgateway",
+  fetchedAt: capturedAt,
+  revisionToken: "mock-mcp-revision-1",
+  settings: {
+    port: 3000,
+    statefulMode: "stateful",
+    prefixMode: "conditional",
+    failureMode: "failClosed",
+    hasPolicies: false,
+  },
+  servers: [
+    {
+      id: "everything",
+      upstreamId: "everything",
+      source: "agentgateway",
+      fetchedAt: capturedAt,
+      rawRef: { source: "agentgateway", id: "/mcp/targets/0" },
+      name: "everything",
+      transport: "mcp",
+      scope: "gateway",
+      network: { mode: "url", host: "http://localhost:3001/mcp" },
+      hasPolicies: false,
+      editable: true,
+    },
+    {
+      id: "filesystem",
+      upstreamId: "filesystem",
+      source: "agentgateway",
+      fetchedAt: capturedAt,
+      rawRef: { source: "agentgateway", id: "/mcp/targets/1" },
+      name: "filesystem",
+      transport: "stdio",
+      scope: "gateway",
+      stdio: {
+        command: "npx",
+        arguments: ["-y", "@modelcontextprotocol/server-filesystem", "/workspace"],
+        environment: { LOG_LEVEL: "info" },
+        clearEnvironment: false,
+      },
+      hasPolicies: true,
+      editable: true,
+    },
+    {
+      id: "catalog-api",
+      upstreamId: "catalog-api",
+      source: "agentgateway",
+      fetchedAt: capturedAt,
+      rawRef: { source: "agentgateway", id: "/mcp/targets/2" },
+      name: "catalog-api",
+      transport: "openapi",
+      scope: "gateway",
+      network: { mode: "url", host: "https://catalog.example/openapi" },
+      hasPolicies: false,
+      editable: false,
+    },
+  ],
+  inlineServers: [],
+  links: connectData.summary.links,
+};
 const ruleChecks = new Map<string, string>();
 const approvalAttempts = new Map<string, number>();
 
@@ -430,6 +498,62 @@ function nextLlmRevision() {
       (model) => model.providerMode === "reference" && model.providerReference === provider.name,
     ).length;
   }
+}
+
+function acceptMcpRevision(revisionToken: string): Response | undefined {
+  if (revisionToken !== mockMcpConfiguration.revisionToken) {
+    return llmFailure(
+      409,
+      "CONFIGURATION_CHANGED",
+      "agentgateway configuration changed. Refresh and retry the operation.",
+    );
+  }
+  return undefined;
+}
+
+function nextMcpRevision() {
+  mockMcpRevision += 1;
+  mockMcpConfiguration.revisionToken = `mock-mcp-revision-${mockMcpRevision}`;
+  mockMcpConfiguration.fetchedAt = new Date().toISOString();
+  const count = connectData.summary.counts.find((item) => item.id === "mcp-targets");
+  if (count) count.value = mockMcpConfiguration.servers.length;
+}
+
+function mcpServerSetting(draft: McpServerDraft, current?: McpServerSetting): McpServerSetting {
+  const index = current
+    ? mockMcpConfiguration.servers.findIndex((server) => server.id === current.id)
+    : mockMcpConfiguration.servers.length;
+  return {
+    id: current?.id ?? `mock-mcp-${nextMcpResource++}`,
+    upstreamId: draft.name,
+    source: "agentgateway",
+    fetchedAt: new Date().toISOString(),
+    rawRef: { source: "agentgateway", id: `/mcp/targets/${Math.max(index, 0)}` },
+    name: draft.name,
+    transport: draft.transport,
+    scope: "gateway",
+    network: draft.network ? structuredClone(draft.network) : undefined,
+    stdio: draft.stdio ? structuredClone(draft.stdio) : undefined,
+    hasPolicies: current?.hasPolicies ?? false,
+    editable: true,
+  };
+}
+
+function mcpReceipt(operation: string, target: string, message: string) {
+  nextMcpRevision();
+  const completedAt = new Date().toISOString();
+  return HttpResponse.json({
+    data: {
+      operation,
+      status: "succeeded",
+      source: "agentgateway",
+      target,
+      requestId: `req_mock_${operation.replaceAll("-", "_")}`,
+      completedAt,
+      message,
+    },
+    meta: { ...meta("agentgateway"), fetchedAt: completedAt },
+  });
 }
 
 function credentialState(
@@ -754,6 +878,68 @@ export const handlers = [
   http.get("/api/v1/connect/llm/models/:resourceId", ({ request, params }) => {
     const item = connectData.models.find((model) => model.id === params.resourceId);
     return item ? respond(request, item, item, "agentgateway") : failure("agentgateway");
+  }),
+  http.get("/api/v1/connect/mcp/configuration", ({ request }) =>
+    respond(
+      request,
+      structuredClone(mockMcpConfiguration),
+      { ...structuredClone(mockMcpConfiguration), servers: [], inlineServers: [] },
+      "agentgateway",
+    ),
+  ),
+  http.patch("/api/v1/connect/mcp/configuration/settings", async ({ request }) => {
+    const body = (await request.json()) as McpSettingsMutationRequest;
+    const conflict = acceptMcpRevision(body.revisionToken);
+    if (conflict) return conflict;
+    mockMcpConfiguration.settings = {
+      ...structuredClone(body.settings),
+      hasPolicies: mockMcpConfiguration.settings.hasPolicies,
+    };
+    return mcpReceipt("update-mcp-settings", "MCP settings", "MCP settings updated");
+  }),
+  http.post("/api/v1/connect/mcp/servers", async ({ request }) => {
+    const body = (await request.json()) as McpServerMutationRequest;
+    const conflict = acceptMcpRevision(body.revisionToken);
+    if (conflict) return conflict;
+    if (mockMcpConfiguration.servers.some((server) => server.name === body.server.name))
+      return llmFailure(409, "RESOURCE_CONFLICT", "An MCP server with this name already exists.");
+    mockMcpConfiguration.servers.push(mcpServerSetting(body.server));
+    return mcpReceipt("create-mcp-server", body.server.name, "MCP server created");
+  }),
+  http.patch("/api/v1/connect/mcp/servers/:resourceId", async ({ request, params }) => {
+    const body = (await request.json()) as McpServerMutationRequest;
+    const conflict = acceptMcpRevision(body.revisionToken);
+    if (conflict) return conflict;
+    const index = mockMcpConfiguration.servers.findIndex(
+      (server) => server.id === String(params.resourceId),
+    );
+    if (index < 0) return llmFailure(404, "RESOURCE_NOT_FOUND", "MCP server was not found.");
+    const current = mockMcpConfiguration.servers[index];
+    if (!current.editable)
+      return llmFailure(400, "INVALID_REQUEST", "This MCP server uses advanced configuration.");
+    if (
+      mockMcpConfiguration.servers.some(
+        (server, candidate) => candidate !== index && server.name === body.server.name,
+      )
+    )
+      return llmFailure(409, "RESOURCE_CONFLICT", "An MCP server with this name already exists.");
+    mockMcpConfiguration.servers[index] = mcpServerSetting(body.server, current);
+    return mcpReceipt("update-mcp-server", body.server.name, "MCP server updated");
+  }),
+  http.delete("/api/v1/connect/mcp/servers/:resourceId", async ({ request, params }) => {
+    const body = (await request.json()) as McpDeleteRequest;
+    const conflict = acceptMcpRevision(body.revisionToken);
+    if (conflict) return conflict;
+    if (!body.confirmed) return llmFailure(400, "INVALID_REQUEST", "Deletion must be confirmed.");
+    const index = mockMcpConfiguration.servers.findIndex(
+      (server) => server.id === String(params.resourceId),
+    );
+    if (index < 0) return llmFailure(404, "RESOURCE_NOT_FOUND", "MCP server was not found.");
+    const target = mockMcpConfiguration.servers[index];
+    if (!target.editable)
+      return llmFailure(400, "INVALID_REQUEST", "This MCP server uses advanced configuration.");
+    mockMcpConfiguration.servers.splice(index, 1);
+    return mcpReceipt("delete-mcp-server", target.name, "MCP server deleted");
   }),
   http.get("/api/v1/connect/mcp/servers", ({ request }) =>
     pageResponse(request, connectData.mcpServers, "agentgateway"),

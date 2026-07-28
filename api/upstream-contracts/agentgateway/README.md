@@ -44,6 +44,16 @@ AgentsharkX may use that verified whole-document write to delete one Provider
 and its directly referenced Models together after explicit confirmation. It
 does not edit Virtual Models: any Virtual Model reference to an affected direct
 Model blocks the deletion.
+The Phase 9 MCP contract was checked against the same exact pinned source:
+`schema/config.json` definitions `LocalSimpleMcpConfig`, `LocalMcpTarget`,
+`McpStatefulMode`, `McpPrefixMode`, and `McpBackendFailureMode`, together with
+`ui/src/pages/McpServers.tsx` and `ui/src/types.ts`. The verified main editor
+manages global port/session/prefix/failure settings and top-level Streamable
+HTTP, SSE, and stdio targets. Network targets support URL, host/port/path, or
+backend/path shapes; stdio supports `cmd`, `args`, `env`, and `clear_env`.
+OpenAPI targets and MCP policy bodies remain advanced/read-only. Phase 9 uses
+the verified whole-document write, preserves those advanced/unowned fields,
+shares the LLM mutation lock, and verifies the requested result by refetching.
 The Phase 6 log and Analytics adapters send the same exact rolling 60-minute
 `timeRange`. Search always sends `includeAttributes=false`; Analytics requests
 `bucketSeconds=300`. Search rejects unexpected attributes or payload fields so

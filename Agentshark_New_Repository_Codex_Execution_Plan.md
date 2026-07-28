@@ -734,6 +734,29 @@ YAML 写入与最后一次读取到 POST 之间的窗口变成原子操作。
 
 建议提交：`feat(connect): manage verified agentgateway llm settings`
 
+### Phase 9：Connect MCP 配置管理
+
+目标：把 agentgateway v1.3.1 原生 MCP 主界面的全局设置和顶层 Server
+管理搬入 `Connect / MCP`，同时保留路由内联目标和高级策略的上游所有权。
+
+任务：
+
+1. 在 OpenAPI 中定义 MCP 配置读取、全局设置更新、Server typed CRUD 和写入回执。
+2. BFF 返回已验证的端口、会话状态、前缀、失败模式以及完整网络/stdio 字段。
+3. Streamable HTTP、SSE 和 stdio 使用 revision 控制的整份配置读改写；与 LLM 共用变更锁。
+4. 保留 MCP policy、OpenAPI target、路由内联 target、非 MCP 配置和未知字段，并回读验证。
+5. Connect UI 提供设置编辑、Server 搜索/新增/编辑/删除和高级配置入口。
+6. 添加 adapter、service、BFF、Mock 和浏览器流程测试，并更新能力矩阵与兼容性说明。
+
+验收：
+
+- 全局设置与三种原生主表单传输可完整读写，stdio 环境变量不被截断或脱敏。
+- OpenAPI target 和路由内联 target 可见但不可从简化表单误改，policy 状态可见且正文保留。
+- 陈旧或重复 revision 不触发 POST；成功操作只 POST 一次并保留无关字段。
+- MCP 与 LLM 同时写入时由同一进程内锁串行化，写后回读确认请求结果。
+
+建议提交：`feat(connect): manage verified agentgateway mcp settings`
+
 ---
 
 ## 12. Codex 每阶段执行协议

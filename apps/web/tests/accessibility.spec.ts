@@ -1,7 +1,14 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
 
-const pages = ["/", "/connect/overview", "/trust/agents", "/protect/policies", "/audit/analytics"];
+const pages = [
+  "/",
+  "/connect/overview",
+  "/connect/mcp",
+  "/trust/agents",
+  "/protect/policies",
+  "/audit/analytics",
+];
 
 test.use({ reducedMotion: "reduce" });
 

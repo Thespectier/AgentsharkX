@@ -10,12 +10,14 @@ import (
 )
 
 type fakeGateway struct {
-	snapshot      model.GatewaySnapshot
-	analytics     model.GatewayAnalytics
-	health        model.SourceHealth
-	configuration model.LLMConfiguration
-	revision      string
-	apply         func(context.Context, string, model.LLMChange) error
+	snapshot         model.GatewaySnapshot
+	analytics        model.GatewayAnalytics
+	health           model.SourceHealth
+	configuration    model.LLMConfiguration
+	mcpConfiguration model.MCPConfiguration
+	revision         string
+	apply            func(context.Context, string, model.LLMChange) error
+	applyMCP         func(context.Context, string, model.MCPChange) error
 }
 
 func (fake fakeGateway) Health(context.Context) model.SourceHealth { return fake.health }
@@ -39,6 +41,23 @@ func (fake fakeGateway) ApplyLLMChange(ctx context.Context, revision string, cha
 	}
 	if change.Model.Name != "" {
 		return change.Model.Name, nil
+	}
+	return change.ResourceID, nil
+}
+func (fake fakeGateway) MCPConfiguration(context.Context) (model.MCPConfiguration, string, error) {
+	return fake.mcpConfiguration, fake.revision, nil
+}
+func (fake fakeGateway) ApplyMCPChange(ctx context.Context, revision string, change model.MCPChange) (string, error) {
+	if fake.applyMCP != nil {
+		if err := fake.applyMCP(ctx, revision, change); err != nil {
+			return "", err
+		}
+	}
+	if change.Server.Name != "" {
+		return change.Server.Name, nil
+	}
+	if change.Operation == "update-mcp-settings" {
+		return "MCP settings", nil
 	}
 	return change.ResourceID, nil
 }
@@ -166,5 +185,45 @@ func TestLLMConfigurationIssuesOneTimeRevisionAndAppliesTypedChange(t *testing.T
 	})
 	if err != nil || receipt.Data.Operation != "delete-llm-provider" || !applied.DeleteReferencedModels {
 		t.Fatalf("unexpected cascade deletion: receipt=%#v change=%#v err=%v", receipt, applied, err)
+	}
+}
+
+func TestMCPConfigurationIssuesOneTimeRevisionAndAppliesTypedChange(t *testing.T) {
+	t.Parallel()
+	fetchedAt := time.Date(2026, 7, 28, 8, 0, 0, 0, time.UTC)
+	var applied model.MCPChange
+	service := New(fakeGateway{
+		mcpConfiguration: model.MCPConfiguration{
+			Source: model.SourceAgentGateway, FetchedAt: fetchedAt,
+			Settings: model.MCPGlobalSettings{StatefulMode: "stateless", PrefixMode: "none", FailureMode: "failClosed"},
+			Servers:  []model.MCPServerSetting{}, InlineServers: []model.GatewayMCPServer{},
+		},
+		revision: "revision-mcp-a",
+		applyMCP: func(_ context.Context, revision string, change model.MCPChange) error {
+			if revision != "revision-mcp-a" {
+				t.Fatalf("revision = %q", revision)
+			}
+			applied = change
+			return nil
+		},
+	}, "http://localhost:15000/ui")
+
+	configuration, err := service.MCPConfiguration(t.Context())
+	if err != nil || configuration.Data.RevisionToken == "" || configuration.Data.Links.MCPPlayground == "" {
+		t.Fatalf("unexpected MCP configuration: %#v err=%v", configuration, err)
+	}
+	request := model.MCPServerMutationRequest{
+		RevisionToken: configuration.Data.RevisionToken,
+		Server: model.MCPServerDraft{
+			Name: "weather", Transport: "mcp",
+			Network: &model.MCPNetworkTarget{Mode: "url", Host: "https://weather.example/mcp"},
+		},
+	}
+	receipt, err := service.CreateMCPServer(t.Context(), request)
+	if err != nil || receipt.Data.Operation != "create-mcp-server" || applied.Server.Name != "weather" {
+		t.Fatalf("unexpected MCP mutation: receipt=%#v change=%#v err=%v", receipt, applied, err)
+	}
+	if _, err := service.CreateMCPServer(t.Context(), request); !errors.Is(err, ErrRevisionStale) {
+		t.Fatalf("one-time revision error = %v", err)
 	}
 }

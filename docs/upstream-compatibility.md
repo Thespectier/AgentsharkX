@@ -2,7 +2,7 @@
 
 Last verified: 2026-07-27.
 
-Phase 8 still prevents direct browser contact with either upstream. The
+Phase 9 still prevents direct browser contact with either upstream. The
 agentgateway adapter reads request-log summary, complete detail, and Analytics contracts and now
 performs the typed Provider/direct-Model main-form configuration workflow. The
 AgentGuard adapter reads Trust, Protect, and Audit
@@ -145,7 +145,19 @@ can still occur between the BFF's final read and whole-document POST. The BFF
 rejects detectable stale revisions but cannot make that external race atomic.
 It never retries an ambiguous write automatically.
 
-For Phase 3 and the Phase 8 typed-write round, the populated config shape, UI
+Phase 9 applies the same whole-document revision and single-POST discipline to
+MCP configuration. The pinned `LocalSimpleMcpConfig` contract verifies `port`,
+`statefulMode`, nullable `prefixMode`, nullable `failureMode`, `policies`, and
+`targets`. The pinned `LocalMcpTarget` union verifies Streamable HTTP (`mcp`),
+legacy SSE (`sse`), stdio, and OpenAPI shapes. AgentsharkX returns complete
+typed network and stdio fields to the authenticated console and manages the
+same three target kinds exposed by the native main editor. It preserves target
+and global policies without returning their bodies. OpenAPI target editing and
+route-owned inline targets remain advanced/read-only. MCP and LLM writes share
+one process-local mutation lock because both replace the same `/api/config`
+document.
+
+For Phase 3 and the Phase 8/9 typed-write rounds, the populated config shape, UI
 routes, client hook, and file-backed write implementation were checked against
 the exact pinned source revision. The sanitized
 `config-populated.response.json` freezes string, reference, and custom provider

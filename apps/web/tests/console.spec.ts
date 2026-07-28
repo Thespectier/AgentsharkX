@@ -266,6 +266,61 @@ test("Connect manages verified LLM providers and direct models, then reruns setu
   await expect(page.getByText("Connection verified")).toBeVisible();
 });
 
+test("Connect manages verified MCP settings and server transports", async ({ page }) => {
+  await page.goto("/connect/mcp");
+  await expect(page.getByRole("heading", { name: "MCP settings" })).toBeVisible();
+  await expect(page.getByRole("row", { name: /filesystem/ })).toContainText("Command line");
+  const openapiRow = page.getByRole("row", { name: /catalog-api/ });
+  await expect(
+    openapiRow.getByRole("button", { name: "OpenAPI targets use advanced configuration" }).first(),
+  ).toBeDisabled();
+  await expect(page.getByRole("link", { name: "Advanced configuration" })).toHaveAttribute(
+    "href",
+    "http://localhost:15000/ui/raw-config",
+  );
+
+  await page.getByRole("button", { name: "Edit MCP settings" }).click();
+  let dialog = page.getByRole("dialog", { name: "Edit MCP settings" });
+  await dialog.getByLabel("Port").fill("3100");
+  await dialog.getByRole("radio", { name: "Stateless" }).click();
+  await dialog.getByRole("radio", { name: "Always" }).click();
+  await dialog.getByRole("radio", { name: "Fail open" }).click();
+  await dialog.getByRole("button", { name: "Save settings" }).click();
+  await expect(page.getByText("MCP settings updated")).toBeVisible();
+  await expect(page.getByText("3100", { exact: true })).toBeVisible();
+
+  await page.getByRole("button", { name: "Add server" }).click();
+  dialog = page.getByRole("dialog", { name: "Add MCP server" });
+  await dialog.getByLabel("Server name").fill("search-tools");
+  await dialog.getByRole("radio", { name: "Command line" }).click();
+  await dialog.getByLabel("Command").fill("node");
+  await dialog.getByLabel("Arguments (JSON array)").fill('["server.js","--tenant","ops"]');
+  await dialog
+    .getByLabel("Environment (JSON object)")
+    .fill('{"ACCESS_TOKEN":"complete-browser-value","LOG_LEVEL":"debug"}');
+  await dialog.getByLabel("Clear inherited environment").check();
+  await dialog.getByRole("button", { name: "Save server" }).click();
+  await expect(page.getByText("MCP server created")).toBeVisible();
+
+  await page.getByLabel("Filter MCP servers").fill("search-tools");
+  let row = page.getByRole("row", { name: /search-tools/ });
+  await expect(row).toContainText("node server.js --tenant ops");
+  await row.getByRole("button", { name: "Edit MCP server" }).click();
+  dialog = page.getByRole("dialog", { name: "Edit MCP server" });
+  await expect(dialog.getByLabel("Environment (JSON object)")).toContainText(
+    "complete-browser-value",
+  );
+  await dialog.getByRole("button", { name: "Cancel" }).click();
+
+  row = page.getByRole("row", { name: /search-tools/ });
+  await row.getByRole("button", { name: "Delete MCP server" }).click();
+  dialog = page.getByRole("dialog", { name: "Delete MCP server" });
+  await dialog.getByLabel("I understand this target will be removed").check();
+  await dialog.getByRole("button", { name: "Delete server" }).click();
+  await expect(page.getByText("MCP server deleted")).toBeVisible();
+  await expect(page.getByRole("row", { name: /search-tools/ })).toHaveCount(0);
+});
+
 test("Trust uses explicit identities, confirms labels, and recovers a polled scan", async ({
   page,
 }) => {
