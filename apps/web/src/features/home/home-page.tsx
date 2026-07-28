@@ -217,7 +217,13 @@ export function HomePage() {
       <PartialBanner meta={meta} />
 
       <div className="home-flow">
-        <LiveFlow events={live.events} status={live.status} />
+        <LiveFlow
+          events={activity}
+          health={data.health}
+          metrics={data.metrics}
+          status={live.status}
+          trend={data.trend}
+        />
       </div>
       <div className="metric-grid">
         {data.metrics.map((metric) => (

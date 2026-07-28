@@ -1,5 +1,5 @@
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { Activity, Bot, Box, BrainCircuit, Radio, ShieldCheck } from "lucide-react";
+import { Activity, BrainCircuit, CircleAlert, Radio, ShieldCheck, ShieldX } from "lucide-react";
 import { useMemo } from "react";
 import {
   Area,
@@ -21,28 +21,93 @@ import {
   formatTrendTimestamp,
 } from "../lib/format";
 import { useI18n } from "../lib/i18n";
-import type { TrendPoint, UnifiedEvent } from "../types";
+import type { Metric, SourceHealth, TrendPoint, UnifiedEvent } from "../types";
 import { SeverityBadge, SourceBadge, StatusOrb, cn } from "../components/ui";
 
-const flowPaths = [
-  "M 122 112 C 205 112, 202 58, 296 58",
-  "M 122 112 C 205 112, 202 164, 296 164",
-  "M 420 58 C 496 58, 502 38, 590 38",
-  "M 420 58 C 496 58, 502 92, 590 92",
-  "M 420 164 C 496 164, 502 145, 590 145",
-  "M 420 164 C 496 164, 502 198, 590 198",
-];
+const flowPaths = {
+  gatewayInput: "M 122 112 C 205 112, 202 58, 296 58",
+  guardInput: "M 122 112 C 205 112, 202 164, 296 164",
+  gatewayRequest: "M 420 58 C 496 58, 502 38, 590 38",
+  gatewayError: "M 420 58 C 496 58, 502 92, 590 92",
+  guardDecision: "M 420 164 C 496 164, 502 145, 590 145",
+  guardDenied: "M 420 164 C 496 164, 502 198, 590 198",
+} as const;
+
+export type LiveFlowCategory =
+  "gateway-request" | "gateway-error" | "guard-decision" | "guard-denied";
+
+export function classifyLiveFlowEvent(event: UnifiedEvent): LiveFlowCategory | undefined {
+  if (event.kind === "health") return undefined;
+  if (event.source === "agentgateway") {
+    return event.severity === "high" || event.severity === "critical"
+      ? "gateway-error"
+      : "gateway-request";
+  }
+  const explicitDecision = (event.decision ?? event.action ?? "").trim().toUpperCase();
+  return explicitDecision === "DENY" ? "guard-denied" : "guard-decision";
+}
+
+function categoryPath(category: LiveFlowCategory): string {
+  switch (category) {
+    case "gateway-error":
+      return flowPaths.gatewayError;
+    case "guard-decision":
+      return flowPaths.guardDecision;
+    case "guard-denied":
+      return flowPaths.guardDenied;
+    default:
+      return flowPaths.gatewayRequest;
+  }
+}
+
+export function summarizeLiveFlow(metrics: Metric[], trend: TrendPoint[]) {
+  const metricValue = (...ids: string[]) => {
+    for (const id of ids) {
+      const metric = metrics.find((item) => item.id === id);
+      if (metric) return Math.max(0, metric.value);
+    }
+    return undefined;
+  };
+  const total = (field: "requests" | "errors" | "denied") =>
+    trend.reduce((sum, point) => sum + Math.max(0, point[field]), 0);
+  return {
+    gatewayRequests: metricValue("gateway-requests", "requests") ?? total("requests"),
+    gatewayErrors: total("errors"),
+    guardDecisions: metricValue("guard-decisions") ?? 0,
+    guardDenied: total("denied"),
+  };
+}
 
 export function LiveFlow({
   events,
+  health,
+  metrics,
   status,
+  trend,
 }: {
   events: UnifiedEvent[];
+  health: Array<Pick<SourceHealth, "source" | "status">>;
+  metrics: Metric[];
   status: "connecting" | "live" | "paused";
+  trend: TrendPoint[];
 }) {
   const reduced = useReducedMotion();
   const { t } = useI18n();
-  const pulses = useMemo(() => events.slice(0, 12), [events]);
+  const pulses = useMemo(
+    () =>
+      events
+        .map((event) => ({ event, category: classifyLiveFlowEvent(event) }))
+        .filter(
+          (item): item is { event: UnifiedEvent; category: LiveFlowCategory } =>
+            item.category !== undefined,
+        )
+        .slice(0, 12),
+    [events],
+  );
+  const summary = summarizeLiveFlow(metrics, trend);
+  const sourceStatus = (source: SourceHealth["source"]) =>
+    health.find((item) => item.source === source)?.status ?? "unknown";
+  const windowCount = (value: number) => `${formatCount(value)} · ${t("Last 60m")}`;
   return (
     <div
       className="live-flow"
@@ -78,45 +143,64 @@ export function LiveFlow({
             </feMerge>
           </filter>
         </defs>
-        {flowPaths.map((path) => (
+        {Object.values(flowPaths).map((path) => (
           <path className="live-flow__path" d={path} key={path} />
         ))}
-        <FlowNode icon={<Bot size={20} />} label="Agents" meta="31 explicit IDs" x={28} y={82} />
+        <FlowNode
+          icon={<Activity size={20} />}
+          label="Activity"
+          meta={`${formatCount(pulses.length)} · ${t("recent events")}`}
+          x={28}
+          y={82}
+        />
         <FlowNode
           icon={<BrainCircuit size={20} />}
           label="Gateway"
-          meta="4 listeners"
+          meta={t(sourceStatus("agentgateway"))}
           x={296}
           y={28}
         />
         <FlowNode
           icon={<ShieldCheck size={20} />}
           label="Guard"
-          meta="8 active rules"
+          meta={t(sourceStatus("agentguard"))}
           x={296}
           y={134}
         />
         <FlowNode
           icon={<Activity size={18} />}
-          label="LLM"
-          meta="3 providers"
+          label="Requests"
+          meta={windowCount(summary.gatewayRequests)}
           small
           x={590}
           y={12}
         />
-        <FlowNode icon={<Box size={18} />} label="MCP" meta="3 servers" small x={590} y={66} />
-        <FlowNode icon={<Bot size={18} />} label="A2A" meta="2 routes" small x={590} y={119} />
+        <FlowNode
+          icon={<CircleAlert size={18} />}
+          label="Errors"
+          meta={windowCount(summary.gatewayErrors)}
+          small
+          x={590}
+          y={66}
+        />
         <FlowNode
           icon={<ShieldCheck size={18} />}
-          label="Review"
-          meta="3 pending"
+          label="Decisions"
+          meta={windowCount(summary.guardDecisions)}
+          small
+          x={590}
+          y={119}
+        />
+        <FlowNode
+          icon={<ShieldX size={18} />}
+          label="Denied"
+          meta={windowCount(summary.guardDenied)}
           small
           x={590}
           y={172}
         />
         {!reduced && status === "live"
-          ? pulses.map((event, index) => {
-              const path = flowPaths[index % flowPaths.length];
+          ? pulses.map(({ event, category }, index) => {
               return (
                 <circle
                   className={cn(
@@ -130,7 +214,7 @@ export function LiveFlow({
                     begin={`${(index % 4) * 0.16}s`}
                     dur="1.35s"
                     fill="freeze"
-                    path={path}
+                    path={categoryPath(category)}
                     repeatCount="1"
                   />
                 </circle>
@@ -138,6 +222,53 @@ export function LiveFlow({
             })
           : null}
       </svg>
+      <div
+        aria-label={t("Live agent traffic summary")}
+        className="live-flow__mobile-grid"
+        role="group"
+      >
+        <span className="live-flow__mobile-count">
+          {formatCount(pulses.length)} {t("recent events")}
+        </span>
+        <div className="live-flow__mobile-source">
+          <div className="live-flow__mobile-identity">
+            <BrainCircuit size={18} />
+            <span>
+              <strong>{t("Gateway")}</strong>
+              <small>{t(sourceStatus("agentgateway"))}</small>
+            </span>
+          </div>
+          <dl>
+            <div>
+              <dt>{t("Requests")}</dt>
+              <dd>{windowCount(summary.gatewayRequests)}</dd>
+            </div>
+            <div>
+              <dt>{t("Errors")}</dt>
+              <dd>{windowCount(summary.gatewayErrors)}</dd>
+            </div>
+          </dl>
+        </div>
+        <div className="live-flow__mobile-source">
+          <div className="live-flow__mobile-identity">
+            <ShieldCheck size={18} />
+            <span>
+              <strong>{t("Guard")}</strong>
+              <small>{t(sourceStatus("agentguard"))}</small>
+            </span>
+          </div>
+          <dl>
+            <div>
+              <dt>{t("Decisions")}</dt>
+              <dd>{windowCount(summary.guardDecisions)}</dd>
+            </div>
+            <div>
+              <dt>{t("Denied")}</dt>
+              <dd>{windowCount(summary.guardDenied)}</dd>
+            </div>
+          </dl>
+        </div>
+      </div>
       <div className="live-flow__footer">
         <span>
           <i className="legend-dot legend-dot--blue" />
@@ -145,9 +276,9 @@ export function LiveFlow({
         </span>
         <span>
           <i className="legend-dot legend-dot--cyan" />
-          {t("Guard decisions")}
+          {t("AgentGuard activity")}
         </span>
-        <span>{t("Resumable SSE · no inferred correlation")}</span>
+        <span>{t("Rolling 60 minutes · source-preserved")}</span>
       </div>
     </div>
   );
@@ -164,7 +295,7 @@ function FlowNode({
   x: number;
   y: number;
   label: string;
-  meta: string;
+  meta: React.ReactNode;
   icon: React.ReactNode;
   small?: boolean;
 }) {
@@ -177,7 +308,7 @@ function FlowNode({
           {icon}
           <span>
             <strong>{t(label)}</strong>
-            <small>{t(meta)}</small>
+            <small>{meta}</small>
           </span>
         </div>
       </foreignObject>

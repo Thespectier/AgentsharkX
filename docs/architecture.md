@@ -84,6 +84,12 @@ query families when a verified event arrives. Active queries also refresh on a
 bounded interval, on navigation, and when the window regains focus. Successful
 AgentGuard mutations invalidate Trust, Protect, Audit, and Overview together so
 cross-page counts and rows converge without a hard browser reload.
+The Home activity flow derives its gateway request/error and AgentGuard
+decision/explicit-deny counts from the same Overview metrics and trend snapshot.
+It selects event paths only from the normalized source and explicit decision or
+error classification; it does not display fixed topology counts or infer LLM,
+MCP, A2A, or cross-source relationships. Narrow viewports render the same data
+as readable source rows instead of shrinking the SVG labels.
 
 The five primary views are Home, Connect, Trust, Protect, and Audit. System is
 a supporting diagnostics page, not another product capability. URL search

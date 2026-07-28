@@ -235,8 +235,9 @@ agentshark/
 布局顺序：
 
 1. 顶部欢迎区和双上游健康状态。
-2. `LiveFlow`：Agent → Gateway/Guard → LLM/MCP/A2A 的实时 SVG 流量视图。
-3. 四张指标卡：Requests、Active Agents/Sessions、Denied、Pending Approvals。
+2. `LiveFlow`：按来源展示 agentgateway 请求/错误与 AgentGuard 决策/明确拒绝；节点
+   数值来自 Overview 的滚动窗口，事件只按已验证来源和明确动作选择路径。
+3. 四张指标卡：Gateway Requests、P95 Latency、Guard Decisions、Deny Rate。
 4. 左侧趋势图：请求量、延迟和错误率。
 5. 右侧安全队列：最新 Deny、Human Check 和高风险 Audit。
 6. 底部活动流：显示来源、对象、动作、决策和时间。

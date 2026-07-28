@@ -511,10 +511,7 @@ const mockScanAttempts = new Map<string, number>();
 let nextScan = 300;
 
 function currentOverview(): OverviewData {
-  const current = structuredClone(overviewData);
-  const approvals = current.metrics.find((metric) => metric.id === "approvals");
-  if (approvals) approvals.value = mockProtectApprovals.length;
-  return current;
+  return structuredClone(overviewData);
 }
 
 function trustJobEnvelope(job: TrustScanJob) {

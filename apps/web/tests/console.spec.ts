@@ -18,6 +18,27 @@ test("all five primary pages render from labelled mock data", async ({ page }) =
   }
 });
 
+test("Home activity flow uses live source categories and updates with SSE", async ({ page }) => {
+  await page.goto("/");
+  const flow = page.locator(".live-flow");
+  const topology = flow.getByRole("img", { name: "Live agent traffic topology" });
+  await expect(flow.getByText("Agent traffic & decisions")).toBeVisible();
+  for (const category of ["Requests", "Errors", "Decisions", "Denied"]) {
+    await expect(topology.getByText(category, { exact: true })).toBeVisible();
+  }
+  await expect(topology.getByText(/18,406 · Last 60m/)).toBeVisible();
+  await expect(flow.getByText("31 explicit IDs")).toHaveCount(0);
+  await expect(flow.getByText("3 providers")).toHaveCount(0);
+
+  const recentEvents = topology.getByText(/recent events$/);
+  const initialCount = await recentEvents.textContent();
+  await expect.poll(() => recentEvents.textContent(), { timeout: 7_000 }).not.toBe(initialCount);
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(topology).toBeHidden();
+  await expect(flow.getByRole("group", { name: "Live agent traffic summary" })).toBeVisible();
+});
+
 test("Home greeting follows Beijing time and the persisted language switch localizes the shell", async ({
   page,
 }) => {

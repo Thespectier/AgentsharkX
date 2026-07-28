@@ -440,6 +440,11 @@ Home 的 **Traffic & decisions** 与 Audit 的 **Traffic trend**、**Latency
 trend** 使用同一份 BFF 快照，范围为精确的滚动最近 60 分钟，并拆分为 12 个
 5 分钟桶。
 
+Home 上方的 **Agent traffic & decisions** 也使用这份实时 Overview 数据：桌面端按
+agentgateway 请求/错误和 AgentGuard 决策/明确拒绝展示来源路径，移动端显示同一组
+来源统计。它不会再使用固定的 Agent、Listener、Provider、MCP 或 A2A 演示数量，也
+不会根据事件顺序随机分类；收到 SSE 事件后会触发 Overview 同步并更新近期活动。
+
 - Requests 来自 agentgateway Analytics 的对应时间桶；Analytics 不可用时才退化为同一
   时间范围内的请求日志摘要计数。
 - Denied 统计 AgentGuard Traffic 中显式的 `DENY`，以及由 AgentGuard 明确确认成功的
