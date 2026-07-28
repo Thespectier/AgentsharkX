@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  formatDateTimeWithZone,
   formatDuration,
   formatTimeWithZone,
   formatTrendTick,
@@ -15,6 +16,11 @@ describe("trend formatting", () => {
     expect(formatTrendTimestamp(timestamp)).toContain("20:05");
     expect(formatTrendTimestamp(timestamp)).toContain("Jul");
     expect(formatTimeWithZone(timestamp)).toBe("20:05:00 UTC+8");
+  });
+
+  it("includes the Beijing calendar date and handles a UTC date boundary", () => {
+    expect(formatDateTimeWithZone("2026-07-21T18:05:06Z")).toBe("2026-07-22 02:05:06 UTC+8");
+    expect(formatDateTimeWithZone("unknown")).toBe("unknown");
   });
 
   it("preserves invalid labels and one decimal place of latency precision", () => {

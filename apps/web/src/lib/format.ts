@@ -75,6 +75,25 @@ export function formatTimeWithZone(value: string): string {
   return formatted === value ? value : `${formatted} ${displayTimeZoneLabel}`;
 }
 
+export function formatDateTimeWithZone(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+    timeZone: displayTimeZone,
+  }).formatToParts(date);
+  const valueFor = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((part) => part.type === type)?.value;
+  const formatted = `${valueFor("year")}-${valueFor("month")}-${valueFor("day")} ${valueFor("hour")}:${valueFor("minute")}:${valueFor("second")}`;
+  return `${formatted} ${displayTimeZoneLabel}`;
+}
+
 export function sourceLabel(source: Source): string {
   return source === "agentgateway" ? "agentgateway" : "AgentGuard";
 }

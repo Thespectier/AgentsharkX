@@ -33,7 +33,7 @@ import {
   StatusBadge,
   type Column,
 } from "../../components/ui";
-import { displayTimeZoneLabel, formatCount, formatTimeWithZone } from "../../lib/format";
+import { displayTimeZoneLabel, formatCount, formatDateTimeWithZone } from "../../lib/format";
 import { formatError, getScenario, requestOperation } from "../../lib/api";
 import { useI18n } from "../../lib/i18n";
 import { mergeLiveEvents, useSharedLiveEvents } from "../../lib/use-live-events";
@@ -330,7 +330,9 @@ const eventColumns: Column<UnifiedEvent>[] = [
   {
     key: "time",
     header: "Timestamp",
-    render: (item) => <time>{formatTimeWithZone(item.timestamp)}</time>,
+    render: (item) => (
+      <time dateTime={item.timestamp}>{formatDateTimeWithZone(item.timestamp)}</time>
+    ),
   },
   { key: "source", header: "Source", render: (item) => <SourceBadge source={item.source} /> },
   { key: "type", header: "Event type", render: (item) => <StatusBadge status={item.kind} /> },
@@ -440,7 +442,11 @@ function SessionsView({ data }: { data: AuditData }) {
       key: "last-seen",
       header: "Last seen",
       render: (item: AuditData["sessions"][number]) =>
-        item.lastSeen ? formatTimeWithZone(item.lastSeen) : t("Not reported"),
+        item.lastSeen ? (
+          <time dateTime={item.lastSeen}>{formatDateTimeWithZone(item.lastSeen)}</time>
+        ) : (
+          t("Not reported")
+        ),
     },
     {
       key: "status",
@@ -493,7 +499,12 @@ function EventDetail({
       </div>
       <DefinitionList
         items={[
-          { label: "Timestamp", value: formatTimeWithZone(event.timestamp) },
+          {
+            label: "Timestamp",
+            value: (
+              <time dateTime={event.timestamp}>{formatDateTimeWithZone(event.timestamp)}</time>
+            ),
+          },
           { label: "Original ID", value: <code>{event.rawRef.id}</code> },
           { label: "Agent", value: event.subject?.agentId ?? "Not provided" },
           { label: "Principal", value: event.subject?.principalId ?? "Not provided" },

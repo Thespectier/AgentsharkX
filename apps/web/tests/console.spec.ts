@@ -462,6 +462,16 @@ test("an audit detail drawer is recoverable from its URL", async ({ page }) => {
   await expect(page.getByRole("dialog").getByRole("heading", { level: 2 })).toHaveText(title ?? "");
 });
 
+test("audit traffic and security tables show the full Beijing calendar date", async ({ page }) => {
+  for (const section of ["traffic", "security-events"] as const) {
+    await page.goto(`/audit/${section}`);
+    const timestamp = page.locator("tbody tr").first().locator("time");
+    await expect(timestamp).toBeVisible();
+    await expect(timestamp).toHaveText(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} UTC\+8$/);
+    await expect(timestamp).toHaveAttribute("datetime", /^\d{4}-\d{2}-\d{2}T/);
+  }
+});
+
 test("gateway audit detail exposes complete BFF payload and exact native log", async ({ page }) => {
   await page.goto("/audit/traffic");
   await page.getByText("Chat completion routed through the primary OpenAI backend.").click();

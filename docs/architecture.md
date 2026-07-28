@@ -98,9 +98,11 @@ English/Chinese selection is persisted only as a non-sensitive browser preferenc
 and updates the document language, navigation, shared controls, and primary
 business surfaces without a reload. API timestamps remain ISO 8601 instants from
 the BFF; the browser formats user-facing timestamps and trend buckets in
-`Asia/Shanghai` and labels them `UTC+8`. The Home greeting selects its day period
-from the current Beijing hour, so browser or host time-zone settings cannot change
-its meaning.
+`Asia/Shanghai` and labels them `UTC+8`. Audit event and session rows include the
+full Beijing calendar date plus time so records from different days are never
+presented as same-day events. The Home greeting selects its day period from the
+current Beijing hour, so browser or host time-zone settings cannot change its
+meaning.
 
 ## Availability model
 
