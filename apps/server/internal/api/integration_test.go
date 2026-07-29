@@ -33,6 +33,12 @@ type apiAuditGateway struct {
 	detailErr error
 }
 
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (roundTrip roundTripFunc) RoundTrip(request *http.Request) (*http.Response, error) {
+	return roundTrip(request)
+}
+
 func (fake apiAuditGateway) TrafficWindow(context.Context, int, model.TrendWindow) (model.AuditFeed, error) {
 	return fake.feed, nil
 }
@@ -261,6 +267,7 @@ func TestProtectRulesAndApprovalsFlowThroughBFF(t *testing.T) {
 
 func TestApprovalTimeoutIsNotRetriedAndManualRetrySucceeds(t *testing.T) {
 	t.Parallel()
+	var operationCalls int
 	var mutationCalls int
 	var mu sync.Mutex
 	guardServer := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
@@ -272,11 +279,7 @@ func TestApprovalTimeoutIsNotRetriedAndManualRetrySucceeds(t *testing.T) {
 		if request.URL.Path == "/v1/backend/approvals/ticket-retry/approve" {
 			mu.Lock()
 			mutationCalls++
-			call := mutationCalls
 			mu.Unlock()
-			if call == 1 {
-				time.Sleep(60 * time.Millisecond)
-			}
 			_, _ = io.WriteString(writer, `{"ok":true}`)
 			return
 		}
@@ -284,7 +287,19 @@ func TestApprovalTimeoutIsNotRetriedAndManualRetrySucceeds(t *testing.T) {
 	}))
 	defer guardServer.Close()
 	readClient := guardServer.Client()
-	operationClient := &http.Client{Timeout: 10 * time.Millisecond}
+	operationTransport := guardServer.Client().Transport
+	operationClient := &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		if request.Method == http.MethodPost && request.URL.Path == "/v1/backend/approvals/ticket-retry/approve" {
+			mu.Lock()
+			operationCalls++
+			call := operationCalls
+			mu.Unlock()
+			if call == 1 {
+				return nil, context.DeadlineExceeded
+			}
+		}
+		return operationTransport.RoundTrip(request)
+	})}
 	guardClient, err := guard.NewWithOperationClient(guardServer.URL, "guard-secret", "v2.1", readClient, operationClient, 3)
 	if err != nil {
 		t.Fatal(err)
@@ -301,17 +316,18 @@ func TestApprovalTimeoutIsNotRetriedAndManualRetrySucceeds(t *testing.T) {
 		t.Fatalf("timeout should invite an explicit retry: %#v", timeout)
 	}
 	mu.Lock()
+	firstOperationCalls := operationCalls
 	firstCalls := mutationCalls
 	mu.Unlock()
-	if firstCalls != 1 {
-		t.Fatalf("timed out mutation was retried automatically: %d", firstCalls)
+	if firstOperationCalls != 1 || firstCalls != 0 {
+		t.Fatalf("timed out mutation was retried automatically: transport calls=%d upstream calls=%d", firstOperationCalls, firstCalls)
 	}
 	var retry model.ProtectMutationEnvelope
 	protectJSON(t, server.Client(), http.MethodPost, server.URL+"/api/v1/protect/approvals/"+ticketID+"/approve", `{"note":"reviewed","confirmed":true}`, http.StatusOK, &retry)
 	mu.Lock()
 	defer mu.Unlock()
-	if mutationCalls != 2 || retry.Data.RequestID == "" {
-		t.Fatalf("manual retry did not succeed: calls=%d receipt=%#v", mutationCalls, retry)
+	if operationCalls != 2 || mutationCalls != 1 || retry.Data.RequestID == "" {
+		t.Fatalf("manual retry did not succeed: transport calls=%d upstream calls=%d receipt=%#v", operationCalls, mutationCalls, retry)
 	}
 }
 

@@ -20,16 +20,16 @@ format-check:
 
 test:
 	@if command -v go >/dev/null 2>&1; then \
-		cd apps/server && go test ./...; \
+		cd apps/server && go test -count=1 ./...; \
 	else \
-		docker run --rm -v "$(CURDIR):/src" -w /src/apps/server $(GO_IMAGE) go test ./...; \
+		docker run --rm -v "$(CURDIR):/src" -w /src/apps/server $(GO_IMAGE) go test -count=1 ./...; \
 	fi
 
 race-test:
 	@if command -v go >/dev/null 2>&1; then \
-		cd apps/server && go test -race ./...; \
+		cd apps/server && go test -race -count=1 ./...; \
 	else \
-		docker run --rm -v "$(CURDIR):/src" -w /src/apps/server $(GO_RACE_IMAGE) go test -race ./...; \
+		docker run --rm -v "$(CURDIR):/src" -w /src/apps/server $(GO_RACE_IMAGE) go test -race -count=1 ./...; \
 	fi
 
 web-check:

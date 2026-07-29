@@ -16,8 +16,13 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: 1.26.5
-      - name: Format, unit, and race tests
-        run: make format-check test race-test
+          cache: false
+      - name: Format server
+        run: make format-check
+      - name: Unit tests
+        run: make test
+      - name: Race tests
+        run: make race-test
       - name: Vet server
         working-directory: apps/server
         run: go vet ./...
