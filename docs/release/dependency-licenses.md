@@ -1,8 +1,21 @@
 # Dependency license inventory
 
-Generated from the exact npm lockfile used by the `0.7.0-preview` preview. Go runtime code currently uses only the standard library. Licenses are declarations from the lockfile; `NOASSERTION` entries require manual review before redistribution.
+Generated from the exact npm lockfile and reviewed Go runtime module graph used by the `0.8.0-preview` preview. Go module versions are checked against `apps/server/go.mod`, and their content hashes are recorded from `apps/server/go.sum`; generation performs no network access. Go licenses were verified from each pinned module's source license. npm licenses are declarations from the lockfile; `NOASSERTION` entries require manual review before redistribution.
 
-Upstream services are separate processes: agentgateway is Apache-2.0 and AgentGuard is GPL-3.0-only. Their source and image obligations remain independent from the AgentsharkX Apache-2.0 image.
+Runtime services are separate processes: agentgateway is Apache-2.0, AgentGuard is GPL-3.0-only, and PostgreSQL uses the PostgreSQL license. Their source and image obligations remain independent from the AgentsharkX Apache-2.0 image.
+
+## Go runtime modules
+
+| Package | Version | Scope | Declared license |
+| --- | --- | --- | --- |
+| `github.com/jackc/pgpassfile` | `v1.0.0` | runtime (transitive) | MIT |
+| `github.com/jackc/pgservicefile` | `v0.0.0-20240606120523-5a60cdf6a761` | runtime (transitive) | MIT |
+| `github.com/jackc/pgx/v5` | `v5.10.0` | runtime (direct) | MIT |
+| `github.com/jackc/puddle/v2` | `v2.2.2` | runtime (transitive) | MIT |
+| `golang.org/x/sync` | `v0.17.0` | runtime (transitive) | BSD-3-Clause |
+| `golang.org/x/text` | `v0.29.0` | runtime (transitive) | BSD-3-Clause |
+
+## npm packages
 
 | Package | Version | Scope | Declared license |
 | --- | --- | --- | --- |
@@ -45,8 +58,8 @@ Upstream services are separate processes: agentgateway is Apache-2.0 and AgentGu
 | `@jridgewell/sourcemap-codec` | `1.5.5` | build | MIT |
 | `@jridgewell/trace-mapping` | `0.3.31` | build | MIT |
 | `@mswjs/interceptors` | `0.41.9` | build | MIT |
-| `@mswjs/interceptors/node_modules/@open-draft/deferred-promise` | `2.2.0` | build | MIT |
 | `@napi-rs/wasm-runtime` | `1.1.6` | build | MIT |
+| `@open-draft/deferred-promise` | `2.2.0` | build | MIT |
 | `@open-draft/deferred-promise` | `3.0.0` | build | MIT |
 | `@open-draft/logger` | `0.3.0` | build | MIT |
 | `@open-draft/until` | `2.1.0` | build | MIT |
@@ -62,15 +75,6 @@ Upstream services are separate processes: agentgateway is Apache-2.0 and AgentGu
 | `@paulirish/trace_engine` | `0.0.65` | build | BSD-3-Clause |
 | `@playwright/test` | `1.61.1` | build | Apache-2.0 |
 | `@puppeteer/browsers` | `3.0.6` | build | Apache-2.0 |
-| `@puppeteer/browsers/node_modules/ansi-regex` | `6.2.2` | build | MIT |
-| `@puppeteer/browsers/node_modules/ansi-styles` | `6.2.3` | build | MIT |
-| `@puppeteer/browsers/node_modules/cliui` | `9.0.1` | build | ISC |
-| `@puppeteer/browsers/node_modules/emoji-regex` | `10.6.0` | build | MIT |
-| `@puppeteer/browsers/node_modules/string-width` | `7.2.0` | build | MIT |
-| `@puppeteer/browsers/node_modules/strip-ansi` | `7.2.0` | build | MIT |
-| `@puppeteer/browsers/node_modules/wrap-ansi` | `9.0.2` | build | MIT |
-| `@puppeteer/browsers/node_modules/yargs` | `18.0.0` | build | MIT |
-| `@puppeteer/browsers/node_modules/yargs-parser` | `22.0.0` | build | ISC |
 | `@reduxjs/toolkit` | `2.12.0` | runtime | MIT |
 | `@rolldown/binding-android-arm64` | `1.1.5` | build | MIT |
 | `@rolldown/binding-darwin-arm64` | `1.1.5` | build | MIT |
@@ -120,7 +124,6 @@ Upstream services are separate processes: agentgateway is Apache-2.0 and AgentGu
 | `@tanstack/store` | `0.9.3` | runtime | MIT |
 | `@testing-library/dom` | `10.4.1` | build | MIT |
 | `@testing-library/jest-dom` | `7.0.0` | build | MIT |
-| `@testing-library/jest-dom/node_modules/dom-accessibility-api` | `0.6.3` | build | MIT |
 | `@testing-library/react` | `16.3.2` | build | MIT |
 | `@testing-library/user-event` | `14.6.1` | build | MIT |
 | `@tybys/wasm-util` | `0.10.3` | build | MIT |
@@ -152,8 +155,11 @@ Upstream services are separate processes: agentgateway is Apache-2.0 and AgentGu
 | `@vitest/spy` | `4.1.10` | build | MIT |
 | `@vitest/utils` | `4.1.10` | build | MIT |
 | `ansi-colors` | `4.1.3` | build | MIT |
+| `ansi-regex` | `6.2.2` | build | MIT |
 | `ansi-regex` | `5.0.1` | build | MIT |
+| `ansi-styles` | `6.2.3` | build | MIT |
 | `ansi-styles` | `5.2.0` | build | MIT |
+| `ansi-styles` | `4.3.0` | build | MIT |
 | `aria-query` | `5.3.0` | build | Apache-2.0 |
 | `assertion-error` | `2.0.1` | build | MIT |
 | `astring` | `1.9.0` | build | MIT |
@@ -165,6 +171,7 @@ Upstream services are separate processes: agentgateway is Apache-2.0 and AgentGu
 | `chromium-bidi` | `16.0.1` | build | Apache-2.0 |
 | `cjs-module-lexer` | `2.2.0` | build | MIT |
 | `cli-width` | `4.1.0` | build | ISC |
+| `cliui` | `9.0.1` | build | ISC |
 | `cliui` | `8.0.1` | build | ISC |
 | `clsx` | `2.1.1` | runtime | MIT |
 | `color-convert` | `2.0.1` | build | MIT |
@@ -196,8 +203,11 @@ Upstream services are separate processes: agentgateway is Apache-2.0 and AgentGu
 | `dequal` | `2.0.3` | build | MIT |
 | `detect-libc` | `2.1.2` | build | Apache-2.0 |
 | `devtools-protocol` | `0.0.1663043` | build | BSD-3-Clause |
+| `devtools-protocol` | `0.0.1638949` | build | BSD-3-Clause |
+| `dom-accessibility-api` | `0.6.3` | build | MIT |
 | `dom-accessibility-api` | `0.5.16` | build | MIT |
 | `dot-prop` | `9.0.0` | build | MIT |
+| `emoji-regex` | `10.6.0` | build | MIT |
 | `emoji-regex` | `8.0.0` | build | MIT |
 | `enhanced-resolve` | `5.24.3` | build | MIT |
 | `enquirer` | `2.4.1` | build | MIT |
@@ -217,6 +227,7 @@ Upstream services are separate processes: agentgateway is Apache-2.0 and AgentGu
 | `fdir` | `6.5.0` | build | MIT |
 | `framer-motion` | `12.42.2` | runtime | MIT |
 | `fsevents` | `2.3.2` | build | MIT |
+| `fsevents` | `2.3.3` | build | MIT |
 | `get-caller-file` | `2.0.5` | build | ISC |
 | `get-east-asian-width` | `1.6.0` | build | MIT |
 | `graceful-fs` | `4.2.11` | build | ISC |
@@ -275,7 +286,6 @@ Upstream services are separate processes: agentgateway is Apache-2.0 and AgentGu
 | `motion-utils` | `12.39.0` | runtime | MIT |
 | `ms` | `2.1.3` | build | MIT |
 | `msw` | `2.15.0` | build | MIT |
-| `msw/node_modules/type-fest` | `5.8.0` | build | (MIT OR CC0-1.0) |
 | `mute-stream` | `3.0.0` | build | ISC |
 | `nanoid` | `3.3.16` | build | MIT |
 | `obug` | `2.1.4` | build | MIT |
@@ -291,13 +301,11 @@ Upstream services are separate processes: agentgateway is Apache-2.0 and AgentGu
 | `postcss` | `8.5.21` | build | MIT |
 | `prettier` | `3.9.6` | build | MIT |
 | `pretty-format` | `27.5.1` | build | MIT |
-| `pretty-format/node_modules/react-is` | `17.0.2` | build | MIT |
 | `punycode` | `2.3.1` | build | MIT |
 | `puppeteer-core` | `25.3.0` | build | Apache-2.0 |
-| `puppeteer-core/node_modules/devtools-protocol` | `0.0.1638949` | build | BSD-3-Clause |
-| `puppeteer-core/node_modules/ws` | `8.21.1` | build | MIT |
 | `react` | `19.2.7` | runtime | MIT |
 | `react-dom` | `19.2.7` | runtime | MIT |
+| `react-is` | `17.0.2` | build | MIT |
 | `react-is` | `19.2.7` | runtime | MIT |
 | `react-redux` | `9.3.0` | runtime | MIT |
 | `recharts` | `3.10.0` | runtime | MIT |
@@ -326,7 +334,9 @@ Upstream services are separate processes: agentgateway is Apache-2.0 and AgentGu
 | `statuses` | `2.0.2` | build | MIT |
 | `std-env` | `4.2.0` | build | MIT |
 | `strict-event-emitter` | `0.5.1` | build | MIT |
+| `string-width` | `7.2.0` | build | MIT |
 | `string-width` | `4.2.3` | build | MIT |
+| `strip-ansi` | `7.2.0` | build | MIT |
 | `strip-ansi` | `6.0.1` | build | MIT |
 | `strip-indent` | `3.0.0` | build | MIT |
 | `stubborn-fs` | `2.0.0` | build | MIT |
@@ -347,6 +357,7 @@ Upstream services are separate processes: agentgateway is Apache-2.0 and AgentGu
 | `tough-cookie` | `6.0.2` | build | BSD-3-Clause |
 | `tr46` | `6.0.0` | build | MIT |
 | `tslib` | `2.8.1` | runtime | 0BSD |
+| `type-fest` | `5.8.0` | build | (MIT OR CC0-1.0) |
 | `type-fest` | `4.41.0` | build | (MIT OR CC0-1.0) |
 | `typed-query-selector` | `2.12.2` | build | MIT |
 | `typescript` | `6.0.2` | build | Apache-2.0 |
@@ -356,7 +367,6 @@ Upstream services are separate processes: agentgateway is Apache-2.0 and AgentGu
 | `use-sync-external-store` | `1.6.0` | runtime | MIT |
 | `victory-vendor` | `37.3.6` | runtime | MIT AND ISC |
 | `vite` | `8.1.5` | build | MIT |
-| `vite/node_modules/fsevents` | `2.3.3` | build | MIT |
 | `vitest` | `4.1.10` | build | MIT |
 | `w3c-xmlserializer` | `5.0.0` | build | MIT |
 | `web-features` | `3.34.1` | build | Apache-2.0 |
@@ -366,14 +376,17 @@ Upstream services are separate processes: agentgateway is Apache-2.0 and AgentGu
 | `whatwg-url` | `16.0.1` | build | MIT |
 | `when-exit` | `2.1.5` | build | MIT |
 | `why-is-node-running` | `2.3.0` | build | MIT |
+| `wrap-ansi` | `9.0.2` | build | MIT |
 | `wrap-ansi` | `7.0.0` | build | MIT |
-| `wrap-ansi/node_modules/ansi-styles` | `4.3.0` | build | MIT |
+| `ws` | `8.21.1` | build | MIT |
 | `ws` | `7.5.13` | build | MIT |
 | `xdg-basedir` | `5.1.0` | build | MIT |
 | `xml-name-validator` | `5.0.0` | build | Apache-2.0 |
 | `xmlchars` | `2.2.0` | build | MIT |
 | `y18n` | `5.0.8` | build | ISC |
 | `yaml` | `2.9.0` | build | ISC |
+| `yargs` | `18.0.0` | build | MIT |
 | `yargs` | `17.7.3` | build | MIT |
+| `yargs-parser` | `22.0.0` | build | ISC |
 | `yargs-parser` | `21.1.1` | build | ISC |
 | `zod` | `3.25.76` | build | MIT |

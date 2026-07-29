@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"sort"
 	"strconv"
 	"strings"
@@ -35,6 +36,7 @@ var (
 	ErrNotFound          = errors.New("protect resource not found")
 	ErrRuleCheckRequired = errors.New("a current successful rule check is required")
 	ErrMutationInFlight  = errors.New("protect mutation already in progress")
+	ErrAuditPersistence  = errors.New("approval outcome could not be persisted")
 )
 
 type Gateway interface {
@@ -53,7 +55,8 @@ type Guard interface {
 }
 
 type ApprovalRecorder interface {
-	RecordApprovalResolution(model.Approval, string, string, time.Time)
+	Ready(context.Context) error
+	RecordApprovalResolution(context.Context, model.Approval, string, string, time.Time) error
 }
 
 type checkedSource struct {
@@ -262,6 +265,11 @@ func (service *Service) ResolveApproval(ctx context.Context, ticketID, decision 
 		return model.ProtectMutationEnvelope{}, ErrMutationInFlight
 	}
 	defer service.endMutation(key)
+	if service.recorder != nil {
+		if err := service.recorder.Ready(ctx); err != nil {
+			return model.ProtectMutationEnvelope{}, fmt.Errorf("%w: %v", ErrAuditPersistence, err)
+		}
+	}
 	if err := service.guard.ResolveApproval(ctx, selected.UpstreamID, decision, strings.TrimSpace(request.Note)); err != nil {
 		return model.ProtectMutationEnvelope{}, err
 	}
@@ -271,7 +279,9 @@ func (service *Service) ResolveApproval(ctx context.Context, ticketID, decision 
 	}
 	envelope := mutationEnvelope(decision+"-approval", ticketID, message)
 	if service.recorder != nil {
-		service.recorder.RecordApprovalResolution(selected, decision, strings.TrimSpace(request.Note), envelope.Data.CompletedAt)
+		if err := service.recorder.RecordApprovalResolution(ctx, selected, decision, strings.TrimSpace(request.Note), envelope.Data.CompletedAt); err != nil {
+			return model.ProtectMutationEnvelope{}, fmt.Errorf("%w: %v", ErrAuditPersistence, err)
+		}
 	}
 	return envelope, nil
 }

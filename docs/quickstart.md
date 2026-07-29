@@ -1,11 +1,11 @@
 # 10-minute preview quickstart
 
-This path starts the pinned agentgateway release and AgentGuard main snapshot
-plus the AgentsharkX `0.7.0-preview` image, then emits one real AgentGuard
-event. The default integrated topology supports Linux x86_64/arm64 and macOS
-arm64, and requires Docker with Compose v2, `curl`, `jq`, a SHA-256 utility,
+This path starts the pinned agentgateway release and AgentGuard main snapshot,
+the AgentsharkX `0.8.0-preview` image, and PostgreSQL, then emits one real
+AgentGuard event. The default integrated topology supports Linux x86_64/arm64
+and macOS arm64, and requires Docker with Compose v2, `curl`, `jq`, a SHA-256 utility,
 OpenSSL, Python 3.11+, and Git. Agentgateway runs as a verified host-native
-binary; the other services remain in Compose.
+binary; AgentsharkX, PostgreSQL, and the other services remain in Compose.
 
 ## 1. Create local credentials
 
@@ -13,9 +13,11 @@ binary; the other services remain in Compose.
 make preview-bootstrap
 ```
 
-The command creates an ignored `.env` with mode `0600` and two random 24-byte
-values encoded as 48 hex characters. It also creates an ignored
-`.agentgateway.env` for provider credentials. It never replaces an existing
+The command creates an ignored `.env` with mode `0600`, random administrator,
+AgentGuard, and PostgreSQL credentials, and loopback-only database publication.
+For an existing `.env`, it preserves existing values and adds missing Phase 13
+database settings. It also creates an ignored `.agentgateway.env` for provider
+credentials. It never replaces an existing
 file or prints credentials. Review every `*_BIND` value before changing it from
 loopback.
 
@@ -37,6 +39,17 @@ Open <http://localhost:8080>. Retrieve the local administrator token from
 cards should report healthy. The browser stores only an `HttpOnly` session
 cookie; a page reload obtains a fresh in-memory CSRF value from the authenticated
 session endpoint.
+
+Check the two BFF probes separately:
+
+```bash
+curl -fsS http://127.0.0.1:8080/healthz
+curl -fsS http://127.0.0.1:8080/readyz
+```
+
+`/healthz` means only that the process is alive. `/readyz` requires PostgreSQL
+connectivity, completed embedded migrations, and restored Audit history; it
+does not require either upstream to be healthy.
 
 Docker Desktop automatically uses `host.docker.internal`; native Linux Docker
 uses host networking. Use `make preview-container-up` if neither connector is
@@ -75,7 +88,11 @@ returned to the browser.
 make preview-down
 ```
 
-`.env` and `.venv-quickstart` remain local. AgentShark's event ring, scan jobs,
-and rule-check tokens are in memory and disappear when the container stops.
+`.env` and `.venv-quickstart` remain local. The PostgreSQL volume and normalized
+Audit history survive a normal stop/start; scan jobs and rule-check tokens remain
+in memory and disappear when the container stops. Payload retention is disabled
+by default. See [Database operations](database.md) before changing retention,
+backing up data, or intentionally deleting the volume.
+
 See [Agent integration](agent-integration.md) for framework adapters and
 [Troubleshooting](troubleshooting.md) if either source is degraded.

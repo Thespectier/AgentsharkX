@@ -12,6 +12,7 @@ search() {
 
 required_paths=(
   /healthz
+  /readyz
   /api/v1/auth/session
   /api/v1/system/health
   /api/v1/system/capabilities
@@ -45,7 +46,7 @@ required_paths=(
 )
 
 search -q '^openapi: 3\.1\.0$' "$spec"
-search -q '^  version: 0\.7\.0-preview$' "$spec"
+search -q '^  version: 0\.8\.0-preview$' "$spec"
 search -q '^paths:$' "$spec"
 for path in "${required_paths[@]}"; do
   if ! search -Fq "  $path:" "$spec"; then

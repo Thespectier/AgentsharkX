@@ -1,8 +1,9 @@
 # Upstream compatibility
 
-Last verified: 2026-07-28.
+Last upstream verification: 2026-07-28. Phase 13 persistence notes updated
+2026-07-29 without adding an upstream contract.
 
-Phase 12 still prevents direct browser contact with either upstream. The
+Phase 13 still prevents direct browser contact with either upstream. The
 agentgateway adapter reads request-log summary, complete detail, and Analytics
 contracts and now performs the Provider/direct-Model, MCP, Traffic, and verified
 Protect policy and global guardrail configuration workflows. The AgentGuard adapter reads Trust,
@@ -311,20 +312,41 @@ security events come from Audit's explicit `event_id` instead.
 
 AgentGuard's approval mutation contract returns only `{"ok": true}` and does
 not append the resolved decision to `/traffic` or `/audit/recent`. AgentsharkX
-now retains the confirmed approve/deny transition as bounded, source-labelled
-management evidence after a successful mutation. The exact source ticket JSON
-is retained internally for this authenticated Audit detail, together with the
-operator note and confirmed decision, while list and SSE projections omit it.
+now persists the confirmed approve/deny transition as source-labelled
+management evidence after a successful mutation. The exact source ticket JSON,
+operator note, and confirmed decision are durable for authenticated Audit detail
+only when payload retention is explicitly enabled; list and SSE projections
+omit them in every mode.
 This uses the verified ticket and event IDs captured before resolution; it does
 not infer an outcome from timing, and failures or timeouts are not recorded as
 decisions. Denied approvals are included in Audit deny metrics and trend
 buckets.
 
-The BFF polls every two seconds by default, keeps at most 1000 normalized events
-in memory, and uses independent source failures. SSE sequence IDs are owned by
-AgentsharkX solely for bounded delivery/resume and are not presented as
-upstream identity or cross-source correlation. Correlation remains false unless
-the same explicit non-empty identifier appears in both sources.
+Phase 13 changes only AgentsharkX-owned persistence and delivery. It introduces
+no new upstream endpoint or field. Normalized events are idempotently persisted
+by `(source, upstream_id)` in PostgreSQL; a bounded 1000-row snapshot still
+feeds current metrics. SSE IDs now come only from the persistent outbox sequence
+and remain delivery identifiers, never upstream identity or cross-source
+correlation. Correlation remains false unless the same explicit non-empty
+identifier appears in both sources.
+
+The ingest checkpoint stores the last observed event ID/time and each source's
+attempt, success, and error state. It does not upgrade the upstream contracts to
+historical cursor support. The verified agentgateway log-search response has a
+`nextCursor`, but no corresponding request cursor is frozen in the Phase 6
+contract; AgentGuard `/audit/recent` exposes only the bounded `n` request. The
+checkpoint is therefore not sent as an unverified request cursor. After a BFF
+restart, persisted events are restored, the bounded reads run again, and unique
+event identities deduplicate repeats; events that disappeared from either
+upstream's window during downtime cannot be recovered. No time-proximity
+recovery or synthetic IDs are allowed.
+
+The complete agentgateway record remains an authenticated on-demand
+`POST /api/logs/get` management read with `includePayload=true`. AgentGuard audit records and
+confirmed approval context are stored in the separate AgentsharkX payload table
+only when `AGENTSHARK_PAYLOAD_RETENTION` is explicitly positive; the default is
+zero. PostgreSQL list rows and outbox messages retain normalized metadata only
+and always omit raw payload bodies.
 
 AgentGuard does not publish a prebuilt container image for this snapshot. Its
 official `scripts/start.sh` builds the current source tree and starts separate

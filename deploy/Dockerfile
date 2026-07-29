@@ -10,11 +10,12 @@ RUN npm run build
 
 FROM golang:1.26.5-alpine3.23@sha256:622e56dbc11a8cfe87cafa2331e9a201877271cbff918af53d3be315f3da88cc AS server-build
 WORKDIR /src/apps/server
-COPY apps/server/go.mod ./
+COPY apps/server/go.mod apps/server/go.sum ./
+RUN go mod download
 COPY apps/server/ ./
 RUN find internal/web/static -mindepth 1 -delete
 COPY --from=web-build /src/apps/web/dist/ ./internal/web/static/
-ARG AGENTSHARK_VERSION=0.7.0-preview
+ARG AGENTSHARK_VERSION=0.8.0-preview
 ARG AGENTSHARK_REVISION=unknown
 RUN CGO_ENABLED=0 go build -trimpath \
     -ldflags="-s -w -X main.version=${AGENTSHARK_VERSION} -X main.revision=${AGENTSHARK_REVISION}" \
@@ -28,5 +29,5 @@ COPY --from=server-build /out/agentshark /usr/local/bin/agentshark
 USER 65532:65532
 EXPOSE 8080
 HEALTHCHECK --interval=10s --timeout=3s --start-period=10s --retries=6 \
-  CMD wget -q -O /dev/null http://127.0.0.1:8080/healthz || exit 1
+  CMD wget -q -O /dev/null http://127.0.0.1:8080/readyz || exit 1
 ENTRYPOINT ["/usr/local/bin/agentshark"]

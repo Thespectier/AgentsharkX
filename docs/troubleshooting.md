@@ -72,7 +72,33 @@ source-specific recovery guidance.
   explicit `local`/`development` environment bound to a loopback listener.
 
 Run `make preview-bootstrap` to create a safe local `.env`; it never overwrites
-an existing file.
+existing values and can add missing Phase 13 database settings.
+
+## PostgreSQL or Audit is unavailable
+
+Check liveness and readiness separately:
+
+```bash
+curl -fsS http://127.0.0.1:8080/healthz
+curl -fsS http://127.0.0.1:8080/readyz
+./scripts/standalone-compose.sh ps postgres agentshark
+./scripts/standalone-compose.sh logs postgres agentshark
+```
+
+If `/healthz` succeeds but `/readyz` returns 503 `DATABASE_UNAVAILABLE`, the
+process is alive but PostgreSQL is unreachable, an embedded migration is
+missing or has a checksum mismatch, or persisted Audit history has not restored.
+Audit list/detail/analytics/session and SSE
+requests intentionally return 503; production never falls back to the memory
+test store. Confirm `AGENTSHARK_DATABASE_URL` names the same database configured
+for the Compose `postgres` service and that its password matches
+`AGENTSHARK_DATABASE_PASSWORD`. Do not print the URL in shared logs because it
+contains credentials.
+
+Normal `make preview-down` leaves the named database volume intact. Do not
+delete or recreate that volume while diagnosing readiness. Follow
+[Database operations](database.md) for backup, restore, retention, and the
+explicit destructive reset procedure.
 
 ## Login or write fails
 
@@ -108,9 +134,13 @@ store, even though AgentsharkX always searches with
 
 ## Container is unhealthy
 
-`GET /healthz` is an unauthenticated process-readiness check and must return
-`{"status":"ok"}`. It does not claim that either upstream is healthy. Inspect
-System for upstream state and `docker inspect` for the container health log.
+`GET /healthz` is an unauthenticated process-liveness check and returns
+`{"status":"ok"}` even while PostgreSQL is unavailable. The container
+healthcheck uses `GET /readyz`, which must return `{"status":"ready"}` and
+therefore also verifies PostgreSQL connectivity, applied migrations, and Audit
+history restoration. Neither
+endpoint claims that either upstream is healthy. Inspect System for upstream
+state and `docker inspect` for the container health log.
 
 ## Native gateway port is unavailable
 

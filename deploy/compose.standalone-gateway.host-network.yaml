@@ -8,6 +8,7 @@ services:
       AGENTSHARK_LISTEN_ADDR: 127.0.0.1:${AGENTSHARK_PORT}
       AGENTGATEWAY_BASE_URL: http://127.0.0.1:${AGENTGATEWAY_ADMIN_PORT}
       AGENTGUARD_BASE_URL: http://127.0.0.1:${AGENTGUARD_API_PORT}
+      AGENTSHARK_DATABASE_URL: postgresql://agentshark:${AGENTSHARK_DATABASE_PASSWORD}@127.0.0.1:${AGENTSHARK_DATABASE_PORT}/agentshark?sslmode=disable
     healthcheck:
       test:
         [
@@ -16,5 +17,5 @@ services:
           "-q",
           "-O",
           "/dev/null",
-          "http://127.0.0.1:${AGENTSHARK_PORT}/healthz",
+          "http://127.0.0.1:${AGENTSHARK_PORT}/readyz",
         ]

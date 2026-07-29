@@ -16,7 +16,7 @@ func TestHandlerServesSPAAndPreservesAPIRoutes(t *testing.T) {
 	})
 	handler := New(api)
 
-	for _, route := range []string{"/api/v1/system/health", "/healthz"} {
+	for _, route := range []string{"/api/v1/system/health", "/healthz", "/readyz"} {
 		response := httptest.NewRecorder()
 		handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, route, nil))
 		if response.Code != http.StatusAccepted || response.Body.String() != route {

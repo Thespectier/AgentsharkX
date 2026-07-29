@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -22,6 +23,8 @@ import (
 	"github.com/Thespectier/AgentsharkX/apps/server/internal/guard"
 	"github.com/Thespectier/AgentsharkX/apps/server/internal/model"
 	"github.com/Thespectier/AgentsharkX/apps/server/internal/protect"
+	"github.com/Thespectier/AgentsharkX/apps/server/internal/storage"
+	"github.com/Thespectier/AgentsharkX/apps/server/internal/storage/memory"
 	"github.com/Thespectier/AgentsharkX/apps/server/internal/stream"
 	"github.com/Thespectier/AgentsharkX/apps/server/internal/trust"
 )
@@ -31,6 +34,16 @@ type apiAuditGateway struct {
 	analytics model.GatewayAnalytics
 	detail    map[string]any
 	detailErr error
+}
+
+type unavailableStore struct {
+	*memory.Store
+	err error
+}
+
+func (store unavailableStore) Ready(context.Context) error { return store.err }
+func (store unavailableStore) ReplayAfter(context.Context, int64, int) (storage.ReplayBatch, error) {
+	return storage.ReplayBatch{}, store.err
 }
 
 type roundTripFunc func(*http.Request) (*http.Response, error)
@@ -381,8 +394,16 @@ func TestStreamStartsWithNormalizedHealthEvents(t *testing.T) {
 		Source: model.SourceAgentGuard, Label: "AgentGuard", Status: model.HealthDegraded, CheckedAt: checkedAt,
 	}})
 	aggregator.Refresh(t.Context())
+	store := memory.New(memory.Options{})
+	healthEvents := make([]model.UnifiedEvent, 0, 2)
+	for _, health := range aggregator.Snapshot() {
+		healthEvents = append(healthEvents, audit.HealthEvent(health))
+	}
+	if _, err := store.PersistEvents(t.Context(), healthEvents, nil); err != nil {
+		t.Fatal(err)
+	}
 	server := httptest.NewServer(New(ServerConfig{
-		Aggregate: aggregator, Stream: stream.NewHub(), Logger: slog.New(slog.DiscardHandler), AuthEnabled: false,
+		Aggregate: aggregator, Stream: stream.NewHub(), Outbox: store, Logger: slog.New(slog.DiscardHandler), AuthEnabled: false,
 	}))
 	defer server.Close()
 
@@ -509,6 +530,8 @@ func TestGatewayAuditDetailReturnsCompleteOnDemandPayload(t *testing.T) {
 func TestStreamResumesAfterLastSequenceWithoutDuplicateReplay(t *testing.T) {
 	t.Parallel()
 	hub := stream.NewHubWithCapacity(10)
+	store := memory.New(memory.Options{})
+	events := make([]model.UnifiedEvent, 0, 3)
 	for index, id := range []string{"gateway:first", "guard:second", "gateway:third"} {
 		sourceValue := model.SourceAgentGateway
 		kind := "traffic"
@@ -516,12 +539,15 @@ func TestStreamResumesAfterLastSequenceWithoutDuplicateReplay(t *testing.T) {
 			sourceValue = model.SourceAgentGuard
 			kind = "audit"
 		}
-		hub.Publish(model.UnifiedEvent{
+		events = append(events, model.UnifiedEvent{
 			ID: id, Timestamp: time.Now().UTC(), Source: sourceValue, Kind: kind, Severity: "info",
 			Summary: id, RawRef: model.RawRef{Source: sourceValue, ID: id},
 		})
 	}
-	server := httptest.NewServer(New(ServerConfig{Stream: hub, Logger: slog.New(slog.DiscardHandler), AuthEnabled: false}))
+	if _, err := store.PersistEvents(t.Context(), events, nil); err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(New(ServerConfig{Stream: hub, Outbox: store, Logger: slog.New(slog.DiscardHandler), AuthEnabled: false}))
 	defer server.Close()
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
@@ -551,6 +577,174 @@ func TestStreamResumesAfterLastSequenceWithoutDuplicateReplay(t *testing.T) {
 	if strings.Contains(joined, "gateway:first") || !strings.Contains(blocks[0], "id: 2") || !strings.Contains(blocks[1], "id: 3") {
 		t.Fatalf("unexpected resumed stream: %#v", blocks)
 	}
+}
+
+func TestPersistentReadinessAndAuditFailWithoutDatabaseFallback(t *testing.T) {
+	t.Parallel()
+	databaseError := errors.New("database unavailable")
+	store := unavailableStore{Store: memory.New(memory.Options{}), err: databaseError}
+	auditService := audit.NewPersistent(apiAuditGateway{}, apiAuditGuard{}, stream.NewHub(), store)
+	server := httptest.NewServer(New(ServerConfig{
+		Audit: auditService, Stream: stream.NewHub(), Outbox: store, Readiness: store,
+		Logger: slog.New(slog.DiscardHandler), AuthEnabled: false,
+	}))
+	defer server.Close()
+
+	for _, test := range []struct {
+		path string
+		want int
+	}{
+		{path: "/healthz", want: http.StatusOK},
+		{path: "/readyz", want: http.StatusServiceUnavailable},
+		{path: "/api/v1/audit/events", want: http.StatusServiceUnavailable},
+		{path: "/api/v1/stream", want: http.StatusServiceUnavailable},
+	} {
+		response, err := server.Client().Get(server.URL + test.path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = response.Body.Close()
+		if response.StatusCode != test.want {
+			t.Fatalf("GET %s status=%d want=%d", test.path, response.StatusCode, test.want)
+		}
+	}
+}
+
+func TestAuditAndStreamRemainUnavailableUntilHistoryIsRestored(t *testing.T) {
+	t.Parallel()
+	store := memory.New(memory.Options{})
+	hub := stream.NewHub()
+	auditService := audit.NewPersistent(apiAuditGateway{}, apiAuditGuard{}, hub, store)
+	server := httptest.NewServer(New(ServerConfig{
+		Audit: auditService, Stream: hub, Logger: slog.New(slog.DiscardHandler), AuthEnabled: false,
+	}))
+	defer server.Close()
+
+	for _, path := range []string{"/readyz", "/api/v1/audit/events", "/api/v1/stream"} {
+		response, err := server.Client().Get(server.URL + path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = response.Body.Close()
+		if response.StatusCode != http.StatusServiceUnavailable {
+			t.Fatalf("GET %s before restore status=%d", path, response.StatusCode)
+		}
+	}
+	if err := auditService.Restore(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{"/readyz", "/api/v1/audit/events"} {
+		response, err := server.Client().Get(server.URL + path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = response.Body.Close()
+		if response.StatusCode != http.StatusOK {
+			t.Fatalf("GET %s after restore status=%d", path, response.StatusCode)
+		}
+	}
+}
+
+func TestStreamRejectsInvalidCursorAndResetsExpiredOrFutureCursor(t *testing.T) {
+	t.Parallel()
+	now := time.Now().UTC()
+	store := memory.New(memory.Options{OutboxRetention: time.Hour, Now: func() time.Time { return now }})
+	initial := []model.UnifiedEvent{
+		{ID: "gateway:one", Timestamp: now, Source: model.SourceAgentGateway, Kind: "traffic", Severity: "info", Summary: "one", RawRef: model.RawRef{Source: model.SourceAgentGateway, ID: "one"}},
+		{ID: "guard:two", Timestamp: now, Source: model.SourceAgentGuard, Kind: "audit", Severity: "info", Summary: "two", RawRef: model.RawRef{Source: model.SourceAgentGuard, ID: "two"}},
+	}
+	if _, err := store.PersistEvents(t.Context(), initial, nil); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(2 * time.Hour)
+	if err := store.Prune(t.Context(), now); err != nil {
+		t.Fatal(err)
+	}
+	third := model.UnifiedEvent{
+		ID: "gateway:three", Timestamp: now, Source: model.SourceAgentGateway, Kind: "traffic", Severity: "info",
+		Summary: "no authorization or payload", RawRef: model.RawRef{Source: model.SourceAgentGateway, ID: "three"},
+		Raw: map[string]any{"authorization": "must-not-stream"},
+	}
+	if _, err := store.PersistEvents(t.Context(), []model.UnifiedEvent{third}, nil); err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(New(ServerConfig{Stream: stream.NewHub(), Outbox: store, Logger: slog.New(slog.DiscardHandler), AuthEnabled: false}))
+	defer server.Close()
+
+	for _, cursor := range []string{"not-a-number", "+1", "01", "-0"} {
+		invalid, _ := http.NewRequest(http.MethodGet, server.URL+"/api/v1/stream", nil)
+		invalid.Header.Set("Last-Event-ID", cursor)
+		response, err := server.Client().Do(invalid)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = response.Body.Close()
+		if response.StatusCode != http.StatusBadRequest {
+			t.Fatalf("invalid cursor %q status = %d", cursor, response.StatusCode)
+		}
+	}
+
+	for cursor, reason := range map[string]string{"1": "outbox_retention", "99": "cursor_ahead"} {
+		ctx, cancel := context.WithCancel(t.Context())
+		request, _ := http.NewRequestWithContext(ctx, http.MethodGet, server.URL+"/api/v1/stream", nil)
+		request.Header.Set("Last-Event-ID", cursor)
+		response, err := server.Client().Do(request)
+		if err != nil {
+			cancel()
+			t.Fatal(err)
+		}
+		block := readSSEBlock(t, response.Body)
+		cancel()
+		_ = response.Body.Close()
+		if !strings.Contains(block, "id: 3") || !strings.Contains(block, "event: reset") ||
+			!strings.Contains(block, `"reason":"`+reason+`"`) || strings.Contains(block, "must-not-stream") {
+			t.Fatalf("cursor %s reset block = %s", cursor, block)
+		}
+	}
+}
+
+func TestStreamDrainsCommittedOutboxAfterNotification(t *testing.T) {
+	t.Parallel()
+	hub := stream.NewHub()
+	store := memory.New(memory.Options{})
+	server := httptest.NewServer(New(ServerConfig{Stream: hub, Outbox: store, Logger: slog.New(slog.DiscardHandler), AuthEnabled: false}))
+	defer server.Close()
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	request, _ := http.NewRequestWithContext(ctx, http.MethodGet, server.URL+"/api/v1/stream", nil)
+	response, err := server.Client().Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	event := model.UnifiedEvent{
+		ID: "guard:live", Timestamp: time.Now().UTC(), Source: model.SourceAgentGuard, Kind: "audit", Severity: "info",
+		Summary: "committed", RawRef: model.RawRef{Source: model.SourceAgentGuard, ID: "live"},
+	}
+	if _, err := store.PersistEvents(t.Context(), []model.UnifiedEvent{event}, nil); err != nil {
+		t.Fatal(err)
+	}
+	hub.Notify()
+	block := readSSEBlock(t, response.Body)
+	if !strings.Contains(block, "id: 1") || !strings.Contains(block, `"id":"guard:live"`) {
+		t.Fatalf("live block = %s", block)
+	}
+}
+
+func readSSEBlock(t *testing.T, reader io.Reader) string {
+	t.Helper()
+	scanner := bufio.NewScanner(reader)
+	lines := []string{}
+	for scanner.Scan() {
+		if scanner.Text() == "" {
+			break
+		}
+		lines = append(lines, scanner.Text())
+	}
+	if err := scanner.Err(); err != nil {
+		t.Fatal(err)
+	}
+	return strings.Join(lines, "\n")
 }
 
 func TestConnectResourcesFlowThroughBFFWithFilteringAndDetails(t *testing.T) {

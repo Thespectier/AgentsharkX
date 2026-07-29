@@ -25,6 +25,16 @@ type Upstream struct {
 	ConsoleURL string
 }
 
+type Database struct {
+	URL              Secret
+	MaxConnections   int
+	MinConnections   int
+	ConnectTimeout   time.Duration
+	EventRetention   time.Duration
+	PayloadRetention time.Duration
+	OutboxRetention  time.Duration
+}
+
 type Config struct {
 	ListenAddr       string
 	Environment      string
@@ -34,6 +44,7 @@ type Config struct {
 	Gateway          Upstream
 	Guard            Upstream
 	GuardRelease     string
+	Database         Database
 	UpstreamTimeout  time.Duration
 	ScanTimeout      time.Duration
 	UpstreamRetryMax int
@@ -56,7 +67,12 @@ func Load(lookup LookupFunc) (Config, error) {
 			AdminToken: NewSecret(valueOr(lookup, "AGENTGUARD_ADMIN_TOKEN", "")),
 			ConsoleURL: valueOr(lookup, "AGENTGUARD_CONSOLE_URL", ""),
 		},
-		GuardRelease:     valueOr(lookup, "AGENTGUARD_VERSION", ""),
+		GuardRelease: valueOr(lookup, "AGENTGUARD_VERSION", ""),
+		Database: Database{
+			URL:            NewSecret(valueOr(lookup, "AGENTSHARK_DATABASE_URL", "")),
+			MaxConnections: 10, MinConnections: 1, ConnectTimeout: 5 * time.Second,
+			EventRetention: 30 * 24 * time.Hour, PayloadRetention: 0, OutboxRetention: 24 * time.Hour,
+		},
 		UpstreamTimeout:  3 * time.Second,
 		ScanTimeout:      90 * time.Second,
 		UpstreamRetryMax: 1,
@@ -80,6 +96,24 @@ func Load(lookup LookupFunc) (Config, error) {
 		return Config{}, err
 	}
 	if cfg.UpstreamRetryMax, err = intValue(lookup, "AGENTSHARK_UPSTREAM_RETRY_MAX", cfg.UpstreamRetryMax); err != nil {
+		return Config{}, err
+	}
+	if cfg.Database.MaxConnections, err = intValue(lookup, "AGENTSHARK_DATABASE_MAX_CONNS", cfg.Database.MaxConnections); err != nil {
+		return Config{}, err
+	}
+	if cfg.Database.MinConnections, err = intValue(lookup, "AGENTSHARK_DATABASE_MIN_CONNS", cfg.Database.MinConnections); err != nil {
+		return Config{}, err
+	}
+	if cfg.Database.ConnectTimeout, err = durationValue(lookup, "AGENTSHARK_DATABASE_CONNECT_TIMEOUT", cfg.Database.ConnectTimeout); err != nil {
+		return Config{}, err
+	}
+	if cfg.Database.EventRetention, err = durationValue(lookup, "AGENTSHARK_EVENT_RETENTION", cfg.Database.EventRetention); err != nil {
+		return Config{}, err
+	}
+	if cfg.Database.PayloadRetention, err = durationValue(lookup, "AGENTSHARK_PAYLOAD_RETENTION", cfg.Database.PayloadRetention); err != nil {
+		return Config{}, err
+	}
+	if cfg.Database.OutboxRetention, err = durationValue(lookup, "AGENTSHARK_OUTBOX_RETENTION", cfg.Database.OutboxRetention); err != nil {
 		return Config{}, err
 	}
 
@@ -118,6 +152,9 @@ func (cfg Config) Validate() error {
 			validationErrors = append(validationErrors, fmt.Errorf("%s is invalid: %w", name, err))
 		}
 	}
+	if err := validateDatabaseURL(cfg.Database.URL.Value()); err != nil {
+		validationErrors = append(validationErrors, fmt.Errorf("AGENTSHARK_DATABASE_URL is invalid: %w", err))
+	}
 	for name, rawURL := range map[string]string{
 		"AGENTGATEWAY_CONSOLE_URL": cfg.Gateway.ConsoleURL,
 		"AGENTGUARD_CONSOLE_URL":   cfg.Guard.ConsoleURL,
@@ -140,13 +177,31 @@ func (cfg Config) Validate() error {
 	if cfg.PollInterval < time.Second || cfg.PollInterval > time.Minute {
 		validationErrors = append(validationErrors, errors.New("AGENTSHARK_POLL_INTERVAL must be between 1s and 1m"))
 	}
+	if cfg.Database.MaxConnections < 1 || cfg.Database.MaxConnections > 100 {
+		validationErrors = append(validationErrors, errors.New("AGENTSHARK_DATABASE_MAX_CONNS must be between 1 and 100"))
+	}
+	if cfg.Database.MinConnections < 0 || cfg.Database.MinConnections > cfg.Database.MaxConnections {
+		validationErrors = append(validationErrors, errors.New("AGENTSHARK_DATABASE_MIN_CONNS must be between 0 and AGENTSHARK_DATABASE_MAX_CONNS"))
+	}
+	if cfg.Database.ConnectTimeout < 100*time.Millisecond || cfg.Database.ConnectTimeout > 30*time.Second {
+		validationErrors = append(validationErrors, errors.New("AGENTSHARK_DATABASE_CONNECT_TIMEOUT must be between 100ms and 30s"))
+	}
+	if cfg.Database.EventRetention < time.Hour {
+		validationErrors = append(validationErrors, errors.New("AGENTSHARK_EVENT_RETENTION must be at least 1h"))
+	}
+	if cfg.Database.PayloadRetention < 0 || (cfg.Database.PayloadRetention > 0 && cfg.Database.PayloadRetention < time.Hour) || cfg.Database.PayloadRetention > cfg.Database.EventRetention {
+		validationErrors = append(validationErrors, errors.New("AGENTSHARK_PAYLOAD_RETENTION must be 0 or between 1h and AGENTSHARK_EVENT_RETENTION"))
+	}
+	if cfg.Database.OutboxRetention < time.Minute || cfg.Database.OutboxRetention > cfg.Database.EventRetention {
+		validationErrors = append(validationErrors, errors.New("AGENTSHARK_OUTBOX_RETENTION must be between 1m and AGENTSHARK_EVENT_RETENTION"))
+	}
 	return errors.Join(validationErrors...)
 }
 
 func (cfg Config) SafeSummary() string {
-	return fmt.Sprintf("listen=%s environment=%s auth_disabled=%t cookie_secure=%t gateway=%s guard=%s timeout=%s scan_timeout=%s retries=%d poll=%s",
+	return fmt.Sprintf("listen=%s environment=%s auth_disabled=%t cookie_secure=%t gateway=%s guard=%s database=%s timeout=%s scan_timeout=%s retries=%d poll=%s",
 		cfg.ListenAddr, cfg.Environment, cfg.AuthDisabled, cfg.CookieSecure, safeEndpoint(cfg.Gateway.BaseURL),
-		safeEndpoint(cfg.Guard.BaseURL), cfg.UpstreamTimeout, cfg.ScanTimeout, cfg.UpstreamRetryMax, cfg.PollInterval)
+		safeEndpoint(cfg.Guard.BaseURL), safeDatabaseEndpoint(cfg.Database.URL.Value()), cfg.UpstreamTimeout, cfg.ScanTimeout, cfg.UpstreamRetryMax, cfg.PollInterval)
 }
 
 func safeEndpoint(raw string) string {
@@ -174,6 +229,28 @@ func validateURL(raw string) error {
 		return errors.New("must not contain a query or fragment")
 	}
 	return nil
+}
+
+func validateDatabaseURL(raw string) error {
+	parsed, err := url.Parse(raw)
+	if err != nil || parsed.Host == "" || (parsed.Scheme != "postgres" && parsed.Scheme != "postgresql") {
+		return errors.New("must be an absolute postgres or postgresql URL")
+	}
+	if strings.Trim(parsed.Path, "/") == "" {
+		return errors.New("must name a database")
+	}
+	if parsed.Fragment != "" {
+		return errors.New("must not contain a fragment")
+	}
+	return nil
+}
+
+func safeDatabaseEndpoint(raw string) string {
+	parsed, err := url.Parse(raw)
+	if err != nil || parsed.Host == "" {
+		return "[invalid]"
+	}
+	return parsed.Scheme + "://" + parsed.Host + parsed.Path
 }
 
 func isLoopback(host string) bool {

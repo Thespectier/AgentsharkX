@@ -7,7 +7,7 @@ information architecture for connection management, trusted runtime context,
 protection workflows, and audit views without entering the agent data plane or
 reimplementing either upstream.
 
-The repository is at the **0.7.0 Phase 7 preview** with the Phase 8 Connect LLM,
+The repository is at the **0.8.0 Phase 13 preview** with the Phase 8 Connect LLM,
 Phase 9 Connect MCP, Phase 10 Connect Traffic, Phase 11 Protect gateway-policy,
 and Phase 12 Protect guardrail management rounds applied. Connect reads explicit
 agentgateway providers, models, MCP targets, and routes, and manages verified
@@ -46,11 +46,13 @@ jobs. Protect also displays AgentGuard runtime rules and per-agent plugin phases
 and supports syntax-gated rule publication/deletion plus guarded approval
 decisions. AgentGuard rule and approval writes require a note, explicit
 confirmation, CSRF, a request ID, and a result receipt; destructive gateway
-configuration actions require explicit confirmation. Audit now polls
+configuration actions require explicit confirmation. Audit polls
 agentgateway request-log summaries/Analytics and
-AgentGuard Traffic/Audit/Sessions independently, retains a bounded 1000-event
-window, streams normalized events with SSE resume and client-side dedupe, and
-returns complete source-owned event detail to authenticated administrators.
+AgentGuard Traffic/Audit/Sessions independently, persists normalized events and
+source checkpoints in PostgreSQL, and streams summary-only changes from a
+persistent outbox with restart-safe SSE resume and client-side dedupe. Stable
+keyset pagination keeps historical event reads consistent while new rows arrive.
+Authenticated detail reads can still return complete source-owned records.
 The preview adds a reproducible non-root production image with the real Web
 bundle embedded in the Go BFF, source-specific System diagnostics, a full-path
 release E2E, supply-chain artifacts, and eight screenshot baselines.
@@ -63,8 +65,9 @@ release E2E, supply-chain artifacts, and eight screenshot baselines.
 - AgentsharkX owns authentication isolation, capability detection,
   normalization, aggregation, navigation, and high-frequency workflows.
 - AgentsharkX does not infer tasks, correlate events by time proximity, proxy
-  agent traffic, or add a new rules engine, database, replay system, or traffic
-  collector.
+  agent traffic, or add a new rules engine, business-traffic replay system, or
+  traffic collector. PostgreSQL stores only AgentsharkX-owned Audit projections,
+  optional payload detail, ingest checkpoints, and SSE delivery records.
 
 See [architecture](docs/architecture.md), the
 [capability matrix](docs/capability-matrix.md), and
@@ -75,7 +78,7 @@ an adapter contract.
 
 - GNU Make
 - Linux x86_64/arm64 or macOS arm64 for the pinned native gateway
-- Docker with Compose v2 for AgentsharkX and AgentGuard
+- Docker with Compose v2 for AgentsharkX, PostgreSQL, and AgentGuard
 - `curl`, `jq`, and either `sha256sum` or `shasum` for the pinned
   agentgateway binary
 - OpenSSL and Python 3.11+ for the first-event quickstart
@@ -100,8 +103,9 @@ For a complete Chinese walkthrough covering startup, Agent integration,
 operations, development, release verification, and troubleshooting, see the
 [中文使用指南](docs/usage-guide.zh-CN.md).
 
-The bootstrap command refuses to overwrite `.env`, generates random
-non-placeholder credentials with mode `0600`, and creates an ignored
+The bootstrap command preserves an existing `.env`, adds missing Phase 13
+database settings, generates random non-placeholder credentials with mode
+`0600`, and creates an ignored
 `.agentgateway.env` for provider credentials. `make preview-up` downloads the
 exact pinned agentgateway binary, verifies its SHA-256 digest and embedded
 version/revision, and runs it directly as the checkout user. Every management
@@ -133,9 +137,9 @@ indexed under [docs/screenshots](docs/screenshots/README.md).
 
 ## Run the BFF locally for development
 
-Start the pinned upstreams, then provide non-placeholder secrets and host-side
-URLs. Plain HTTP cookies are permitted only with an explicit local environment
-and loopback listener:
+Start PostgreSQL and the pinned upstreams, then provide non-placeholder secrets
+and host-side URLs. Plain HTTP cookies are permitted only with an explicit local
+environment and loopback listener:
 
 ```bash
 export AGENTSHARK_LISTEN_ADDR=127.0.0.1:8080
@@ -147,6 +151,7 @@ export AGENTGATEWAY_CONSOLE_URL=http://127.0.0.1:15000/ui
 export AGENTGUARD_BASE_URL=http://127.0.0.1:38080
 export AGENTGUARD_ADMIN_TOKEN='replace-with-the-agentguard-api-key'
 export AGENTGUARD_VERSION=main-4b755fb
+export AGENTSHARK_DATABASE_URL='postgresql://agentshark:replace-with-a-database-password@127.0.0.1:55432/agentshark?sslmode=disable'
 export AGENTSHARK_SCAN_TIMEOUT=90s
 export AGENTSHARK_POLL_INTERVAL=2s
 
@@ -168,16 +173,18 @@ Production
 deployments must keep `AGENTSHARK_COOKIE_SECURE=true` and terminate HTTPS before
 the BFF. Trust, Protect, and Connect write requests additionally require the
 session CSRF token. Agentgateway configuration writes require a short-lived,
-one-use revision token, share one in-process LLM/MCP/Traffic/Policy/Guardrail mutation
-lock, and are verified by a fresh canonical upstream read. Rule check tokens,
-scan jobs, and the Audit event window are bounded in
-memory and are lost when the BFF restarts. AgentGuard mutations are never
-automatically retried. The Audit poller keeps gateway payloads out of list and
-SSE traffic. Opening one authenticated agentgateway event calls the verified
+one-use revision token, share one in-process LLM/MCP/Traffic/Policy/Guardrail
+mutation lock, and are verified by a fresh canonical upstream read. Rule check
+tokens and scan jobs remain bounded in memory and are lost when the BFF
+restarts; persisted Audit events and SSE cursors are not. AgentGuard mutations
+are never automatically retried. The Audit poller keeps payloads out of list
+and SSE traffic. Opening one authenticated agentgateway event calls the verified
 `/api/logs/get` detail contract with `includePayload=true` and returns its
 complete attributes, prompt, completion, error, and other source fields through
-the BFF. AgentGuard event detail returns the complete source object retained in
-the existing bounded Audit window.
+the BFF. AgentGuard and confirmed approval raw detail is durable only when
+`AGENTSHARK_PAYLOAD_RETENTION` is explicitly positive; its default is `0`, while
+normalized event metadata remains durable for 30 days. See
+[Database operations](docs/database.md).
 
 ## Preview topology and pinned upstreams
 
@@ -197,7 +204,7 @@ The default topology is:
 
 ```text
 host: pinned agentgateway binary
-Docker Compose: AgentsharkX + AgentGuard server + AgentGuard console
+Docker Compose: AgentsharkX + PostgreSQL + AgentGuard server + AgentGuard console
 ```
 
 This lets agentgateway LLM and MCP listeners, including ports created later in
@@ -208,10 +215,13 @@ service and falls back to `nohup` when no user manager is available. Use
 `make gateway-standalone-status` and
 `make gateway-standalone-logs` for process diagnostics.
 
-The preview also enables agentgateway's own SQLite request-log store at
+The preview uses two intentionally separate databases. PostgreSQL is
+AgentsharkX-owned persistent Audit state in a named Compose volume. Agentgateway
+also enables its own SQLite request-log store at
 `.cache/agentgateway-standalone/data/request-logs.db`. This is upstream-owned
-state, not an AgentsharkX database. It persists across normal preview restarts
-and makes the native agentgateway **Logs** and **Analytics** pages available.
+state, not the AgentsharkX PostgreSQL database. It persists across normal
+preview restarts and makes the native agentgateway **Logs** and **Analytics**
+pages available.
 The launcher limits the data directory to the checkout user. Agentgateway
 v1.3.1 can retain LLM prompt/completion payloads in this store. Authenticated
 Audit detail requests the matching native record and returns all fields through
@@ -220,6 +230,8 @@ the BFF; the exact native Logs link remains available as a second view.
 Default local endpoints:
 
 - AgentsharkX preview: <http://localhost:8080>
+- AgentsharkX liveness/readiness: <http://localhost:8080/healthz> /
+  <http://localhost:8080/readyz>
 - agentgateway console/admin: <http://127.0.0.1:15000/ui>
 - agentgateway readiness: <http://127.0.0.1:15021/healthz/ready>
 - AgentGuard server: <http://127.0.0.1:38080/v1/backend/health>
@@ -267,9 +279,11 @@ file's owner instead of making it world-writable or running as root.
 The observability smoke test verifies the configured database URL and calls
 summary log search plus Analytics without printing request contents.
 
-`make preview-down` stops the stack. The BFF starts even if one source is down,
-and `/system` provides source-specific recovery checks. `/healthz` reports only
-that the AgentsharkX process is serving; it does not hide upstream degradation.
+`make preview-down` stops the stack without deleting the PostgreSQL volume. The
+BFF starts even if one source is down, and `/system` provides source-specific
+recovery checks. `/healthz` reports only that the process is alive; `/readyz`
+requires a reachable PostgreSQL database, all embedded migrations applied, and
+the persisted Audit history restored into the running service.
 
 ## Release gates and evidence
 
@@ -288,7 +302,7 @@ under [Troubleshooting](docs/troubleshooting.md).
 ## Repository layout
 
 ```text
-apps/server/              Secure Go BFF, source adapters, aggregation, and SSE
+apps/server/              Secure Go BFF, source adapters, PostgreSQL storage, aggregation, and SSE
 apps/web/                 React console, generated API client, MSW, and browser tests
 api/openapi.yaml          AgentsharkX-owned API contract
 api/upstream-contracts/   Sanitized, versioned upstream response samples

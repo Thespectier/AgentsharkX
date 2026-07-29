@@ -6,6 +6,9 @@ required_files=(
   README.md
   LICENSE
   apps/server/go.mod
+  apps/server/go.sum
+  apps/server/migrations/embed.go
+  apps/server/migrations/000001_persistent_audit.sql
   apps/web/README.md
   apps/web/package.json
   apps/web/package-lock.json
@@ -18,6 +21,7 @@ required_files=(
   deploy/versions.env
   deploy/agentgateway/example.env
   docs/quickstart.md
+  docs/database.md
   docs/agent-integration.md
   docs/troubleshooting.md
   docs/release/sbom.spdx.json
@@ -42,6 +46,7 @@ required_files=(
   scripts/gateway-config-write-smoke.sh
   scripts/gateway-observability-smoke.sh
   scripts/release-e2e.sh
+  scripts/test-postgres.sh
   scripts/secret-scan.sh
 )
 
@@ -51,6 +56,15 @@ for file in "${required_files[@]}"; do
     exit 1
   fi
 done
+
+agentshark_version="$(sed -n 's/^AGENTSHARK_VERSION=//p' deploy/versions.env)"
+if [[ -z "$agentshark_version" ]] ||
+  ! grep -Fqx "  version: $agentshark_version" api/openapi.yaml ||
+  ! grep -Fqx "ARG AGENTSHARK_VERSION=$agentshark_version" deploy/Dockerfile ||
+  ! grep -Fq -- "--build-arg AGENTSHARK_VERSION=$agentshark_version" Makefile; then
+  echo "AgentsharkX version must match across versions.env, OpenAPI, Dockerfile, and Makefile" >&2
+  exit 1
+fi
 
 binary_version="$(sed -n 's/^AGENTGATEWAY_BINARY_VERSION=//p' deploy/versions.env)"
 if [[ ! "$binary_version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
@@ -79,11 +93,32 @@ if ! grep -qx 'AGENTGATEWAY_DOCKER_HOST_MODE=auto' deploy/example.env; then
   exit 1
 fi
 
+postgres_image="$(sed -n 's/^POSTGRES_IMAGE=//p' deploy/versions.env)"
+postgres_version="$(sed -n 's/^POSTGRES_VERSION=//p' deploy/versions.env)"
+if [[ "$postgres_image" != "postgres" || ! "$postgres_version" =~ ^[0-9]+\.[0-9]+-alpine[0-9]+\.[0-9]+@sha256:[[:xdigit:]]{64}$ ]]; then
+  echo "PostgreSQL image must use a versioned Alpine tag plus immutable digest" >&2
+  exit 1
+fi
+
+if ! grep -qx 'AGENTSHARK_DATABASE_BIND=127.0.0.1' deploy/example.env; then
+  echo "the default PostgreSQL host publication must remain on loopback" >&2
+  exit 1
+fi
+
+if ! grep -Fqx '    image: ${POSTGRES_IMAGE}:${POSTGRES_VERSION}' deploy/compose.yaml || \
+  ! grep -Fqx '      - "${AGENTSHARK_DATABASE_BIND}:${AGENTSHARK_DATABASE_PORT}:5432"' deploy/compose.yaml; then
+  echo "Compose must use the pinned PostgreSQL image and configurable loopback publication" >&2
+  exit 1
+fi
+
 for script in \
+  scripts/bootstrap-preview.sh \
   scripts/agentgateway-standalone.sh \
   scripts/gateway-observability-smoke.sh \
+  scripts/release-e2e.sh \
   scripts/standalone-compose.sh \
-  scripts/preview.sh; do
+  scripts/preview.sh \
+  scripts/test-postgres.sh; do
   if [[ ! -x "$script" ]]; then
     echo "standalone preview script is not executable: $script" >&2
     exit 1
@@ -95,7 +130,9 @@ bash -n \
   scripts/gateway-observability-smoke.sh \
   scripts/standalone-compose.sh \
   scripts/preview.sh \
-  scripts/bootstrap-preview.sh
+  scripts/bootstrap-preview.sh \
+  scripts/release-e2e.sh \
+  scripts/test-postgres.sh
 
 if command -v rg >/dev/null 2>&1; then
   latest_matches="$(rg -n '(^|[/:@-])latest([^[:alnum:]_]|$)' deploy || true)"
@@ -126,6 +163,12 @@ done
 
 if [[ -n "$(git submodule status 2>/dev/null)" ]]; then
   echo "git submodules are not allowed" >&2
+  exit 1
+fi
+
+if rg -n '/node_modules/|node_modules%2F' \
+  docs/release/sbom.spdx.json docs/release/dependency-licenses.md; then
+  echo "release artifacts contain an npm installation path instead of a package name" >&2
   exit 1
 fi
 

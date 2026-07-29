@@ -21,6 +21,7 @@ import (
 	"github.com/Thespectier/AgentsharkX/apps/server/internal/guard"
 	"github.com/Thespectier/AgentsharkX/apps/server/internal/model"
 	"github.com/Thespectier/AgentsharkX/apps/server/internal/protect"
+	storagepostgres "github.com/Thespectier/AgentsharkX/apps/server/internal/storage/postgres"
 	"github.com/Thespectier/AgentsharkX/apps/server/internal/stream"
 	"github.com/Thespectier/AgentsharkX/apps/server/internal/trust"
 	webconsole "github.com/Thespectier/AgentsharkX/apps/server/internal/web"
@@ -39,6 +40,18 @@ func main() {
 		os.Exit(1)
 	}
 	logger.Info("configuration loaded", "version", version, "revision", revision, "summary", cfg.SafeSummary())
+	rootContext, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+	databaseStore, err := storagepostgres.Open(rootContext, cfg.Database.URL.Value(), storagepostgres.Options{
+		MaxConnections: int32(cfg.Database.MaxConnections), MinConnections: int32(cfg.Database.MinConnections),
+		ConnectTimeout: cfg.Database.ConnectTimeout, EventRetention: cfg.Database.EventRetention,
+		PayloadRetention: cfg.Database.PayloadRetention, OutboxRetention: cfg.Database.OutboxRetention,
+	})
+	if err != nil {
+		logger.Error("database configuration rejected", "error", err.Error())
+		os.Exit(1)
+	}
+	defer databaseStore.Close()
 
 	gatewayHTTP := &http.Client{Timeout: cfg.UpstreamTimeout}
 	guardHTTP := &http.Client{Timeout: cfg.UpstreamTimeout}
@@ -65,15 +78,13 @@ func main() {
 		os.Exit(1)
 	}
 
-	rootContext, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
 	aggregator := aggregate.New(cfg.Environment, gatewayClient, guardClient)
 	connectService := connect.New(gatewayClient, cfg.Gateway.ConsoleURL)
 	trustService := trust.New(rootContext, guardClient, cfg.ScanTimeout)
 	consoleLinks := connectService.Links()
 	consoleLinks.AgentGuardConsole = strings.TrimRight(cfg.Guard.ConsoleURL, "/")
 	hub := stream.NewHub()
-	auditService := audit.New(gatewayClient, guardClient, hub, consoleLinks)
+	auditService := audit.NewPersistent(gatewayClient, guardClient, hub, databaseStore, consoleLinks)
 	protectService := protect.New(gatewayClient, protectGuardClient, consoleLinks, auditService)
 	aggregator.SetOperational(auditService)
 	sessions := auth.New(cfg.AdminToken.Value(), auth.Options{CookieSecure: cfg.CookieSecure, TTL: 8 * time.Hour})
@@ -83,12 +94,15 @@ func main() {
 	})
 	handler := webconsole.New(apiHandler)
 
-	for _, health := range aggregator.Refresh(rootContext) {
-		hub.Publish(newHealthEvent(health))
+	health := aggregator.Refresh(rootContext)
+	persistenceReady := initializePersistence(rootContext, databaseStore, auditService, health, logger)
+	go monitorHealth(rootContext, aggregator, auditService, logger, cfg.PollInterval)
+	if persistenceReady {
+		go monitorAudit(rootContext, auditService, cfg.PollInterval)
+	} else {
+		go recoverPersistence(rootContext, databaseStore, auditService, aggregator, logger, cfg.PollInterval)
 	}
-	auditService.Refresh(rootContext)
-	go monitorHealth(rootContext, aggregator, hub, cfg.PollInterval)
-	go monitorAudit(rootContext, auditService, cfg.PollInterval)
+	go maintainPersistence(rootContext, databaseStore, logger)
 
 	httpServer := &http.Server{
 		Addr:              cfg.ListenAddr,
@@ -126,36 +140,135 @@ func monitorAudit(ctx context.Context, service *audit.Service, interval time.Dur
 	}
 }
 
-func monitorHealth(ctx context.Context, aggregator *aggregate.Service, hub *stream.Hub, interval time.Duration) {
+type healthEventRecorder interface {
+	RecordHealth(context.Context, model.SourceHealth) error
+}
+
+type healthPersistenceFailure struct {
+	source model.Source
+	err    error
+}
+
+type healthPersistenceState struct {
+	persisted map[model.Source]model.SourceHealth
+	pending   map[model.Source]model.SourceHealth
+}
+
+func newHealthPersistenceState(initial []model.SourceHealth) *healthPersistenceState {
+	state := &healthPersistenceState{
+		persisted: make(map[model.Source]model.SourceHealth, len(initial)),
+		pending:   make(map[model.Source]model.SourceHealth),
+	}
+	for _, health := range initial {
+		state.persisted[health.Source] = health
+	}
+	return state
+}
+
+func (state *healthPersistenceState) persistChanges(ctx context.Context, recorder healthEventRecorder, current []model.SourceHealth) []healthPersistenceFailure {
+	failures := make([]healthPersistenceFailure, 0)
+	for _, health := range current {
+		candidate, queued := state.pending[health.Source]
+		if !queued {
+			previous, exists := state.persisted[health.Source]
+			if exists && sameHealthState(previous, health) {
+				continue
+			}
+			candidate = health
+		}
+		if err := recorder.RecordHealth(ctx, candidate); err != nil {
+			state.pending[health.Source] = candidate
+			failures = append(failures, healthPersistenceFailure{source: health.Source, err: err})
+			continue
+		}
+		state.persisted[health.Source] = candidate
+		delete(state.pending, health.Source)
+		if sameHealthState(candidate, health) {
+			continue
+		}
+		if err := recorder.RecordHealth(ctx, health); err != nil {
+			state.pending[health.Source] = health
+			failures = append(failures, healthPersistenceFailure{source: health.Source, err: err})
+			continue
+		}
+		state.persisted[health.Source] = health
+	}
+	return failures
+}
+
+func sameHealthState(left, right model.SourceHealth) bool {
+	return left.Status == right.Status && left.Version == right.Version
+}
+
+func monitorHealth(ctx context.Context, aggregator *aggregate.Service, auditService *audit.Service, logger *slog.Logger, interval time.Duration) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
-	previous := aggregator.Snapshot()
+	state := newHealthPersistenceState(aggregator.Snapshot())
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
 			current := aggregator.Refresh(ctx)
-			for index, health := range current {
-				if index >= len(previous) || health.Status != previous[index].Status || health.Version != previous[index].Version {
-					hub.Publish(newHealthEvent(health))
-				}
+			for _, failure := range state.persistChanges(ctx, auditService, current) {
+				logger.Warn("health persistence unavailable", "source", failure.source, "error", failure.err.Error())
 			}
-			previous = current
 		}
 	}
 }
 
-func newHealthEvent(health model.SourceHealth) model.UnifiedEvent {
-	severity := "info"
-	if health.Status == model.HealthDown {
-		severity = "high"
-	} else if health.Status != model.HealthHealthy {
-		severity = "medium"
+func initializePersistence(ctx context.Context, store *storagepostgres.Store, auditService *audit.Service, health []model.SourceHealth, logger *slog.Logger) bool {
+	migrationContext, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	if err := store.Migrate(migrationContext); err != nil {
+		logger.Error("database migration unavailable", "error", err.Error())
+		return false
 	}
-	id := string(health.Source) + "-health-" + health.CheckedAt.Format("20060102T150405.000000000Z")
-	return model.UnifiedEvent{
-		ID: id, Timestamp: health.CheckedAt, Source: health.Source, Kind: "health", Severity: severity,
-		Summary: health.Label + " is " + string(health.Status), RawRef: model.RawRef{Source: health.Source, ID: id},
+	if err := auditService.Restore(migrationContext); err != nil {
+		logger.Error("audit restore unavailable", "error", err.Error())
+		return false
+	}
+	for _, sourceHealth := range health {
+		if err := auditService.RecordHealth(migrationContext, sourceHealth); err != nil {
+			logger.Error("health persistence unavailable", "source", sourceHealth.Source, "error", err.Error())
+			return false
+		}
+	}
+	auditService.Refresh(migrationContext)
+	return true
+}
+
+func recoverPersistence(ctx context.Context, store *storagepostgres.Store, auditService *audit.Service, aggregator *aggregate.Service, logger *slog.Logger, pollInterval time.Duration) {
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+	for {
+		if initializePersistence(ctx, store, auditService, aggregator.Snapshot(), logger) {
+			logger.Info("persistent Audit storage recovered")
+			monitorAudit(ctx, auditService, pollInterval)
+			return
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+	}
+}
+
+func maintainPersistence(ctx context.Context, store *storagepostgres.Store, logger *slog.Logger) {
+	if err := store.Prune(ctx, time.Now().UTC()); err != nil {
+		logger.Warn("database retention cleanup unavailable", "error", err.Error())
+	}
+	ticker := time.NewTicker(time.Hour)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case now := <-ticker.C:
+			if err := store.Prune(ctx, now.UTC()); err != nil {
+				logger.Warn("database retention cleanup unavailable", "error", err.Error())
+			}
+		}
 	}
 }

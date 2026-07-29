@@ -6,9 +6,9 @@ GO_RACE_IMAGE := golang:$(GO_VERSION)
 COMPOSE := docker compose --env-file deploy/versions.env --env-file deploy/example.env -f deploy/compose.yaml
 PREVIEW := ./scripts/preview.sh
 
-.PHONY: verify format-check test race-test web-check secret-boundary secret-scan repository-check openapi-validate compose-validate upstream-smoke gateway-config-write-smoke gateway-observability-smoke gateway-standalone-install gateway-standalone-up gateway-standalone-down gateway-standalone-status gateway-standalone-logs preview-bootstrap preview-up preview-container-up preview-down preview-status container-build release-e2e sbom security-scan release-gate
+.PHONY: verify format-check test postgres-test race-test web-check secret-boundary secret-scan repository-check openapi-validate compose-validate upstream-smoke gateway-config-write-smoke gateway-observability-smoke gateway-standalone-install gateway-standalone-up gateway-standalone-down gateway-standalone-status gateway-standalone-logs preview-bootstrap preview-up preview-container-up preview-down preview-status container-build release-e2e sbom security-scan release-gate
 
-verify: format-check test race-test web-check secret-boundary repository-check openapi-validate compose-validate
+verify: format-check test postgres-test race-test web-check secret-boundary repository-check openapi-validate compose-validate
 
 format-check:
 	@if command -v go >/dev/null 2>&1; then \
@@ -24,6 +24,9 @@ test:
 	else \
 		docker run --rm -v "$(CURDIR):/src" -w /src/apps/server $(GO_IMAGE) go test -count=1 ./...; \
 	fi
+
+postgres-test:
+	@./scripts/test-postgres.sh
 
 race-test:
 	@if command -v go >/dev/null 2>&1; then \
@@ -95,7 +98,7 @@ preview-status:
 
 container-build:
 	@docker build -f deploy/Dockerfile \
-		--build-arg AGENTSHARK_VERSION=0.7.0-preview \
+		--build-arg AGENTSHARK_VERSION=0.8.0-preview \
 		--build-arg AGENTSHARK_REVISION=$$(git rev-parse --short HEAD) \
 		-t agentsharkx/preview:verification .
 

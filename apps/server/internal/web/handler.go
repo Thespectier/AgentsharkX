@@ -27,7 +27,7 @@ func New(api http.Handler) http.Handler {
 }
 
 func (handler *handler) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
-	if request.URL.Path == "/healthz" || strings.HasPrefix(request.URL.Path, "/api/") {
+	if request.URL.Path == "/healthz" || request.URL.Path == "/readyz" || strings.HasPrefix(request.URL.Path, "/api/") {
 		handler.api.ServeHTTP(writer, request)
 		return
 	}

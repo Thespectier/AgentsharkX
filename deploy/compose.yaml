@@ -20,6 +20,13 @@ services:
       AGENTSHARK_UPSTREAM_RETRY_MAX: ${AGENTSHARK_UPSTREAM_RETRY_MAX}
       AGENTSHARK_SCAN_TIMEOUT: ${AGENTSHARK_SCAN_TIMEOUT}
       AGENTSHARK_POLL_INTERVAL: ${AGENTSHARK_POLL_INTERVAL}
+      AGENTSHARK_DATABASE_URL: ${AGENTSHARK_DATABASE_URL}
+      AGENTSHARK_DATABASE_MAX_CONNS: ${AGENTSHARK_DATABASE_MAX_CONNS}
+      AGENTSHARK_DATABASE_MIN_CONNS: ${AGENTSHARK_DATABASE_MIN_CONNS}
+      AGENTSHARK_DATABASE_CONNECT_TIMEOUT: ${AGENTSHARK_DATABASE_CONNECT_TIMEOUT}
+      AGENTSHARK_EVENT_RETENTION: ${AGENTSHARK_EVENT_RETENTION}
+      AGENTSHARK_PAYLOAD_RETENTION: ${AGENTSHARK_PAYLOAD_RETENTION}
+      AGENTSHARK_OUTBOX_RETENTION: ${AGENTSHARK_OUTBOX_RETENTION}
       AGENTGATEWAY_BASE_URL: ${AGENTGATEWAY_BASE_URL}
       AGENTGATEWAY_ADMIN_TOKEN: ${AGENTGATEWAY_ADMIN_TOKEN}
       AGENTGATEWAY_CONSOLE_URL: ${AGENTGATEWAY_CONSOLE_URL}
@@ -30,11 +37,32 @@ services:
     ports:
       - "${AGENTSHARK_BIND}:${AGENTSHARK_PORT}:8080"
     healthcheck:
-      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/healthz"]
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/readyz"]
       interval: 10s
       timeout: 3s
       retries: 6
       start_period: 10s
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  postgres:
+    image: ${POSTGRES_IMAGE}:${POSTGRES_VERSION}
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: agentshark
+      POSTGRES_USER: agentshark
+      POSTGRES_PASSWORD: ${AGENTSHARK_DATABASE_PASSWORD}
+    ports:
+      - "${AGENTSHARK_DATABASE_BIND}:${AGENTSHARK_DATABASE_PORT}:5432"
+    volumes:
+      - agentshark-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "psql -qAt -U agentshark -d agentshark -c 'SELECT 1' | grep -qx '1'"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 5s
   agentgateway:
     image: ${AGENTGATEWAY_IMAGE}:${AGENTGATEWAY_VERSION}
     user: "${AGENTGATEWAY_RUNTIME_UID:-65532}:${AGENTGATEWAY_RUNTIME_GID:-65532}"
@@ -105,3 +133,6 @@ services:
     depends_on:
       agentguard:
         condition: service_healthy
+
+volumes:
+  agentshark-postgres-data:

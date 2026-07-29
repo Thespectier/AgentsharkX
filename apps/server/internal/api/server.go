@@ -23,6 +23,7 @@ import (
 	"github.com/Thespectier/AgentsharkX/apps/server/internal/guard"
 	"github.com/Thespectier/AgentsharkX/apps/server/internal/model"
 	"github.com/Thespectier/AgentsharkX/apps/server/internal/protect"
+	"github.com/Thespectier/AgentsharkX/apps/server/internal/storage"
 	"github.com/Thespectier/AgentsharkX/apps/server/internal/stream"
 	"github.com/Thespectier/AgentsharkX/apps/server/internal/trust"
 	"github.com/Thespectier/AgentsharkX/apps/server/internal/upstream"
@@ -43,6 +44,8 @@ type ServerConfig struct {
 	Protect     *protect.Service
 	Audit       *audit.Service
 	Stream      *stream.Hub
+	Outbox      storage.OutboxStore
+	Readiness   storage.Readiness
 	Logger      *slog.Logger
 	AuthEnabled bool
 }
@@ -59,6 +62,12 @@ func New(config ServerConfig) http.Handler {
 	if config.Stream == nil {
 		config.Stream = stream.NewHub()
 	}
+	if config.Outbox == nil && config.Audit != nil {
+		config.Outbox = config.Audit.Outbox()
+	}
+	if config.Readiness == nil && config.Audit != nil {
+		config.Readiness = config.Audit
+	}
 	service := &server{config: config, mux: http.NewServeMux()}
 	service.routes()
 	return service.middleware(service.mux)
@@ -66,6 +75,7 @@ func New(config ServerConfig) http.Handler {
 
 func (server *server) routes() {
 	server.mux.HandleFunc("GET /healthz", server.liveness)
+	server.mux.HandleFunc("GET /readyz", server.readiness)
 	server.mux.HandleFunc("POST /api/v1/auth/session", server.login)
 	server.mux.Handle("GET /api/v1/auth/session", server.requireAuth(http.HandlerFunc(server.sessionInfo)))
 	server.mux.Handle("GET /api/v1/system/health", server.requireAuth(http.HandlerFunc(server.health)))
@@ -133,6 +143,18 @@ func (server *server) routes() {
 
 func (server *server) liveness(writer http.ResponseWriter, _ *http.Request) {
 	server.writeJSON(writer, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+func (server *server) readiness(writer http.ResponseWriter, request *http.Request) {
+	if server.config.Readiness != nil {
+		ctx, cancel := context.WithTimeout(request.Context(), 2*time.Second)
+		defer cancel()
+		if err := server.config.Readiness.Ready(ctx); err != nil {
+			server.writeError(writer, request, http.StatusServiceUnavailable, "DATABASE_UNAVAILABLE", "persistent storage is unavailable or migrations are incomplete", nil, true)
+			return
+		}
+	}
+	server.writeJSON(writer, http.StatusOK, map[string]string{"status": "ready"})
 }
 
 func (server *server) login(writer http.ResponseWriter, request *http.Request) {
@@ -733,9 +755,13 @@ func (server *server) auditEvents(writer http.ResponseWriter, request *http.Requ
 		server.writeError(writer, request, http.StatusBadRequest, "INVALID_REQUEST", "audit source filter is invalid", nil, false)
 		return
 	}
-	envelope, err := server.config.Audit.Events(sourceFilter, query.cursor, query.limit)
+	envelope, err := server.config.Audit.Events(request.Context(), sourceFilter, query.cursor, query.limit)
 	if errors.Is(err, audit.ErrInvalidCursor) {
 		server.writeError(writer, request, http.StatusBadRequest, "INVALID_CURSOR", "pagination cursor is invalid", nil, false)
+		return
+	}
+	if errors.Is(err, audit.ErrStorageUnavailable) {
+		server.writeError(writer, request, http.StatusServiceUnavailable, "DATABASE_UNAVAILABLE", "persistent Audit storage is unavailable", nil, true)
 		return
 	}
 	server.writeJSON(writer, http.StatusOK, envelope)
@@ -757,6 +783,10 @@ func (server *server) auditEvent(writer http.ResponseWriter, request *http.Reque
 	}
 	if errors.Is(err, audit.ErrDetailUnavailable) {
 		server.writeError(writer, request, http.StatusServiceUnavailable, "DETAIL_UNAVAILABLE", "complete upstream audit detail is unavailable", source(sourceValue), true)
+		return
+	}
+	if errors.Is(err, audit.ErrStorageUnavailable) {
+		server.writeError(writer, request, http.StatusServiceUnavailable, "DATABASE_UNAVAILABLE", "persistent Audit storage is unavailable", nil, true)
 		return
 	}
 	var gatewayContract *gateway.ContractError
@@ -833,11 +863,17 @@ func (server *server) protectAvailable(writer http.ResponseWriter, request *http
 }
 
 func (server *server) auditAvailable(writer http.ResponseWriter, request *http.Request) bool {
-	if server.config.Audit != nil {
-		return true
+	if server.config.Audit == nil {
+		server.writeError(writer, request, http.StatusServiceUnavailable, "AUDIT_UNAVAILABLE", "Audit integration is unavailable", nil, true)
+		return false
 	}
-	server.writeError(writer, request, http.StatusServiceUnavailable, "AUDIT_UNAVAILABLE", "Audit integration is unavailable", nil, true)
-	return false
+	ctx, cancel := context.WithTimeout(request.Context(), 2*time.Second)
+	defer cancel()
+	if err := server.config.Audit.Ready(ctx); err != nil {
+		server.writeError(writer, request, http.StatusServiceUnavailable, "DATABASE_UNAVAILABLE", "persistent Audit storage is unavailable", nil, true)
+		return false
+	}
+	return true
 }
 
 func (server *server) writeConnectResult(writer http.ResponseWriter, request *http.Request, envelope any, err error) {
@@ -1029,6 +1065,10 @@ func (server *server) writeProtectResult(writer http.ResponseWriter, request *ht
 		server.writeError(writer, request, http.StatusConflict, "MUTATION_IN_PROGRESS", "the same Protect action is already in progress", source(model.SourceAgentGuard), true)
 		return
 	}
+	if errors.Is(err, protect.ErrAuditPersistence) {
+		server.writeError(writer, request, http.StatusServiceUnavailable, "DATABASE_UNAVAILABLE", "persistent Audit storage is unavailable; inspect the approval state before retrying", nil, false)
+		return
+	}
 	if errors.Is(err, protect.ErrNotFound) {
 		server.writeError(writer, request, http.StatusNotFound, "NOT_FOUND", "the rule, agent, or approval ticket is not available", source(model.SourceAgentGuard), false)
 		return
@@ -1082,37 +1122,100 @@ func (server *server) decodeMutation(writer http.ResponseWriter, request *http.R
 func source(value model.Source) *model.Source { return &value }
 
 func (server *server) eventStream(writer http.ResponseWriter, request *http.Request) {
+	if server.config.Outbox == nil {
+		server.writeError(writer, request, http.StatusServiceUnavailable, "DATABASE_UNAVAILABLE", "persistent event streaming is unavailable", nil, true)
+		return
+	}
+	if server.config.Readiness != nil {
+		ctx, cancel := context.WithTimeout(request.Context(), 2*time.Second)
+		defer cancel()
+		if err := server.config.Readiness.Ready(ctx); err != nil {
+			server.writeError(writer, request, http.StatusServiceUnavailable, "DATABASE_UNAVAILABLE", "persistent event streaming is unavailable", nil, true)
+			return
+		}
+	}
 	flusher, ok := writer.(http.Flusher)
 	if !ok {
 		server.writeError(writer, request, http.StatusInternalServerError, "STREAM_UNAVAILABLE", "event streaming is unavailable", nil, true)
 		return
 	}
+	rawLastSequence, hasLastSequence := request.Header["Last-Event-Id"]
+	lastSequence := int64(0)
+	if hasLastSequence {
+		raw := ""
+		if len(rawLastSequence) > 0 {
+			raw = strings.TrimSpace(rawLastSequence[0])
+		}
+		parsed, err := parseLastEventID(raw)
+		if err != nil {
+			server.writeError(writer, request, http.StatusBadRequest, "INVALID_LAST_EVENT_ID", "Last-Event-ID must be a non-negative 64-bit integer", nil, false)
+			return
+		}
+		lastSequence = parsed
+	}
+	notifications, unsubscribe := server.config.Stream.Subscribe()
+	defer unsubscribe()
+	const batchSize = 1000
+	batch, err := server.config.Outbox.ReplayAfter(request.Context(), lastSequence, batchSize)
+	if err != nil {
+		server.writeError(writer, request, http.StatusServiceUnavailable, "DATABASE_UNAVAILABLE", "persistent event streaming is unavailable", nil, true)
+		return
+	}
+	resetReason := ""
+	if hasLastSequence {
+		if lastSequence > batch.Latest {
+			resetReason = "cursor_ahead"
+		} else if (batch.Oldest > 0 && lastSequence < batch.Oldest) ||
+			(batch.Oldest == 0 && batch.Latest > lastSequence) {
+			resetReason = "outbox_retention"
+		}
+	}
+
 	writer.Header().Set("Content-Type", "text/event-stream")
 	writer.Header().Set("Cache-Control", "no-cache, no-store")
 	writer.Header().Set("Connection", "keep-alive")
 	writer.Header().Set("X-Accel-Buffering", "no")
-
-	lastSequence := uint64(0)
-	if raw := strings.TrimSpace(request.Header.Get("Last-Event-ID")); raw != "" {
-		if parsed, err := strconv.ParseUint(raw, 10, 64); err == nil {
-			lastSequence = parsed
+	if resetReason != "" {
+		if err := writeSSEReset(writer, batch.Latest, resetReason, batch.Oldest); err != nil {
+			return
 		}
-	}
-	events, replay, unsubscribe := server.config.Stream.Subscribe(lastSequence)
-	defer unsubscribe()
-	if len(replay) == 0 && lastSequence == 0 && server.config.Aggregate != nil {
-		for _, health := range server.config.Aggregate.Snapshot() {
-			if err := writeSSE(writer, 0, healthEvent(health)); err != nil {
+		lastSequence = batch.Latest
+	} else {
+		for _, message := range batch.Messages {
+			if err := writeSSE(writer, message.Sequence, message.Event); err != nil {
 				return
 			}
-		}
-	}
-	for _, record := range replay {
-		if err := writeSSE(writer, record.Sequence, record.Event); err != nil {
-			return
+			lastSequence = message.Sequence
 		}
 	}
 	flusher.Flush()
+
+	drain := func() error {
+		for {
+			batch, err := server.config.Outbox.ReplayAfter(request.Context(), lastSequence, batchSize)
+			if err != nil {
+				return err
+			}
+			for _, message := range batch.Messages {
+				if message.Sequence <= lastSequence {
+					continue
+				}
+				if err := writeSSE(writer, message.Sequence, message.Event); err != nil {
+					return err
+				}
+				lastSequence = message.Sequence
+			}
+			if len(batch.Messages) < batchSize {
+				return nil
+			}
+		}
+	}
+	if resetReason == "" && len(batch.Messages) == batchSize {
+		if err := drain(); err != nil {
+			return
+		}
+		flusher.Flush()
+	}
 
 	heartbeat := time.NewTicker(15 * time.Second)
 	defer heartbeat.Stop()
@@ -1120,18 +1223,34 @@ func (server *server) eventStream(writer http.ResponseWriter, request *http.Requ
 		select {
 		case <-request.Context().Done():
 			return
-		case record, open := <-events:
-			if !open || writeSSE(writer, record.Sequence, record.Event) != nil {
+		case _, open := <-notifications:
+			if !open || drain() != nil {
 				return
 			}
 			flusher.Flush()
 		case <-heartbeat.C:
+			if drain() != nil {
+				return
+			}
 			if _, err := fmt.Fprint(writer, ": heartbeat\n\n"); err != nil {
 				return
 			}
 			flusher.Flush()
 		}
 	}
+}
+
+func parseLastEventID(raw string) (int64, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" || (len(raw) > 1 && raw[0] == '0') {
+		return 0, errors.New("invalid Last-Event-ID")
+	}
+	for _, character := range raw {
+		if character < '0' || character > '9' {
+			return 0, errors.New("invalid Last-Event-ID")
+		}
+	}
+	return strconv.ParseInt(raw, 10, 64)
 }
 
 func (server *server) notImplemented(writer http.ResponseWriter, request *http.Request) {
@@ -1221,7 +1340,7 @@ func (*server) writeJSON(writer http.ResponseWriter, status int, payload any) {
 	_ = json.NewEncoder(writer).Encode(payload)
 }
 
-func writeSSE(writer http.ResponseWriter, sequence uint64, event model.UnifiedEvent) error {
+func writeSSE(writer http.ResponseWriter, sequence int64, event model.UnifiedEvent) error {
 	payload, err := json.Marshal(event)
 	if err != nil {
 		return err
@@ -1230,23 +1349,15 @@ func writeSSE(writer http.ResponseWriter, sequence uint64, event model.UnifiedEv
 	return err
 }
 
-func healthEvent(health model.SourceHealth) model.UnifiedEvent {
-	severity := "info"
-	if health.Status == model.HealthDown {
-		severity = "high"
-	} else if health.Status == model.HealthDegraded || health.Status == model.HealthUnknown {
-		severity = "medium"
+func writeSSEReset(writer http.ResponseWriter, sequence int64, reason string, oldest int64) error {
+	payload, err := json.Marshal(map[string]any{
+		"reason": reason, "resumeAfter": sequence, "oldestAvailable": oldest,
+	})
+	if err != nil {
+		return err
 	}
-	checkedAt := health.CheckedAt
-	if checkedAt.IsZero() {
-		checkedAt = time.Now().UTC()
-	}
-	id := string(health.Source) + "-health-" + checkedAt.Format("20060102T150405.000000000Z")
-	return model.UnifiedEvent{
-		ID: id, Timestamp: checkedAt, Source: health.Source, Kind: "health", Severity: severity,
-		Summary: health.Label + " is " + string(health.Status),
-		RawRef:  model.RawRef{Source: health.Source, ID: id},
-	}
+	_, err = fmt.Fprintf(writer, "id: %d\nevent: reset\ndata: %s\n\n", sequence, payload)
+	return err
 }
 
 func isWrite(method string) bool {

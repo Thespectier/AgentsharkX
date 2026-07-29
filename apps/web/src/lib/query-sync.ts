@@ -42,3 +42,9 @@ export async function synchronizeLiveEvent(queryClient: QueryClient, event: Unif
     ...(event.kind === "health" ? systemQueries : []),
   ]);
 }
+
+export async function synchronizeStreamReset(queryClient: QueryClient) {
+  await queryClient.invalidateQueries({
+    predicate: (query) => query.queryKey[0] !== "admin-session",
+  });
+}

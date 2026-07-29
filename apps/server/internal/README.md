@@ -1,12 +1,14 @@
 # Server package map
 
-Phase 6 package responsibilities:
+Phase 13 package responsibilities:
 
 - `api`: OpenAPI-owned handlers, request IDs, structured access logs, standard
-  errors, authentication enforcement, Audit APIs, and resumable SSE.
+  errors, authentication enforcement, persistent Audit APIs, `/healthz`
+  liveness, `/readyz` persistence initialization, and outbox-backed resumable
+  SSE.
 - `auth`: bounded single-admin session, strict cookie, and CSRF validation.
-- `config`: environment parsing, deployment safety checks, and redacted
-  summaries.
+- `config`: environment parsing, deployment safety checks, database/retention
+  validation, and redacted summaries.
 - `gateway` and `guard`: independent management clients over verified upstream
   routes, with non-retried AgentGuard writes and operation deadlines.
 - `upstream`: bounded retry transport and secret-safe adapter errors.
@@ -16,16 +18,25 @@ Phase 6 package responsibilities:
   pagination, details, Setup verification, and validated console links.
 - `trust`: explicit AgentGuard identity/resource aggregation, filtering,
   pagination, label writes, and bounded in-memory detection jobs.
-- `protect`: gateway/AgentGuard policy views and guarded mutations.
+- `protect`: gateway/AgentGuard policy views and guarded mutations; confirmed
+  approval outcomes are persisted through Audit before being reported complete.
 - `audit`: independent upstream polling, normalized metrics/events/sessions,
-  exact-ID correlation, authenticated complete upstream detail, and bounded
-  summary snapshots.
-- `stream`: bounded event ring, dedupe, monotonic sequences, replay, and fan-out.
+  exact-ID correlation, authenticated complete upstream detail, source
+  checkpoints, and persistence orchestration.
+- `storage`: small interfaces plus the PostgreSQL production store, append-only
+  embedded migrations, stable event cursors, payload retention, outbox replay,
+  pruning, and an explicit memory adapter for tests/Mock only.
+- `stream`: coalesced post-commit notifications. It owns no event IDs or replay
+  buffer; `stream_outbox.sequence` is the sole SSE cursor.
 - `model`: the shared source-preserving response model.
 
-Phase 6 intentionally has no database, durable event buffer, task model, or
-payload replay. Audit polls only verified management reads; its 1000-event ring,
-scan jobs, and check tokens are ephemeral and disappear on restart. SSE replay
-means retained delivery after a sequence ID, not business-traffic replay.
-Gateway payloads are fetched only when an authenticated administrator opens one
-event; AgentGuard complete source records remain in the existing bounded ring.
+PostgreSQL is required in production and there is no automatic memory fallback.
+Normalized Audit metadata defaults to 30-day retention, outbox delivery rows to
+24 hours, and payload storage to disabled. A positive payload retention opts
+complete AgentGuard/approval records into a separate table; list, overview, and
+SSE responses remain summary-only. Scan jobs and rule-check tokens are still
+ephemeral. SSE replay is delivery recovery, not agent business-traffic replay.
+
+The persisted checkpoint is an observed watermark. The verified upstream Audit
+reads do not provide complete request-side historical cursors, so it cannot
+guarantee recovery after data has aged out of an upstream's bounded window.

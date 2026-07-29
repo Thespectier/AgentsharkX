@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/Thespectier/AgentsharkX/apps/server/internal/model"
+	"github.com/Thespectier/AgentsharkX/apps/server/internal/storage"
+	"github.com/Thespectier/AgentsharkX/apps/server/internal/storage/memory"
 	"github.com/Thespectier/AgentsharkX/apps/server/internal/stream"
 )
 
@@ -41,6 +43,15 @@ type fakeGuard struct {
 	audit      model.AuditFeed
 	sessions   []model.AuditSession
 	trafficErr error
+}
+
+type failingPersistStore struct {
+	*memory.Store
+	err error
+}
+
+func (store failingPersistStore) PersistEvents(context.Context, []model.UnifiedEvent, *storage.Checkpoint) ([]storage.PersistResult, error) {
+	return nil, store.err
 }
 
 func (fake fakeGuard) Traffic(context.Context, int) (model.AuditFeed, error) {
@@ -91,9 +102,8 @@ func TestRefreshPreservesSourcesVerifiesExactIDsAndPublishesAfterSnapshot(t *tes
 	if !ok || detail.Raw == nil {
 		t.Fatalf("normalized internal detail not retained: %#v ok=%t", detail, ok)
 	}
-	_, replay, unsubscribe := hub.Subscribe(0)
-	defer unsubscribe()
-	if len(replay) != 2 || replay[0].Event.Raw != nil {
+	replay, err := service.Outbox().ReplayAfter(t.Context(), 0, 10)
+	if err != nil || len(replay.Messages) != 2 || replay.Messages[0].Event.Raw != nil {
 		t.Fatalf("unexpected SSE replay: %#v", replay)
 	}
 }
@@ -124,6 +134,141 @@ func TestRefreshPreservesEmptyArrayContract(t *testing.T) {
 	snapshot := service.Refresh(t.Context())
 	if snapshot.Data.Metrics == nil || snapshot.Data.Trend == nil || snapshot.Data.Events == nil || snapshot.Data.Sessions == nil {
 		t.Fatalf("empty audit collections must serialize as arrays: %#v", snapshot.Data)
+	}
+}
+
+func TestPersistenceFailureDoesNotNotifyOrFallBackToMemory(t *testing.T) {
+	t.Parallel()
+	now := time.Now().UTC()
+	hub := stream.NewHub()
+	notifications, unsubscribe := hub.Subscribe()
+	defer unsubscribe()
+	store := failingPersistStore{
+		Store: memory.New(memory.Options{}),
+		err:   errors.New("database transaction failed"),
+	}
+	service := NewPersistent(
+		fakeGateway{feed: model.AuditFeed{
+			Status: "available",
+			Events: []model.UnifiedEvent{auditEvent(model.SourceAgentGateway, "gateway:failed", now, "", "")},
+		}},
+		fakeGuard{audit: model.AuditFeed{Status: "unavailable", Reason: "not configured"}},
+		hub,
+		store,
+	)
+
+	snapshot := service.Refresh(t.Context())
+	if !snapshot.Meta.Partial || len(snapshot.Data.Events) != 0 {
+		t.Fatalf("failed transaction leaked into Audit state: %#v", snapshot)
+	}
+	select {
+	case <-notifications:
+		t.Fatal("failed transaction notified SSE readers")
+	default:
+	}
+	replay, err := store.ReplayAfter(t.Context(), 0, 10)
+	if err != nil || len(replay.Messages) != 0 {
+		t.Fatalf("failed transaction wrote an outbox message: %#v err=%v", replay, err)
+	}
+}
+
+func TestRestoreKeepsCheckpointAndDoesNotDuplicateOutbox(t *testing.T) {
+	t.Parallel()
+	now := time.Now().UTC()
+	event := auditEvent(model.SourceAgentGateway, "gateway:restart", now, "", "")
+	store := memory.New(memory.Options{})
+	first := NewPersistent(
+		fakeGateway{feed: model.AuditFeed{Status: "available", Events: []model.UnifiedEvent{event}}},
+		fakeGuard{audit: model.AuditFeed{Status: "unavailable", Reason: "not configured"}},
+		nil,
+		store,
+	)
+	first.Refresh(t.Context())
+	checkpoint, err := store.GetCheckpoint(t.Context(), "agentgateway.logs")
+	if err != nil || checkpoint.LastSuccessAt == nil || len(checkpoint.Cursor) == 0 {
+		t.Fatalf("checkpoint was not persisted: %#v err=%v", checkpoint, err)
+	}
+
+	restarted := NewPersistent(
+		fakeGateway{feed: model.AuditFeed{Status: "available", Events: []model.UnifiedEvent{event}}},
+		fakeGuard{audit: model.AuditFeed{Status: "unavailable", Reason: "not configured"}},
+		nil,
+		store,
+	)
+	if err := restarted.Restore(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	page, err := restarted.Events(t.Context(), "", "", 0)
+	if err != nil || len(page.Data.Items) != 1 {
+		t.Fatalf("restart did not restore history: %#v err=%v", page, err)
+	}
+	restarted.Refresh(t.Context())
+	replay, err := store.ReplayAfter(t.Context(), 0, 10)
+	if err != nil || replay.Latest != 1 || len(replay.Messages) != 1 {
+		t.Fatalf("repeat poll duplicated outbox after restart: %#v err=%v", replay, err)
+	}
+}
+
+func TestSuccessfulEmptyPollPreservesLastObservedCheckpoint(t *testing.T) {
+	t.Parallel()
+	store := memory.New(memory.Options{})
+	service := NewPersistent(fakeGateway{}, fakeGuard{}, nil, store)
+	event := auditEvent(model.SourceAgentGateway, "gateway:checkpoint", time.Now().UTC(), "", "")
+	if _, err := service.persistSource(t.Context(), "agentgateway.logs", []model.UnifiedEvent{event}); err != nil {
+		t.Fatal(err)
+	}
+	before, err := store.GetCheckpoint(t.Context(), "agentgateway.logs")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.persistSource(t.Context(), "agentgateway.logs", nil); err != nil {
+		t.Fatal(err)
+	}
+	after, err := store.GetCheckpoint(t.Context(), "agentgateway.logs")
+	if err != nil || string(after.Cursor) != string(before.Cursor) || after.LastSuccessAt == nil || after.LastError != "" {
+		t.Fatalf("empty success replaced checkpoint: before=%#v after=%#v err=%v", before, after, err)
+	}
+}
+
+func TestPersistentReadinessRequiresSuccessfulRestore(t *testing.T) {
+	t.Parallel()
+	service := NewPersistent(fakeGateway{}, fakeGuard{}, nil, memory.New(memory.Options{}))
+	if err := service.Ready(t.Context()); !errors.Is(err, ErrStorageUnavailable) {
+		t.Fatalf("readiness before restore = %v", err)
+	}
+	if err := service.Restore(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.Ready(t.Context()); err != nil {
+		t.Fatalf("readiness after restore = %v", err)
+	}
+}
+
+func TestEventsUsesDefaultAndMaximumPageLimits(t *testing.T) {
+	t.Parallel()
+	now := time.Now().UTC()
+	store := memory.New(memory.Options{})
+	events := make([]model.UnifiedEvent, 130)
+	for index := range events {
+		events[index] = auditEvent(
+			model.SourceAgentGateway,
+			fmt.Sprintf("gateway:page-%03d", index),
+			now.Add(time.Duration(index)*time.Second),
+			"",
+			"",
+		)
+	}
+	if _, err := store.PersistEvents(t.Context(), events, nil); err != nil {
+		t.Fatal(err)
+	}
+	service := NewPersistent(fakeGateway{}, fakeGuard{}, nil, store)
+	defaultPage, err := service.Events(t.Context(), "", "", 0)
+	if err != nil || len(defaultPage.Data.Items) != 25 || defaultPage.Data.NextCursor == nil {
+		t.Fatalf("default page limit = %d, cursor=%v, err=%v", len(defaultPage.Data.Items), defaultPage.Data.NextCursor, err)
+	}
+	maximumPage, err := service.Events(t.Context(), "", "", 500)
+	if err != nil || len(maximumPage.Data.Items) != 100 || maximumPage.Data.NextCursor == nil {
+		t.Fatalf("maximum page limit = %d, cursor=%v, err=%v", len(maximumPage.Data.Items), maximumPage.Data.NextCursor, err)
 	}
 }
 
@@ -295,7 +440,9 @@ func TestDeniedApprovalBecomesAuditEvidenceAndUpdatesDenyMetrics(t *testing.T) {
 		CreatedAt:       now.Add(-2 * time.Second),
 	}
 
-	service.RecordApprovalResolution(approval, "deny", "operator explanation", resolvedAt)
+	if err := service.RecordApprovalResolution(t.Context(), approval, "deny", "operator explanation", resolvedAt); err != nil {
+		t.Fatal(err)
+	}
 
 	snapshot := service.Snapshot()
 	if len(snapshot.Data.Events) != 2 || snapshot.Data.Events[0].Kind != "approval" ||

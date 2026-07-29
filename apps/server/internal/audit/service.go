@@ -4,28 +4,31 @@ package audit
 
 import (
 	"context"
-	"encoding/base64"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"sort"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/Thespectier/AgentsharkX/apps/server/internal/gateway"
 	"github.com/Thespectier/AgentsharkX/apps/server/internal/model"
+	"github.com/Thespectier/AgentsharkX/apps/server/internal/storage"
+	"github.com/Thespectier/AgentsharkX/apps/server/internal/storage/memory"
 	"github.com/Thespectier/AgentsharkX/apps/server/internal/stream"
 )
 
 const (
 	fetchLimit    = 500
-	eventCapacity = stream.DefaultCapacity
+	eventCapacity = 1000
 )
 
 var (
-	ErrInvalidCursor     = errors.New("invalid audit cursor")
-	ErrEventNotFound     = errors.New("audit event was not found")
-	ErrDetailUnavailable = errors.New("complete audit detail is unavailable")
+	ErrInvalidCursor      = errors.New("invalid audit cursor")
+	ErrEventNotFound      = errors.New("audit event was not found")
+	ErrDetailUnavailable  = errors.New("complete audit detail is unavailable")
+	ErrStorageUnavailable = errors.New("audit storage is unavailable")
 )
 
 type Gateway interface {
@@ -45,12 +48,17 @@ type Guard interface {
 
 type Service struct {
 	mu               sync.RWMutex
+	updateMu         sync.Mutex
 	gateway          Gateway
 	guard            Guard
 	stream           *stream.Hub
+	store            storage.AuditStore
 	links            model.ConsoleLinks
 	data             model.AuditData
 	meta             model.Meta
+	storageErr       error
+	initialized      bool
+	rawDetails       map[string]map[string]any
 	resolutions      []approvalResolution
 	resolutionKeys   map[string]struct{}
 	lastWindow       model.TrendWindow
@@ -65,18 +73,27 @@ type approvalResolution struct {
 }
 
 func New(gateway Gateway, guard Guard, hub *stream.Hub, links ...model.ConsoleLinks) *Service {
+	service := NewPersistent(gateway, guard, hub, memory.New(memory.Options{PayloadRetention: 24 * time.Hour}), links...)
+	service.initialized = true
+	return service
+}
+
+func NewPersistent(gateway Gateway, guard Guard, hub *stream.Hub, store storage.AuditStore, links ...model.ConsoleLinks) *Service {
 	if hub == nil {
 		hub = stream.NewHub()
+	}
+	if store == nil {
+		panic("audit persistence store is required")
 	}
 	var consoleLinks model.ConsoleLinks
 	if len(links) > 0 {
 		consoleLinks = links[0]
 	}
 	return &Service{
-		gateway: gateway, guard: guard, stream: hub, links: consoleLinks,
+		gateway: gateway, guard: guard, stream: hub, store: store, links: consoleLinks,
 		data:        model.AuditData{Metrics: []model.Metric{}, Trend: []model.TrendPoint{}, Events: []model.UnifiedEvent{}, Sessions: []model.AuditSession{}, Links: consoleLinks},
 		meta:        model.Meta{FetchedAt: time.Now().UTC(), SourceFailures: []model.SourceFailure{}},
-		resolutions: []approvalResolution{}, resolutionKeys: make(map[string]struct{}),
+		resolutions: []approvalResolution{}, resolutionKeys: make(map[string]struct{}), rawDetails: make(map[string]map[string]any),
 	}
 }
 
@@ -121,6 +138,8 @@ func (service *Service) Refresh(ctx context.Context) model.AuditEnvelope {
 		guardResultValue.sessions, guardResultValue.sessionsErr = service.guard.AuditSessions(ctx)
 	}()
 	wait.Wait()
+	service.updateMu.Lock()
+	defer service.updateMu.Unlock()
 
 	failures := make([]model.SourceFailure, 0, 5)
 	if gatewayResultValue.trafficErr != nil {
@@ -145,17 +164,73 @@ func (service *Service) Refresh(ctx context.Context) model.AuditEnvelope {
 
 	incoming := append([]model.UnifiedEvent{}, gatewayResultValue.traffic.Events...)
 	incoming = append(incoming, guardResultValue.audit.Events...)
-
-	service.mu.Lock()
+	service.mu.RLock()
 	previous := cloneData(service.data)
 	resolutions := append([]approvalResolution(nil), service.resolutions...)
+	service.mu.RUnlock()
 	for _, resolution := range resolutions {
 		incoming = append(incoming, resolution.event)
 	}
 	verifySharedIdentifiers(incoming)
-	merged, fresh := mergeEvents(previous.Events, incoming, eventCapacity)
+
+	committedChanges := false
+	committedRawEvents := make([]model.UnifiedEvent, 0, len(incoming))
+	for _, resolution := range resolutions {
+		committedRawEvents = append(committedRawEvents, resolution.event)
+	}
+	var storageFailure error
+	if gatewayResultValue.trafficErr == nil && gatewayResultValue.traffic.Status == "available" {
+		results, err := service.persistSource(ctx, "agentgateway.logs", gatewayResultValue.traffic.Events)
+		if err != nil {
+			storageFailure = err
+			failures = append(failures, storageFailureFor(model.SourceAgentGateway))
+		} else {
+			committedChanges = committedChanges || hasChanges(results)
+			committedRawEvents = append(committedRawEvents, gatewayResultValue.traffic.Events...)
+		}
+	} else {
+		_ = service.recordCheckpointFailure(ctx, "agentgateway.logs", checkpointError(gatewayResultValue.trafficErr, gatewayResultValue.traffic.Reason))
+	}
+	if guardResultValue.auditErr == nil && guardResultValue.audit.Status == "available" {
+		results, err := service.persistSource(ctx, "agentguard.audit", guardResultValue.audit.Events)
+		if err != nil {
+			storageFailure = err
+			failures = append(failures, storageFailureFor(model.SourceAgentGuard))
+		} else {
+			committedChanges = committedChanges || hasChanges(results)
+			committedRawEvents = append(committedRawEvents, guardResultValue.audit.Events...)
+		}
+	} else {
+		_ = service.recordCheckpointFailure(ctx, "agentguard.audit", checkpointError(guardResultValue.auditErr, guardResultValue.audit.Reason))
+	}
+	storedEvents := previous.Events
+	if page, err := service.store.ListEvents(ctx, storage.EventFilter{Limit: eventCapacity}); err != nil {
+		storageFailure = err
+		failures = append(failures, storageFailureFor(""))
+	} else {
+		storedEvents = page.Items
+	}
+
+	service.mu.Lock()
+	rawCandidates := make(map[string]map[string]any, len(committedRawEvents))
+	for _, event := range committedRawEvents {
+		rawCandidates[eventKey(event)] = cloneRaw(event.Raw)
+	}
+	retainedRaw := make(map[string]map[string]any, len(storedEvents))
+	for _, event := range storedEvents {
+		key := eventKey(event)
+		if raw, observed := rawCandidates[key]; observed {
+			if raw != nil {
+				retainedRaw[key] = raw
+			}
+		} else if raw := service.rawDetails[key]; raw != nil {
+			retainedRaw[key] = raw
+		}
+	}
+	service.rawDetails = retainedRaw
+	service.rebuildResolutionsFromEvents(storedEvents)
 	sessions := append([]model.AuditSession{}, guardResultValue.sessions...)
-	applySessionCounts(sessions, merged)
+	applySessionCounts(sessions, storedEvents)
 	metrics := buildMetrics(window, gatewayResultValue, guardResultValue)
 	applyApprovalResolutionMetrics(
 		metrics,
@@ -170,17 +245,17 @@ func (service *Service) Refresh(ctx context.Context) model.AuditEnvelope {
 	meta := model.Meta{
 		FetchedAt: time.Now().UTC(), Partial: len(failures) > 0, SourceFailures: failures,
 	}
-	data := model.AuditData{Metrics: metrics, Trend: trend, Events: merged, Sessions: sessions, Links: service.links}
+	data := model.AuditData{Metrics: metrics, Trend: trend, Events: storedEvents, Sessions: sessions, Links: service.links}
 	service.data = cloneData(data)
 	service.meta = cloneMeta(meta)
+	service.storageErr = storageFailure
 	service.lastWindow = window
 	service.lastGuardTraffic = append([]model.AuditTrafficRecord(nil), guardResultValue.traffic.Traffic...)
 	service.lastGuardAudit = append([]model.UnifiedEvent(nil), guardResultValue.audit.Events...)
 	service.mu.Unlock()
 
-	sort.Slice(fresh, func(i, j int) bool { return fresh[i].Timestamp.Before(fresh[j].Timestamp) })
-	for _, event := range fresh {
-		service.stream.Publish(withoutRaw(event))
+	if committedChanges {
+		service.stream.Notify()
 	}
 	return service.Snapshot()
 }
@@ -189,25 +264,48 @@ func (service *Service) Refresh(ctx context.Context) model.AuditEnvelope {
 // an AgentGuard approval. AgentGuard's audit feed records the initial
 // HUMAN_CHECK decision but its resolve endpoint returns only an acknowledgement,
 // so this source-labelled evidence closes that otherwise invisible transition.
-func (service *Service) RecordApprovalResolution(approval model.Approval, decision, operatorNote string, completedAt time.Time) {
+func (service *Service) RecordApprovalResolution(ctx context.Context, approval model.Approval, decision, operatorNote string, completedAt time.Time) error {
 	resolution, ok := newApprovalResolution(approval, decision, operatorNote, completedAt)
 	if !ok {
-		return
+		return nil
 	}
+	service.updateMu.Lock()
+	defer service.updateMu.Unlock()
 	key := eventKey(resolution.event)
-	service.mu.Lock()
+	service.mu.RLock()
 	if _, exists := service.resolutionKeys[key]; exists {
-		service.mu.Unlock()
-		return
+		service.mu.RUnlock()
+		return nil
 	}
+	service.mu.RUnlock()
+	results, err := service.persistSource(ctx, "agentguard.approvals", []model.UnifiedEvent{resolution.event})
+	if err != nil {
+		service.mu.Lock()
+		service.storageErr = err
+		service.mu.Unlock()
+		return fmt.Errorf("persist approval resolution: %w", err)
+	}
+	if !hasChanges(results) {
+		return nil
+	}
+	service.stream.Notify()
+	page, err := service.store.ListEvents(ctx, storage.EventFilter{Limit: eventCapacity})
+	if err != nil {
+		service.mu.Lock()
+		service.storageErr = err
+		service.mu.Unlock()
+		return fmt.Errorf("reload approval resolution: %w", err)
+	}
+	service.mu.Lock()
 	service.resolutionKeys[key] = struct{}{}
 	service.resolutions = append(service.resolutions, resolution)
 	if len(service.resolutions) > eventCapacity {
 		service.resolutions = service.resolutions[len(service.resolutions)-eventCapacity:]
 		service.rebuildResolutionKeys()
 	}
-	merged, fresh := mergeEvents(service.data.Events, []model.UnifiedEvent{resolution.event}, eventCapacity)
-	service.data.Events = merged
+	service.data.Events = page.Items
+	service.rawDetails[key] = cloneRaw(resolution.event.Raw)
+	service.trimRawDetails(page.Items)
 	if approval.SessionID != "" {
 		for index := range service.data.Sessions {
 			if service.data.Sessions[index].UpstreamID != approval.SessionID {
@@ -237,11 +335,10 @@ func (service *Service) RecordApprovalResolution(approval model.Approval, decisi
 		incrementDeniedTrend(service.data.Trend, window, completedAt)
 	}
 	service.meta.FetchedAt = completedAt.UTC()
+	service.storageErr = nil
 	service.mu.Unlock()
 
-	if len(fresh) == 1 {
-		service.stream.Publish(withoutRaw(resolution.event))
-	}
+	return nil
 }
 
 func (service *Service) rebuildResolutionKeys() {
@@ -261,6 +358,44 @@ func (service *Service) Snapshot() model.AuditEnvelope {
 	return model.AuditEnvelope{Data: data, Meta: cloneMeta(service.meta)}
 }
 
+// Restore loads the durable event window before the first upstream poll.
+func (service *Service) Restore(ctx context.Context) error {
+	service.updateMu.Lock()
+	defer service.updateMu.Unlock()
+	service.mu.Lock()
+	service.initialized = false
+	service.mu.Unlock()
+	page, err := service.store.ListEvents(ctx, storage.EventFilter{Limit: eventCapacity})
+	if err != nil {
+		service.mu.Lock()
+		service.storageErr = err
+		service.mu.Unlock()
+		return fmt.Errorf("restore audit events: %w", err)
+	}
+	service.mu.Lock()
+	service.data.Events = page.Items
+	service.rebuildResolutionsFromEvents(page.Items)
+	service.storageErr = nil
+	service.initialized = true
+	service.mu.Unlock()
+	return nil
+}
+
+func (service *Service) Ready(ctx context.Context) error {
+	if err := service.store.Ready(ctx); err != nil {
+		return fmt.Errorf("%w: %v", ErrStorageUnavailable, err)
+	}
+	service.mu.RLock()
+	initialized := service.initialized
+	service.mu.RUnlock()
+	if !initialized {
+		return fmt.Errorf("%w: Audit history has not been restored", ErrStorageUnavailable)
+	}
+	return nil
+}
+
+func (service *Service) Outbox() storage.OutboxStore { return service.store }
+
 func (service *Service) OperationalSnapshot() model.OperationalSnapshot {
 	snapshot := service.Snapshot()
 	return model.OperationalSnapshot{
@@ -273,6 +408,9 @@ func (service *Service) Find(source model.Source, eventID string) (model.Unified
 	defer service.mu.RUnlock()
 	for _, event := range service.data.Events {
 		if event.Source == source && (event.ID == eventID || event.RawRef.ID == eventID) {
+			if raw := service.rawDetails[eventKey(event)]; raw != nil {
+				event.Raw = cloneRaw(raw)
+			}
 			return event, true
 		}
 	}
@@ -283,11 +421,22 @@ func (service *Service) Find(source model.Source, eventID string) (model.Unified
 // detail request. Gateway payloads are fetched on demand and are never retained
 // in the poller's event ring or published over SSE.
 func (service *Service) Detail(ctx context.Context, source model.Source, eventID string) (model.UnifiedEvent, error) {
-	event, ok := service.Find(source, eventID)
-	if !ok {
+	event, err := service.store.GetEvent(ctx, source, eventID)
+	if errors.Is(err, storage.ErrNotFound) {
 		return model.UnifiedEvent{}, ErrEventNotFound
 	}
+	if err != nil {
+		return model.UnifiedEvent{}, fmt.Errorf("%w: %v", ErrStorageUnavailable, err)
+	}
+	service.mu.RLock()
+	if raw := service.rawDetails[eventKey(event)]; raw != nil {
+		event.Raw = cloneRaw(raw)
+	}
+	service.mu.RUnlock()
 	if source != model.SourceAgentGateway {
+		if event.Raw == nil {
+			return model.UnifiedEvent{}, ErrDetailUnavailable
+		}
 		return event, nil
 	}
 	detailClient, ok := service.gateway.(gatewayDetail)
@@ -305,38 +454,21 @@ func (service *Service) Detail(ctx context.Context, source model.Source, eventID
 	return event, nil
 }
 
-func (service *Service) Events(source model.Source, cursor string, limit int) (model.EventsEnvelope, error) {
-	snapshot := service.Snapshot()
-	items := make([]model.UnifiedEvent, 0, len(snapshot.Data.Events))
-	for _, event := range snapshot.Data.Events {
-		if source == "" || event.Source == source {
-			items = append(items, event)
-		}
-	}
-	offset := 0
-	if cursor != "" {
-		decoded, err := base64.RawURLEncoding.DecodeString(cursor)
-		if err != nil {
-			return model.EventsEnvelope{}, ErrInvalidCursor
-		}
-		offset, err = strconv.Atoi(string(decoded))
-		if err != nil || offset < 0 || offset > len(items) {
-			return model.EventsEnvelope{}, ErrInvalidCursor
-		}
-	}
+func (service *Service) Events(ctx context.Context, source model.Source, cursor string, limit int) (model.EventsEnvelope, error) {
 	if limit < 1 {
 		limit = 25
-	}
-	if limit > 100 {
+	} else if limit > 100 {
 		limit = 100
 	}
-	end := min(offset+limit, len(items))
-	page := model.EventsPage{Items: append([]model.UnifiedEvent(nil), items[offset:end]...), Total: len(items)}
-	if end < len(items) {
-		next := base64.RawURLEncoding.EncodeToString([]byte(strconv.Itoa(end)))
-		page.NextCursor = &next
+	page, err := service.store.ListEvents(ctx, storage.EventFilter{Source: source, Cursor: cursor, Limit: limit})
+	if errors.Is(err, storage.ErrInvalidCursor) {
+		return model.EventsEnvelope{}, ErrInvalidCursor
 	}
-	return model.EventsEnvelope{Data: page, Meta: snapshot.Meta}, nil
+	if err != nil {
+		return model.EventsEnvelope{}, fmt.Errorf("%w: %v", ErrStorageUnavailable, err)
+	}
+	snapshot := service.Snapshot()
+	return model.EventsEnvelope{Data: model.EventsPage{Items: page.Items, NextCursor: page.NextCursor, Total: page.Total}, Meta: snapshot.Meta}, nil
 }
 
 func failure(source model.Source, capability string) model.SourceFailure {
@@ -632,7 +764,7 @@ func newApprovalResolution(
 		Subject: &model.EventSubject{
 			AgentID: approval.AgentUpstreamID, PrincipalID: approval.UserID, SessionID: approval.SessionID,
 		},
-		Target:      &model.EventTarget{Tool: approval.Tool},
+		Target:      &model.EventTarget{Tool: approval.Tool, Resource: approval.EventID},
 		Phase:       phase,
 		Action:      action,
 		Decision:    action,
@@ -760,6 +892,177 @@ func bucketIndex(starts []time.Time, duration time.Duration, timestamp time.Time
 		}
 	}
 	return -1
+}
+
+func (service *Service) RecordHealth(ctx context.Context, health model.SourceHealth) error {
+	service.updateMu.Lock()
+	defer service.updateMu.Unlock()
+	event := HealthEvent(health)
+	results, err := service.persistSource(ctx, string(health.Source)+".health", []model.UnifiedEvent{event})
+	if err != nil {
+		service.mu.Lock()
+		service.storageErr = err
+		service.mu.Unlock()
+		return fmt.Errorf("persist health event: %w", err)
+	}
+	if hasChanges(results) {
+		service.stream.Notify()
+	}
+	page, err := service.store.ListEvents(ctx, storage.EventFilter{Limit: eventCapacity})
+	if err != nil {
+		service.mu.Lock()
+		service.storageErr = err
+		service.mu.Unlock()
+		return fmt.Errorf("reload health event: %w", err)
+	}
+	service.mu.Lock()
+	service.data.Events = page.Items
+	service.trimRawDetails(page.Items)
+	service.meta.FetchedAt = event.Timestamp
+	service.storageErr = nil
+	service.mu.Unlock()
+	return nil
+}
+
+func HealthEvent(health model.SourceHealth) model.UnifiedEvent {
+	severity := "info"
+	if health.Status == model.HealthDown {
+		severity = "high"
+	} else if health.Status != model.HealthHealthy {
+		severity = "medium"
+	}
+	checkedAt := health.CheckedAt
+	if checkedAt.IsZero() {
+		checkedAt = time.Now().UTC()
+	}
+	id := string(health.Source) + "-health-" + checkedAt.Format("20060102T150405.000000000Z")
+	return model.UnifiedEvent{
+		ID: id, Timestamp: checkedAt.UTC(), Source: health.Source, Kind: "health", Severity: severity,
+		Action: string(health.Status), Summary: health.Label + " is " + string(health.Status),
+		RawRef: model.RawRef{Source: health.Source, ID: id},
+	}
+}
+
+func (service *Service) persistSource(ctx context.Context, checkpointSource string, events []model.UnifiedEvent) ([]storage.PersistResult, error) {
+	now := time.Now().UTC()
+	var document json.RawMessage
+	if len(events) == 0 {
+		checkpoint, err := service.store.GetCheckpoint(ctx, checkpointSource)
+		if err == nil {
+			document = append(json.RawMessage(nil), checkpoint.Cursor...)
+		} else if !errors.Is(err, storage.ErrNotFound) {
+			return nil, err
+		}
+	}
+	cursor := map[string]any{
+		"lastObservedEventId":  nil,
+		"lastObservedPublicId": nil,
+		"lastObservedAt":       nil,
+	}
+	if len(events) > 0 {
+		latest := events[0]
+		for _, event := range events[1:] {
+			if event.Timestamp.After(latest.Timestamp) || (event.Timestamp.Equal(latest.Timestamp) && event.ID > latest.ID) {
+				latest = event
+			}
+		}
+		cursor["lastObservedEventId"] = latest.RawRef.ID
+		cursor["lastObservedPublicId"] = latest.ID
+		cursor["lastObservedAt"] = latest.Timestamp.UTC()
+	}
+	if len(document) == 0 {
+		var err error
+		document, err = json.Marshal(cursor)
+		if err != nil {
+			return nil, err
+		}
+	}
+	checkpoint := storage.Checkpoint{
+		Source: checkpointSource, Cursor: document, LastAttemptAt: &now, LastSuccessAt: &now,
+	}
+	return service.store.PersistEvents(ctx, events, &checkpoint)
+}
+
+func (service *Service) recordCheckpointFailure(ctx context.Context, source, message string) error {
+	now := time.Now().UTC()
+	checkpoint, err := service.store.GetCheckpoint(ctx, source)
+	if errors.Is(err, storage.ErrNotFound) {
+		checkpoint = storage.Checkpoint{Source: source, Cursor: json.RawMessage(`{}`)}
+	} else if err != nil {
+		return err
+	}
+	checkpoint.LastAttemptAt = &now
+	checkpoint.LastError = message
+	return service.store.SaveCheckpoint(ctx, checkpoint)
+}
+
+func (service *Service) rebuildResolutionsFromEvents(events []model.UnifiedEvent) {
+	resolutions := make([]approvalResolution, 0)
+	keys := make(map[string]struct{})
+	for _, event := range events {
+		if event.Source != model.SourceAgentGuard || event.Kind != "approval" {
+			continue
+		}
+		originalEventID := ""
+		if event.Target != nil {
+			originalEventID = event.Target.Resource
+		}
+		resolutions = append(resolutions, approvalResolution{
+			event: event, originalEventID: originalEventID,
+			record: model.AuditTrafficRecord{Timestamp: event.Timestamp, Action: event.Decision},
+		})
+		keys[eventKey(event)] = struct{}{}
+	}
+	service.resolutions = resolutions
+	service.resolutionKeys = keys
+}
+
+func hasChanges(results []storage.PersistResult) bool {
+	for _, result := range results {
+		if result.Changed {
+			return true
+		}
+	}
+	return false
+}
+
+func checkpointError(err error, reason string) string {
+	if reason != "" {
+		return reason
+	}
+	if err != nil {
+		return err.Error()
+	}
+	return "capability is unavailable"
+}
+
+func storageFailureFor(source model.Source) model.SourceFailure {
+	return model.SourceFailure{Source: source, Code: "DATABASE_UNAVAILABLE", Message: "persistent Audit storage is unavailable"}
+}
+
+func cloneRaw(raw map[string]any) map[string]any {
+	if raw == nil {
+		return nil
+	}
+	document, _ := json.Marshal(raw)
+	decoder := json.NewDecoder(strings.NewReader(string(document)))
+	decoder.UseNumber()
+	var clone map[string]any
+	_ = decoder.Decode(&clone)
+	return clone
+}
+
+// trimRawDetails keeps ephemeral authenticated detail bounded to the same
+// current event window as the in-memory snapshot. The caller holds service.mu.
+func (service *Service) trimRawDetails(events []model.UnifiedEvent) {
+	retained := make(map[string]map[string]any, len(events))
+	for _, event := range events {
+		key := eventKey(event)
+		if raw := service.rawDetails[key]; raw != nil {
+			retained[key] = raw
+		}
+	}
+	service.rawDetails = retained
 }
 
 func cloneData(data model.AuditData) model.AuditData {

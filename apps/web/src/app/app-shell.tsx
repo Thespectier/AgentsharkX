@@ -19,7 +19,7 @@ import {
 import { useEffect, useState } from "react";
 
 import { isMockMode, requestOperation } from "../lib/api";
-import { synchronizeLiveEvent } from "../lib/query-sync";
+import { synchronizeLiveEvent, synchronizeStreamReset } from "../lib/query-sync";
 import { useI18n } from "../lib/i18n";
 import { LiveEventsContext, useLiveEvents } from "../lib/use-live-events";
 import type { Scenario } from "../types";
@@ -124,7 +124,10 @@ export function AppShell() {
   useEffect(() => {
     const event = live.events[0];
     if (event) void synchronizeLiveEvent(queryClient, event);
-  }, [live.events[0]?.id, queryClient]);
+  }, [live.revision, queryClient]);
+  useEffect(() => {
+    if (live.resetRevision > 0) void synchronizeStreamReset(queryClient);
+  }, [live.resetRevision, queryClient]);
 
   const pending = approvals.data?.data.total ?? 0;
   const health = overview.data?.data.health ?? [];

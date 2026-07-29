@@ -10,20 +10,27 @@ func TestLoadValidConfigurationAndRedactsSecrets(t *testing.T) {
 	t.Parallel()
 
 	values := map[string]string{
-		"AGENTSHARK_LISTEN_ADDR":        "127.0.0.1:8080",
-		"AGENTSHARK_ENVIRONMENT":        "local",
-		"AGENTSHARK_ADMIN_TOKEN":        "admin-token-with-enough-entropy",
-		"AGENTSHARK_COOKIE_SECURE":      "false",
-		"AGENTGATEWAY_BASE_URL":         "http://gateway.test:15000",
-		"AGENTGATEWAY_ADMIN_TOKEN":      "gateway-secret",
-		"AGENTGATEWAY_CONSOLE_URL":      "http://localhost:15000/ui",
-		"AGENTGUARD_BASE_URL":           "http://guard.test:38080",
-		"AGENTGUARD_ADMIN_TOKEN":        "guard-secret-with-enough-entropy",
-		"AGENTGUARD_CONSOLE_URL":        "http://localhost:38008",
-		"AGENTSHARK_UPSTREAM_TIMEOUT":   "750ms",
-		"AGENTSHARK_SCAN_TIMEOUT":       "45s",
-		"AGENTSHARK_UPSTREAM_RETRY_MAX": "2",
-		"AGENTSHARK_POLL_INTERVAL":      "3s",
+		"AGENTSHARK_LISTEN_ADDR":              "127.0.0.1:8080",
+		"AGENTSHARK_ENVIRONMENT":              "local",
+		"AGENTSHARK_ADMIN_TOKEN":              "admin-token-with-enough-entropy",
+		"AGENTSHARK_COOKIE_SECURE":            "false",
+		"AGENTGATEWAY_BASE_URL":               "http://gateway.test:15000",
+		"AGENTGATEWAY_ADMIN_TOKEN":            "gateway-secret",
+		"AGENTGATEWAY_CONSOLE_URL":            "http://localhost:15000/ui",
+		"AGENTGUARD_BASE_URL":                 "http://guard.test:38080",
+		"AGENTGUARD_ADMIN_TOKEN":              "guard-secret-with-enough-entropy",
+		"AGENTGUARD_CONSOLE_URL":              "http://localhost:38008",
+		"AGENTSHARK_UPSTREAM_TIMEOUT":         "750ms",
+		"AGENTSHARK_SCAN_TIMEOUT":             "45s",
+		"AGENTSHARK_UPSTREAM_RETRY_MAX":       "2",
+		"AGENTSHARK_POLL_INTERVAL":            "3s",
+		"AGENTSHARK_DATABASE_URL":             "postgresql://agentshark:database-secret@postgres.test:5432/agentshark?sslmode=disable",
+		"AGENTSHARK_DATABASE_MAX_CONNS":       "12",
+		"AGENTSHARK_DATABASE_MIN_CONNS":       "2",
+		"AGENTSHARK_DATABASE_CONNECT_TIMEOUT": "4s",
+		"AGENTSHARK_EVENT_RETENTION":          "720h",
+		"AGENTSHARK_PAYLOAD_RETENTION":        "24h",
+		"AGENTSHARK_OUTBOX_RETENTION":         "12h",
 	}
 
 	cfg, err := Load(func(key string) (string, bool) {
@@ -41,13 +48,32 @@ func TestLoadValidConfigurationAndRedactsSecrets(t *testing.T) {
 	}
 
 	safe := cfg.SafeSummary()
-	for _, secret := range []string{values["AGENTSHARK_ADMIN_TOKEN"], values["AGENTGATEWAY_ADMIN_TOKEN"], values["AGENTGUARD_ADMIN_TOKEN"]} {
+	for _, secret := range []string{values["AGENTSHARK_ADMIN_TOKEN"], values["AGENTGATEWAY_ADMIN_TOKEN"], values["AGENTGUARD_ADMIN_TOKEN"], "database-secret"} {
 		if strings.Contains(safe, secret) {
 			t.Fatalf("SafeSummary leaked secret %q: %s", secret, safe)
 		}
 	}
 	if strings.Contains(cfg.AdminToken.String(), values["AGENTSHARK_ADMIN_TOKEN"]) {
 		t.Fatal("Secret.String leaked its value")
+	}
+}
+
+func TestLoadRejectsMissingDatabaseAndInvalidRetention(t *testing.T) {
+	t.Parallel()
+	values := map[string]string{
+		"AGENTSHARK_LISTEN_ADDR":      "127.0.0.1:8080",
+		"AGENTSHARK_ENVIRONMENT":      "local",
+		"AGENTSHARK_ADMIN_TOKEN":      "admin-token-with-enough-entropy",
+		"AGENTGUARD_ADMIN_TOKEN":      "guard-secret-with-enough-entropy",
+		"AGENTSHARK_EVENT_RETENTION":  "1h",
+		"AGENTSHARK_OUTBOX_RETENTION": "2h",
+	}
+	_, err := Load(func(key string) (string, bool) {
+		value, ok := values[key]
+		return value, ok
+	})
+	if err == nil || !strings.Contains(err.Error(), "AGENTSHARK_DATABASE_URL") || !strings.Contains(err.Error(), "AGENTSHARK_OUTBOX_RETENTION") {
+		t.Fatalf("expected database validation errors, got %v", err)
 	}
 }
 

@@ -6,8 +6,10 @@ import { getScenario, withScenario } from "./api";
 export function useLiveEvents(enabled = true) {
   const [events, setEvents] = useState<UnifiedEvent[]>([]);
   const [status, setStatus] = useState<"connecting" | "live" | "paused">("connecting");
-  const seen = useRef(new Set<string>());
-  const seenOrder = useRef<string[]>([]);
+  const [revision, setRevision] = useState(0);
+  const [resetRevision, setResetRevision] = useState(0);
+  const seenDeliveries = useRef(new Set<string>());
+  const deliveryOrder = useRef<string[]>([]);
 
   useEffect(() => {
     if (!enabled || getScenario() === "loading" || getScenario() === "error") {
@@ -23,19 +25,26 @@ export function useLiveEvents(enabled = true) {
       } catch {
         return;
       }
-      if (seen.current.has(event.id)) return;
-      seen.current.add(event.id);
-      seenOrder.current.push(event.id);
-      if (seenOrder.current.length > 1000) {
-        const expired = seenOrder.current.shift();
-        if (expired) seen.current.delete(expired);
-      }
+      if (!rememberDelivery(message.lastEventId, seenDeliveries.current, deliveryOrder.current))
+        return;
       setEvents((current) => mergeLiveEvents([event], current));
+      setRevision((current) => current + 1);
+      setStatus(document.hidden ? "paused" : "live");
+    };
+    const handleReset = (message: MessageEvent<string>) => {
+      if (!rememberDelivery(message.lastEventId, seenDeliveries.current, deliveryOrder.current))
+        return;
+      seenDeliveries.current.clear();
+      deliveryOrder.current = [];
+      rememberDelivery(message.lastEventId, seenDeliveries.current, deliveryOrder.current);
+      setEvents([]);
+      setResetRevision((current) => current + 1);
       setStatus(document.hidden ? "paused" : "live");
     };
     for (const name of ["traffic", "decision", "approval", "audit", "health"]) {
       source.addEventListener(name, handleEvent as EventListener);
     }
+    source.addEventListener("reset", handleReset as EventListener);
     source.onopen = () => setStatus(document.hidden ? "paused" : "live");
     source.onerror = () => setStatus(document.hidden ? "paused" : "connecting");
     const visibility = () => {
@@ -50,7 +59,7 @@ export function useLiveEvents(enabled = true) {
     };
   }, [enabled]);
 
-  return { events, status };
+  return { events, status, revision, resetRevision };
 }
 
 export type LiveEventsState = ReturnType<typeof useLiveEvents>;
@@ -71,10 +80,23 @@ export function mergeLiveEvents(
   const merged: UnifiedEvent[] = [];
   const ids = new Set<string>();
   for (const event of [...preferred, ...existing]) {
-    if (ids.has(event.id)) continue;
-    ids.add(event.id);
+    const id = `${event.source}\u0000${event.id}`;
+    if (ids.has(id)) continue;
+    ids.add(id);
     merged.push(event);
     if (merged.length === capacity) break;
   }
   return merged;
+}
+
+function rememberDelivery(id: string, seen: Set<string>, order: string[]): boolean {
+  if (!id) return true;
+  if (seen.has(id)) return false;
+  seen.add(id);
+  order.push(id);
+  if (order.length > 1000) {
+    const expired = order.shift();
+    if (expired) seen.delete(expired);
+  }
+  return true;
 }

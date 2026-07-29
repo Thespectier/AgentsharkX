@@ -3,6 +3,11 @@ set -euo pipefail
 
 root_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 preview_env="$root_dir/.env"
+action="${1:-}"
+
+if [[ "$action" == "up" ]]; then
+  "$root_dir/scripts/bootstrap-preview.sh"
+fi
 
 runtime_mode="${AGENTGATEWAY_RUNTIME_MODE:-}"
 if [[ -z "$runtime_mode" && -f "$preview_env" ]]; then
@@ -63,7 +68,7 @@ status_preview() {
   esac
 }
 
-case "${1:-}" in
+case "$action" in
   up)
     up_preview
     ;;

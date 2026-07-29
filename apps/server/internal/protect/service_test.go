@@ -46,19 +46,24 @@ type fakeApprovalRecorder struct {
 	note      string
 	timestamp time.Time
 	calls     int
+	err       error
 }
 
+func (recorder *fakeApprovalRecorder) Ready(context.Context) error { return recorder.err }
+
 func (recorder *fakeApprovalRecorder) RecordApprovalResolution(
+	_ context.Context,
 	approval model.Approval,
 	decision string,
 	note string,
 	timestamp time.Time,
-) {
+) error {
 	recorder.approval = approval
 	recorder.decision = decision
 	recorder.note = note
 	recorder.timestamp = timestamp
 	recorder.calls++
+	return recorder.err
 }
 
 func (guard *fakeGuard) TrustSnapshot(context.Context) (model.TrustSnapshot, error) {
@@ -275,5 +280,30 @@ func TestSuccessfulApprovalResolutionRecordsCompleteOperatorContext(t *testing.T
 	}
 	if !recorder.timestamp.Equal(receipt.Data.CompletedAt) {
 		t.Fatalf("recorder timestamp did not use the confirmed receipt time: %#v", recorder)
+	}
+}
+
+func TestApprovalDoesNotMutateUpstreamWhenAuditStoreIsUnavailable(t *testing.T) {
+	t.Parallel()
+	approval := model.Approval{
+		ProtectResourceBase: model.ProtectResourceBase{ID: "ticket-opaque", UpstreamID: "ticket-a"},
+	}
+	guard := &fakeGuard{approvals: []model.Approval{approval}}
+	recorder := &fakeApprovalRecorder{err: errors.New("database unavailable")}
+	service := New(fakeGateway{}, guard, model.ConsoleLinks{}, recorder)
+
+	_, err := service.ResolveApproval(
+		t.Context(),
+		"ticket-opaque",
+		"approve",
+		model.ConfirmedActionRequest{Note: "reviewed", Confirmed: true},
+	)
+	if !errors.Is(err, ErrAuditPersistence) {
+		t.Fatalf("approval error = %v", err)
+	}
+	guard.mu.Lock()
+	defer guard.mu.Unlock()
+	if guard.resolveCalls != 0 || recorder.calls != 0 {
+		t.Fatalf("upstream or recorder changed while persistence was unavailable: guard=%d recorder=%d", guard.resolveCalls, recorder.calls)
 	}
 }

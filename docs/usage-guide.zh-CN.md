@@ -1,6 +1,6 @@
 # AgentsharkX 中文使用指南
 
-本文档适用于 AgentsharkX `0.7.0 Phase 7 preview`，介绍预览环境启动、登录、
+本文档适用于 AgentsharkX `0.8.0 Phase 13 preview`，介绍预览环境启动、登录、
 真实 Agent 接入、四个工作区、日常运维、本地开发、发布验证和常见故障处理。
 
 除非特别说明，所有命令都在仓库根目录执行：
@@ -24,7 +24,8 @@ AgentsharkX 是管理平面，不在 Agent 数据平面中，因此：
 - AgentGuard 客户端应直接接入 Agent 运行时；
 - AgentsharkX 只读取两个上游的管理 API；
 - AgentsharkX 不代理 Agent 流量，不根据时间或名称推断 Agent/任务，也不实现新的规则
-  引擎、数据库、回放系统或流量采集器。
+  引擎、业务流量回放系统或流量采集器。PostgreSQL 只保存 AgentsharkX 自己的 Audit
+  归一化记录、可选详情、采集检查点和 SSE Outbox。
 
 ## 2. 快速启动预览环境
 
@@ -55,9 +56,11 @@ make preview-bootstrap
 - 创建被 Git 忽略的根目录 `.env`；
 - 创建被 Git 忽略、权限为 `0600` 的 `.agentgateway.env`；
 - 生成随机的 AgentsharkX 管理员令牌和 AgentGuard API Key；
+- 生成随机的 PostgreSQL 密码和匹配的连接 URL；
 - 将 `.env` 权限设置为 `0600`；
 - 默认把所有发布端口绑定到 `127.0.0.1`；
-- 在 `.env` 已存在时保留原文件，也不会把生成的凭据输出到终端。
+- 在 `.env` 已存在时保留原值并补充缺少的 Phase 13 数据库项，也不会把生成的凭据
+  输出到终端。
 
 不要直接使用未修改的 `deploy/example.env` 启动服务。模板中的占位令牌会被 BFF
 启动校验拒绝。
@@ -72,7 +75,7 @@ make preview-up
 
 ```text
 宿主机：官方 agentgateway v1.3.1 二进制
-Docker Compose：AgentsharkX + AgentGuard server + AgentGuard console
+Docker Compose：AgentsharkX + PostgreSQL + AgentGuard server + AgentGuard console
 ```
 
 首次启动会从官方 GitHub Release 下载当前平台的固定版本二进制到被 Git 忽略的
@@ -91,6 +94,7 @@ make preview-status
 运行或健康状态：
 
 - `agentshark`；
+- `postgres`；
 - `agentguard`；
 - `agentguard-console`。
 
@@ -133,7 +137,14 @@ curl -fsS http://127.0.0.1:8080/healthz
 { "status": "ok" }
 ```
 
-`/healthz` 只表示 AgentsharkX 进程正在提供服务，不代表两个上游均健康。分别检查上游：
+`/healthz` 只表示 AgentsharkX 进程存活。数据库就绪使用独立接口：
+
+```bash
+curl -fsS http://127.0.0.1:8080/readyz
+```
+
+预期返回 `{ "status": "ready" }`。`/readyz` 要求 PostgreSQL 可连接、内置 Migration
+全部完成，并且持久化 Audit 历史已恢复到当前服务状态；它不代表两个上游均健康。分别检查上游：
 
 ```bash
 curl -fsS http://127.0.0.1:15021/healthz/ready
@@ -359,24 +370,37 @@ Audit 独立汇总：
 AgentsharkX 只在两个来源提供完全相同且非空的 Trace ID 或 Session ID 时标记关联。
 它不会按时间窗口猜测关联关系。
 
-审计事件列表和 SSE 使用有界内存窗口，最多保留 1000 条事件，并支持恢复和去重。
-BFF 重启后，事件窗口会清空。列表、趋势和 SSE 只传输网关摘要；当已登录管理员打开
-单条 agentgateway 事件时，BFF 会按日志 ID 调用 `/api/logs/get` 并请求
-`includePayload=true`，详情返回上游提供的完整 Attributes、请求 Prompt、响应
+归一化审计事件、来源采集检查点和 SSE Outbox 都保存在 AgentsharkX 自己的
+PostgreSQL 中。事件元数据默认保留 30 天，当前指标快照仍最多读取 1000 条；历史列表
+使用固定数据库水位的 keyset 游标，所以翻页时新事件不会造成 offset 漂移。SSE 的
+`id` 只使用 Outbox 整数序号，默认保留 24 小时。BFF 重启后会按
+`Last-Event-ID` 补发尚未过期的消息；如果游标早于保留窗口或领先数据库，会发送
+`reset`，前端重新请求 REST 列表。
+
+列表、趋势和 SSE 始终只传输归一化摘要，不包含 `raw` 或 Payload。当已登录管理员
+打开单条 agentgateway 事件时，BFF 会按日志 ID 调用 `/api/logs/get` 并请求
+`includePayload=true`，详情返回上游仍提供的完整 Attributes、请求 Prompt、响应
 Completion、工具调用以及其他任意源字段。该详情同时保留请求起止时间、延迟、HTTP
 状态、操作类型、Provider/Model、Token、成本和 Trace/Span ID。
 
 AgentGuard 的审批接口成功时只返回确认结果，不会把最终 approve/deny 追加到其
-Traffic 或 Audit 接口。AgentsharkX 会在上游明确确认成功后，将这次审批处理保存为
-一条来源为 AgentGuard 的有界内存审计事件。拒绝审批会立即计入 Audit 的 deny rate、
+Traffic 或 Audit 接口。AgentsharkX 会在上游明确确认成功后，将这次审批处理持久化为
+一条来源为 AgentGuard 的审计事件。拒绝审批会立即计入 Audit 的 deny rate、
 Traffic trend 和对应 Session 计数；超时、失败或 404 不会生成成功审计事件。对于
-AgentGuard 原生 Audit 记录，已登录管理员查看详情时会获得上游返回的完整原始对象，
-包括工具参数、结果、原因、插件和运行时字段。由 AgentsharkX 确认成功后补充的审批
-处理事件，其详情也会保留 AgentGuard 审批上下文和管理员操作备注。
+AgentGuard 原生 Audit 记录和审批上下文，默认只持久化归一化元数据。
+`AGENTSHARK_PAYLOAD_RETENTION` 默认为 `0`；显式设置为不超过事件保留期的正时长后，
+完整原始对象、工具参数/结果、原因、插件、运行时字段和管理员操作备注才会进入独立
+Payload 表并按该时长过期。完整详情始终只经认证详情接口返回。
 
-该 SQLite 文件属于 agentgateway 上游持久化状态，不是 AgentsharkX 新增的数据库。
+该 SQLite 文件属于 agentgateway 上游持久化状态，与 AgentsharkX PostgreSQL 是两个
+独立数据源。
 agentgateway v1.3.1 会在请求日志库中保留 LLM prompt/completion payload；
 AgentsharkX 会把这些字段完整返回给已登录管理员，但不会把它们写入 BFF 访问日志。
+
+采集检查点保存“最后观察到的事件”和每次尝试/成功/错误状态。当前已核实的
+agentgateway 与 AgentGuard Audit 读取契约没有覆盖所有来源的完整历史请求游标，因此
+系统不能承诺追回停机期间已经从上游有界窗口中淘汰的记录，也不会用时间接近性补造
+事件。数据库备份、恢复和保留期配置见[数据库运维](database.md)。
 
 ### 4.5 System：状态和诊断
 
@@ -473,6 +497,9 @@ agentgateway 请求/错误和 AgentGuard 决策/明确拒绝展示来源路径�
 | 服务                         | 地址                                       |
 | ---------------------------- | ------------------------------------------ |
 | AgentsharkX                  | <http://localhost:8080>                    |
+| AgentsharkX Liveness         | <http://127.0.0.1:8080/healthz>            |
+| AgentsharkX Readiness        | <http://127.0.0.1:8080/readyz>             |
+| PostgreSQL（默认仅回环）     | `127.0.0.1:55432`                          |
 | agentgateway 控制台/管理 API | <http://127.0.0.1:15000/ui>                |
 | agentgateway Metrics         | <http://127.0.0.1:15020/metrics>           |
 | agentgateway Readiness       | <http://127.0.0.1:15021/healthz/ready>     |
@@ -514,6 +541,12 @@ docker compose --env-file deploy/versions.env --env-file .env \
   -f deploy/compose.yaml logs -f agentguard
 ```
 
+查看 PostgreSQL：
+
+```bash
+./scripts/standalone-compose.sh logs -f postgres
+```
+
 ### 6.3 重启或停止
 
 只重启 agentgateway：
@@ -535,8 +568,9 @@ make gateway-standalone-up
 make preview-down
 ```
 
-停止后，`.env` 和 `.venv-quickstart` 仍保留在本地。事件窗口、检测任务和规则检查
-令牌是内存状态，会随 BFF 停止而消失。
+停止后，`.env`、`.venv-quickstart` 和 PostgreSQL 命名卷仍保留在本地。归一化 Audit
+历史与 SSE 游标会在重启后恢复；检测任务和规则检查令牌仍是内存状态，会随 BFF
+停止而消失。不要把删除数据库卷加入日常停止流程。
 
 ### 6.4 standalone 与容器模式切换
 
@@ -578,7 +612,7 @@ npm --prefix apps/web run dev
 
 ### 7.2 本地真实 BFF
 
-先启动固定版本上游，然后在一个终端运行 Go BFF：
+先启动 PostgreSQL 和固定版本上游，然后在一个终端运行 Go BFF：
 
 ```bash
 export AGENTSHARK_LISTEN_ADDR=127.0.0.1:8080
@@ -590,6 +624,7 @@ export AGENTGATEWAY_CONSOLE_URL=http://127.0.0.1:15000/ui
 export AGENTGUARD_BASE_URL=http://127.0.0.1:38080
 export AGENTGUARD_ADMIN_TOKEN='replace-with-the-agentguard-api-key'
 export AGENTGUARD_VERSION=main-4b755fb
+export AGENTSHARK_DATABASE_URL='postgresql://agentshark:replace-with-a-database-password@127.0.0.1:55432/agentshark?sslmode=disable'
 export AGENTSHARK_SCAN_TIMEOUT=90s
 export AGENTSHARK_POLL_INTERVAL=2s
 
@@ -700,7 +735,25 @@ AgentGuard server 容器，不要写进 JSON、提交到 Git 或输入 Agentshar
 只有在容器回退模式中才涉及 bind mount UID/GID 对齐；默认 standalone 模式没有该
 层转换。
 
-### 9.6 Audit 没有网关流量
+### 9.6 `/readyz` 返回 503 或 Audit 返回 `DATABASE_UNAVAILABLE`
+
+先确认 `/healthz` 是否仍为 200。如果是，说明 BFF 进程存活，但 PostgreSQL 不可连接、
+数据库名/凭据不匹配，或内置 Migration 未完成：
+
+```bash
+curl -fsS http://127.0.0.1:8080/healthz
+curl -i http://127.0.0.1:8080/readyz
+./scripts/standalone-compose.sh ps postgres agentshark
+./scripts/standalone-compose.sh logs postgres agentshark
+```
+
+Audit API 与 SSE 会明确返回 503，不会静默回退到内存数据库。检查 `.env` 中的
+`AGENTSHARK_DATABASE_URL` 与 `AGENTSHARK_DATABASE_PASSWORD` 是否对应同一个 Compose
+服务配置，但不要在工单或日志中输出包含密码的完整 URL。普通 `make preview-down`
+不会删除数据库卷；排障期间不要删除它。备份、恢复和明确的破坏性重置流程见
+[数据库运维](database.md)。
+
+### 9.7 Audit 没有网关流量
 
 1. 运行 `make gateway-observability-smoke`；默认预览应返回 `ok`；
 2. 确认已在 agentgateway 中配置真实路由和 Provider 凭据；
@@ -713,16 +766,19 @@ AgentGuard server 容器，不要写进 JSON、提交到 Git 或输入 Agentshar
 `make gateway-standalone-down && make preview-up`。该字段是静态配置，保存后必须
 重启才会生效。
 
-### 9.7 Trust 没有 Agent
+### 9.8 Trust 没有 Agent
 
 确认 AgentGuard 已接入 Agent 运行时，使用了正确的服务 URL 和 API Key，并且至少
 执行过一次运行时操作。同时确认接入代码显式提供 `agent_id` 和 `session_id`。
 
-### 9.8 启动配置被拒绝
+### 9.9 启动配置被拒绝
 
 BFF 会拒绝：
 
 - 空值、占位值或短于 16 个字符的 AgentsharkX/AgentGuard 令牌；
+- 缺失或无效的 PostgreSQL URL；
+- 小于 1 小时的事件保留期、非零但小于 1 小时的 Payload 保留期，或超过事件保留期
+  的 Payload/Outbox 保留期；
 - 在非本地环境关闭认证；
 - 在非本地或非回环环境关闭 Secure Cookie；
 
@@ -738,6 +794,8 @@ BFF 会拒绝：
 - agentgateway 管理端口和 AgentGuard 管理 API 应位于私有管理网络；
 - 已登录管理员可在 Audit 单条事件详情中查看上游返回的完整 Payload、Attributes、
   工具参数和运行时结果；这些内容不会进入列表、SSE 或 BFF 访问日志；
+- `AGENTSHARK_PAYLOAD_RETENTION=0` 是默认值；只有明确设置正时长后，AgentGuard/审批
+  完整详情才会在 PostgreSQL 独立 Payload 表中持久化；
 - 高风险写操作超时后，先确认上游状态再手动重试；
 - AgentsharkX、AgentGuard 和 agentgateway 是独立进程，升级时需要分别核对版本和
   兼容性。
@@ -779,6 +837,7 @@ make release-gate
 - [10 分钟预览快速开始](quickstart.md)
 - [Agent 接入说明](agent-integration.md)
 - [架构说明](architecture.md)
+- [数据库运维](database.md)
 - [能力矩阵](capability-matrix.md)
 - [上游兼容性记录](upstream-compatibility.md)
 - [故障排查](troubleshooting.md)

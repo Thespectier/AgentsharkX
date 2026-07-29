@@ -1,6 +1,6 @@
 # Architecture
 
-Status: Phase 12 Protect guardrail management over the Phase 7 preview, verified 2026-07-28.
+Status: Phase 13 persistent Audit foundation over the Phase 12 management surface, verified 2026-07-29.
 
 ## Context
 
@@ -10,6 +10,9 @@ semantics of every upstream capability.
 
 ```text
 Browser ──HTTPS──> AgentsharkX Web + Go BFF
+                         │
+                         ├──SQL──────────────> PostgreSQL
+                         │                    Audit / checkpoints / outbox
                          │
                          ├──management HTTP──> agentgateway
                          │                       │
@@ -31,7 +34,7 @@ capability registry, and error state for each source.
 | ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
 | agentgateway | LLM/MCP/A2A/HTTP proxying, routes, providers, policies, guardrails, request logs, cost and latency telemetry                                   | AgentGuard runtime identities, reviews, or rules                           |
 | AgentGuard   | Runtime interception, resources, labels, runtime rules, approvals, traffic, sessions, and security audit                                       | Gateway routing or transport policy                                        |
-| AgentsharkX  | Console navigation, admin authentication, source adapters, capability detection, normalization, aggregation, SSE, and high-frequency workflows | Proxying, task inference, a rules engine, replay, or durable event storage |
+| AgentsharkX  | Console navigation, admin authentication, source adapters, capability detection, normalization, aggregation, persistent Audit projections/checkpoints/outbox, SSE, and high-frequency workflows | Proxying, task inference, a rules engine, business-traffic replay, or upstream source-of-truth storage |
 
 ## BFF boundaries
 
@@ -52,10 +55,13 @@ The Go BFF is organized into the following packages:
   guarded mutations, approval pagination, and duplicate-operation locks.
 - `audit`: independent polling, source-scoped failures, normalized summaries,
   authenticated complete source detail, exact-ID session counts, metrics,
-  trends, and a bounded activity snapshot.
+  trends, persistent event writes, source checkpoints, and a bounded current
+  activity snapshot.
 - `aggregate`: source-preserving view models and partial-result handling.
-- `stream`: 1000-record in-memory ring, source/ID dedupe, monotonic SSE
-  sequence IDs, replay after `Last-Event-ID`, and non-blocking fan-out.
+- `storage`: small Audit event, payload, checkpoint, outbox, readiness, migration,
+  and retention interfaces with PostgreSQL production and memory test adapters.
+- `stream`: commit notification only; PostgreSQL outbox sequences are the sole
+  SSE IDs and replay source.
 - `api`: OpenAPI-backed HTTP handlers and standard errors.
 - `model`: source-preserving health, capability, Connect/Trust/Protect/Audit
   resource, overview, event, and error contracts.
@@ -80,8 +86,10 @@ reload, `GET /api/v1/auth/session` validates the HttpOnly cookie and reissues
 that session's CSRF value without persisting the administrator token. No frontend
 module imports upstream code or receives an upstream credential.
 
-The application shell owns one SSE connection and invalidates source-scoped
-query families when a verified event arrives. Active queries also refresh on a
+The application shell owns one SSE connection, deduplicates deliveries by
+outbox ID, upserts events by normalized `(source, id)`, and invalidates
+source-scoped query families when a verified event arrives. A `reset` event
+clears the live cache and refetches REST state. Active queries also refresh on a
 bounded interval, on navigation, and when the window regains focus. Successful
 AgentGuard mutations invalidate Trust, Protect, Audit, and Overview together so
 cross-page counts and rows converge without a hard browser reload.
@@ -126,13 +134,54 @@ A gateway failure cannot suppress AgentGuard data, and an AgentGuard failure
 cannot suppress gateway data. Aggregated responses carry per-source metadata
 and stale markers rather than collapsing partial failures into a global 500.
 
-## Phase 12 runtime data and storage
+## Phase 13 runtime data and storage
 
-The BFF has no database. Background monitors poll the two health contracts and,
-every two seconds by default, the verified Audit read contracts. New normalized
-events enter a 1000-record ring and are published with a monotonic SSE sequence.
-Reconnecting clients send `Last-Event-ID` and receive only newer retained
-records. Both the ring and browser list dedupe by normalized source/event ID.
+PostgreSQL is required production state for Audit. Background monitors poll the
+two health contracts and, every two seconds by default, the verified Audit read
+contracts. Each source commits independently: normalized event upserts, an
+optional payload row, one outbox row for each real event change, and that
+source's checkpoint share one transaction. `(source, upstream_id)` provides
+idempotency, and the in-memory stream Hub is notified only after commit. One
+upstream or database write failure cannot be presented as successful data from
+the other upstream. An event's source-owned occurrence time becomes immutable
+at first insert; later updates can change its normalized content or retained
+payload without moving it across a keyset pagination boundary.
+
+Audit event metadata defaults to 30-day retention. The current analytics
+snapshot remains bounded to 1000 rows, while `/api/v1/audit/events` uses a
+stable keyset cursor pinned to the first page's database watermark. Outbox rows
+default to 24-hour retention. Their `bigserial` sequence is the sole SSE `id`:
+reconnecting clients send `Last-Event-ID`, receive retained outbox rows first,
+and then wait on the commit notifier. A cursor ahead of the database or older
+than the retained window produces `event: reset`; the browser discards its live
+assumption and refetches REST state. A singleton outbox-state row advances in
+the same transaction and tracks only the latest committed sequence, so an
+uncommitted or rolled-back PostgreSQL sequence value can never move a reset
+cursor past an event that later becomes visible. Every outbox writer locks that
+row before allocating a sequence and retains the lock through commit, which
+also makes sequence order equal commit visibility order across BFF instances.
+
+`ingest_checkpoints` records each adapter's last attempt, success, error, and
+last observed event watermark. The verified agentgateway and AgentGuard reads
+do not expose a fully verified request-side historical cursor across all Phase
+13 feeds. The checkpoint therefore preserves observed polling state for
+operations diagnostics, but is not sent back as an unverified upstream cursor.
+After restart the adapters repeat their bounded reads and PostgreSQL uniqueness
+deduplicates them; records that aged out of an upstream window during downtime
+cannot be recovered.
+
+Polling may still return records older than the configured event retention.
+When such an identity is no longer present, the store advances the source
+checkpoint but does not recreate the event or an outbox message. An existing
+identity remains updateable until the scheduled retention prune removes it.
+
+Payload storage is a separate table and is disabled by default
+(`AGENTSHARK_PAYLOAD_RETENTION=0`). A positive duration, no longer than event
+retention, opts AgentGuard/approval raw records into durable detail storage.
+List, overview, and SSE projections always omit `raw`. Gateway detail continues
+to call the verified upstream `/api/logs/get` contract on demand, so the
+upstream-owned request-log retention remains authoritative.
+
 Connect reads a bounded `/api/config` snapshot per request. It never returns LLM
 credential values or prompt payloads. The LLM
 management contract returns only verified provider/direct-model main-form fields,
@@ -251,19 +300,21 @@ samples remains null rather than becoming a fabricated zero.
 AgentGuard records the initial `HUMAN_CHECK` in Traffic/Audit but its approval
 mutation returns only an acknowledgement. After an approve/deny call is
 confirmed, the Protect service therefore passes the already-normalized ticket
-context to Audit, which retains a source-labelled approval-resolution event in
-the same bounded in-memory window. A denied approval contributes to the deny
-rate and deny trend immediately and remains present across later polls; failed
-or timed-out mutations do not create evidence.
-AgentGuard normalization derives list fields from verified IDs and scalars while
-retaining the complete source audit object in the bounded event window. List,
-overview, and SSE responses omit `raw`. An authenticated detail request for an
-AgentGuard event returns that complete object. For agentgateway, the detail
-request uses the preserved upstream ID with `POST /api/logs/get` and
-`includePayload=true`; its complete log object, including arbitrary attributes,
-prompt, completion, error, and tool-call content, crosses the BFF only in that
-response and is not added to the event ring. The native Logs deep link remains
-available as an alternate source view.
+context to Audit, which persists a source-labelled approval-resolution event in
+the same transaction model as polled events. A denied approval contributes to
+the deny rate and deny trend immediately and survives a BFF restart; failed or
+timed-out mutations do not create evidence.
+AgentGuard normalization derives list fields from verified IDs and scalars.
+When payload retention is positive, its complete source object and confirmed
+approval context are stored separately from summary metadata until their own
+expiry. With the default zero payload retention, complete AgentGuard detail is
+available only while still held by the live process; normalized metadata
+remains durable. List, overview, and SSE responses omit `raw` in every mode.
+For agentgateway, an authenticated detail request uses the preserved upstream
+ID with `POST /api/logs/get` and `includePayload=true`; its complete log object,
+including arbitrary attributes, prompt, completion, error, and tool-call
+content, crosses the BFF only in that response and is not copied to summary or
+outbox rows. The native Logs deep link remains an alternate source view.
 
 `/overview` is `mode=operational` when the Audit service is attached. Gateway
 log/Analytics failures and AgentGuard Traffic/Audit/Sessions failures are
@@ -272,13 +323,12 @@ session event/deny counts use exact session-ID equality. Cross-source
 correlation is marked verified only when both sources explicitly return the
 same non-empty trace or session identifier; timestamps are never used.
 
-No Audit state is durable. SSE resume covers only the retained ring, and
-long-term logs remain in their upstream systems. The bundled preview configures
-agentgateway's upstream-owned SQLite request-log store under ignored
-`.cache/agentgateway-standalone/data/`; this does not make AgentsharkX the
-database owner. Complete gateway payloads are fetched on demand and are not
-stored by AgentsharkX. AgentsharkX still provides no task model, DAG, payload
-vault, replay engine, or traffic collector.
+Normalized Audit state, source checkpoints, and SSE delivery rows are durable
+in the AgentsharkX PostgreSQL database. The bundled preview separately
+configures agentgateway's upstream-owned SQLite request-log store under ignored
+`.cache/agentgateway-standalone/data/`; neither database replaces the other's
+source of truth. AgentsharkX still provides no task model, DAG, payload vault,
+business replay engine, or traffic collector.
 
 ## Security baseline
 
@@ -297,33 +347,39 @@ vault, replay engine, or traffic collector.
 - Authenticated Protect policy and guardrail configuration returns complete
   source-owned JSON. Application logs and mutation receipts contain only
   operation metadata; bodies are not copied into summary lists or SSE responses.
-- The default Phase 7 preview runs the pinned agentgateway binary on the host
+- The default Phase 13 preview runs the pinned agentgateway binary on the host
   and publishes the remaining management services on loopback. It is a
   development topology, not an internet-facing deployment.
 
-## Phase 7 deployment boundary
+## Phase 13 deployment boundary
 
 The production Dockerfile has independent pinned Node and Go build stages. It
 builds Web with `VITE_ENABLE_MOCKS=false`, replaces the development placeholder
 assets before compiling, and embeds the resulting SPA into the Go binary. The
 runtime stage contains only Alpine CA certificates and the static binary, runs
 as UID/GID `65532:65532`, and exposes one same-origin port. `/healthz` is public
-and reports process readiness only; authenticated `/system` diagnostics remain
-the authority for independent upstream state.
+and reports process liveness only. `/readyz` is also unauthenticated and returns
+success only when PostgreSQL is reachable, embedded migration checks pass, and
+persisted Audit history has been restored into the current process;
+authenticated `/system` diagnostics remain the authority for independent
+upstream state.
 
 The Linux preview runs agentgateway as an official host-native binary while
-Compose builds AgentGuard from its immutable main revision and builds
-AgentsharkX locally. The binary release, Git revision, and per-platform SHA-256
-digests are fixed in `deploy/versions.env`; installation is repository-local
-under ignored `.cache/` and refuses a checksum or embedded-version mismatch.
+Compose runs a pinned PostgreSQL image, builds AgentGuard from its immutable
+main revision, and builds AgentsharkX locally. The database port is published
+only on the configured loopback address, and a named volume survives normal
+`preview-down`/`preview-up` cycles. The binary release, Git revision, and
+per-platform SHA-256 digests are fixed in `deploy/versions.env`; installation
+is repository-local under ignored `.cache/` and refuses a checksum or
+embedded-version mismatch.
 It reads the same explicit `deploy/agentgateway/config.yaml` as the previous
 container topology and runs as the checkout user, so native Raw Configuration
 writes need no bind-mount UID workaround.
 The explicit config enables the pinned upstream's SQLite log store at a
 repository-relative path. Both the native launcher and container fallback use
 the repository root as their working directory and share the same ignored data
-directory, so Logs and Analytics survive either runtime mode without adding an
-AgentsharkX database service.
+directory, so its Logs and Analytics survive either runtime mode independently
+of the AgentsharkX PostgreSQL service.
 
 The integrated connector is environment-specific. Native Linux Docker gives
 AgentsharkX host networking so the BFF reaches the gateway's loopback-only

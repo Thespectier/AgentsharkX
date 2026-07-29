@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: AgentsharkX BFF API
-  version: 0.7.0-preview
+  version: 0.8.0-preview
   description: |
     Source-preserving management API above agentgateway and AgentGuard.
     Authentication, independent upstream health and capability probes, and
@@ -12,11 +12,11 @@ info:
     LLM/model/MCP policy configuration, complete global LLM/MCP guardrail
     workflows, source-grouped summaries, AgentGuard
     runtime-rule check/publish/delete, per-agent plugin phases, and guarded
-    approval decisions. Audit adds bounded
+    approval decisions. Audit adds persistent PostgreSQL-backed
     gateway traffic and AgentGuard audit/session projections, source-scoped
     analytics, confirmed approval-resolution evidence, authenticated complete
-    upstream detail, and
-    resumable normalized SSE.
+    upstream detail, stable cursor pagination, and resumable normalized SSE
+    backed by a durable outbox.
 servers:
   - url: /
 security:
@@ -34,17 +34,37 @@ paths:
     get:
       tags: [System]
       operationId: getLiveness
-      summary: Report that the AgentsharkX process is ready to serve requests
-      x-implementation-phase: 7
+      summary: Report only that the AgentsharkX process is alive
+      description: This endpoint does not check PostgreSQL, migrations, or either upstream.
+      x-implementation-phase: 13
       x-implementation-status: implemented
       security: []
       responses:
         '200':
-          description: Process is serving requests
+          description: Process is alive
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Liveness'
+
+  /readyz:
+    get:
+      tags: [System]
+      operationId: getReadiness
+      summary: Report whether persistent storage is ready for Audit operations
+      description: PostgreSQL must be reachable, every embedded migration must be applied with its recorded checksum, and persisted Audit history must have been restored into the current service state.
+      x-implementation-phase: 13
+      x-implementation-status: implemented
+      security: []
+      responses:
+        '200':
+          description: Persistent storage, migrations, and Audit history restoration are ready
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Readiness'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
 
   /api/v1/auth/session:
     get:
@@ -163,20 +183,31 @@ paths:
     get:
       tags: [System]
       operationId: streamEvents
-      summary: Subscribe to resumable normalized health, gateway traffic, and AgentGuard audit events
-      x-implementation-phase: 2
+      summary: Subscribe to persistent normalized health, gateway traffic, and AgentGuard audit events
+      description: |
+        Every SSE id is the decimal stream_outbox sequence. A reconnecting client
+        supplies that value as Last-Event-ID; the server replays retained rows
+        before waiting for commit notifications. If the supplied sequence is
+        ahead of the database or older than the retained outbox window, the
+        server emits one reset event with a StreamReset JSON body. Event data is
+        summary-only and never includes UnifiedEvent.raw or a retained payload.
+      x-implementation-phase: 13
       x-implementation-status: implemented
       parameters:
         - $ref: '#/components/parameters/LastEventId'
       responses:
         '200':
-          description: Server-sent event stream with heartbeat comments
+          description: Server-sent event stream with persistent integer IDs, reset events, and heartbeat comments
           content:
             text/event-stream:
               schema:
                 type: string
+        '400':
+          $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
 
   /api/v1/connect/summary:
     get:
@@ -1746,7 +1777,7 @@ paths:
       tags: [Audit]
       operationId: getAuditAnalytics
       summary: Return source-preserving traffic, security, and confirmed approval trends
-      x-implementation-phase: 6
+      x-implementation-phase: 13
       x-implementation-status: implemented
       responses:
         '200':
@@ -1757,13 +1788,16 @@ paths:
                 $ref: '#/components/schemas/AuditEnvelope'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
 
   /api/v1/audit/events:
     get:
       tags: [Audit]
       operationId: listAuditEvents
-      summary: List normalized events without implied task correlation
-      x-implementation-phase: 6
+      summary: List persisted normalized events without implied task correlation
+      description: Uses an opaque, stable keyset cursor bound to the first page's database watermark; list items never include UnifiedEvent.raw or retained payloads.
+      x-implementation-phase: 13
       x-implementation-status: implemented
       parameters:
         - $ref: '#/components/parameters/SourceFilter'
@@ -1780,13 +1814,15 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
 
   /api/v1/audit/events/{source}/{eventId}:
     get:
       tags: [Audit]
       operationId: getAuditEvent
       summary: Return complete upstream detail for one authenticated source event
-      x-implementation-phase: 6
+      x-implementation-phase: 13
       x-implementation-status: implemented
       parameters:
         - $ref: '#/components/parameters/SourcePath'
@@ -1805,14 +1841,14 @@ paths:
         '502':
           $ref: '#/components/responses/BadGateway'
         '503':
-          $ref: '#/components/responses/UpstreamUnavailable'
+          $ref: '#/components/responses/ServiceUnavailable'
 
   /api/v1/audit/sessions:
     get:
       tags: [Audit]
       operationId: listAuditSessions
       summary: List explicit AgentGuard sessions and their runtime events
-      x-implementation-phase: 6
+      x-implementation-phase: 13
       x-implementation-status: implemented
       responses:
         '200':
@@ -1823,6 +1859,8 @@ paths:
                 $ref: '#/components/schemas/AuditSessionsEnvelope'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
 
 components:
   securitySchemes:
@@ -1934,8 +1972,11 @@ components:
       name: Last-Event-ID
       in: header
       required: false
+      description: Decimal stream_outbox sequence from the last processed SSE message. Omit the header to receive all currently retained messages; a supplied zero is a real cursor and can produce reset when the outbox is non-empty.
       schema:
         type: string
+        pattern: '^(0|[1-9][0-9]*)$'
+        maxLength: 19
     CsrfToken:
       name: X-CSRF-Token
       in: header
@@ -2014,6 +2055,31 @@ components:
         status:
           type: string
           const: ok
+    Readiness:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status:
+          type: string
+          const: ready
+    StreamReset:
+      type: object
+      additionalProperties: false
+      required: [reason, resumeAfter, oldestAvailable]
+      properties:
+        reason:
+          type: string
+          enum: [cursor_ahead, outbox_retention]
+        resumeAfter:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Latest known outbox sequence; use this value for the next stream connection after refetching REST state.
+        oldestAvailable:
+          type: integer
+          format: int64
+          minimum: 0
     Source:
       type: string
       enum: [agentgateway, agentguard]
@@ -3997,7 +4063,7 @@ components:
               type: string
         raw:
           type: object
-          description: Source-owned management record. Authenticated detail responses return every field supplied by the verified upstream detail contract, including attributes and retained payloads; list, overview, and SSE responses omit raw.
+          description: Source-owned management record. Authenticated detail responses may return every field supplied by the verified upstream detail contract or an unexpired opt-in payload row, including attributes and retained payloads; list, overview, and SSE responses omit raw.
           additionalProperties: true
     AuditSession:
       type: object
@@ -4085,6 +4151,7 @@ components:
                 $ref: '#/components/schemas/UnifiedEvent'
             nextCursor:
               type: [string, 'null']
+              description: Opaque keyset cursor pinned to the database watermark established by the first page.
             total:
               type: integer
               minimum: 0

@@ -2,6 +2,14 @@
 
 export type Liveness = { status: string };
 
+export type Readiness = { status: string };
+
+export type StreamReset = {
+  reason: "cursor_ahead" | "outbox_retention";
+  resumeAfter: number;
+  oldestAvailable: number;
+};
+
 export type Source = "agentgateway" | "agentguard";
 
 export type GatewaySource = "agentgateway";
@@ -1007,6 +1015,7 @@ export const implementedOperations = {
   getModel: { method: "GET", path: "/api/v1/connect/llm/models/{resourceId}" },
   getOverview: { method: "GET", path: "/api/v1/overview" },
   getProvider: { method: "GET", path: "/api/v1/connect/llm/providers/{resourceId}" },
+  getReadiness: { method: "GET", path: "/readyz" },
   getSystemDiagnostics: { method: "GET", path: "/api/v1/system/diagnostics" },
   getSystemHealth: { method: "GET", path: "/api/v1/system/health" },
   getTrafficConfiguration: { method: "GET", path: "/api/v1/connect/traffic/configuration" },
@@ -1076,6 +1085,7 @@ export interface OperationResponses {
   getModel: ModelEnvelope;
   getOverview: OverviewEnvelope;
   getProvider: ProviderEnvelope;
+  getReadiness: Readiness;
   getSystemDiagnostics: DiagnosticsEnvelope;
   getSystemHealth: HealthEnvelope;
   getTrafficConfiguration: TrafficConfigurationEnvelope;
