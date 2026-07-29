@@ -1,6 +1,6 @@
 # Server package map
 
-Phase 13 package responsibilities:
+Phase 14 package responsibilities:
 
 - `api`: OpenAPI-owned handlers, request IDs, structured access logs, standard
   errors, authentication enforcement, persistent Audit APIs, `/healthz`
@@ -25,17 +25,21 @@ Phase 13 package responsibilities:
   checkpoints, and persistence orchestration.
 - `storage`: small interfaces plus the PostgreSQL production store, append-only
   embedded migrations, stable event cursors, payload retention, outbox replay,
-  pruning, and an explicit memory adapter for tests/Mock only.
+  Trace batch upserts/summaries, pruning, and an explicit memory adapter for
+  tests/Mock only.
+- `telemetry`: Collector-owned OTLP normalization, exact summary assembly, and
+  the bounded authenticated HTTP receiver. It does not expose BFF query routes.
 - `stream`: coalesced post-commit notifications. It owns no event IDs or replay
   buffer; `stream_outbox.sequence` is the sole SSE cursor.
 - `model`: the shared source-preserving response model.
 
 PostgreSQL is required in production and there is no automatic memory fallback.
-Normalized Audit metadata defaults to 30-day retention, outbox delivery rows to
-24 hours, and payload storage to disabled. A positive payload retention opts
-complete AgentGuard/approval records into a separate table; list, overview, and
-SSE responses remain summary-only. Scan jobs and rule-check tokens are still
-ephemeral. SSE replay is delivery recovery, not agent business-traffic replay.
+Normalized Audit and Trace metadata default to 30-day retention, outbox
+delivery rows to 24 hours, and payload storage to disabled. Positive payload
+retention opts complete source-owned records into separate payload tables;
+Audit list, overview, and SSE responses remain summary-only. Trace BFF reads are
+deferred to Phase 15. Scan jobs and rule-check tokens are still ephemeral. SSE
+replay is delivery recovery, not agent business-traffic replay.
 
 The persisted checkpoint is an observed watermark. The verified upstream Audit
 reads do not provide complete request-side historical cursors, so it cannot

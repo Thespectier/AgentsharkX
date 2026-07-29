@@ -1,6 +1,6 @@
 # AgentsharkX 中文使用指南
 
-本文档适用于 AgentsharkX `0.8.0 Phase 13 preview`，介绍预览环境启动、登录、
+本文档适用于 AgentsharkX `0.9.0 Phase 14 preview`，介绍预览环境启动、登录、
 真实 Agent 接入、四个工作区、日常运维、本地开发、发布验证和常见故障处理。
 
 除非特别说明，所有命令都在仓库根目录执行：
@@ -22,10 +22,11 @@ AgentsharkX 是管理平面，不在 Agent 数据平面中，因此：
 
 - Agent 的模型或 MCP 流量应直接经过 agentgateway；
 - AgentGuard 客户端应直接接入 Agent 运行时；
-- AgentsharkX 只读取两个上游的管理 API；
+- AgentsharkX BFF 只读取两个上游的管理 API；Agent 另行把标准 OTLP Trace 直接发送给
+  独立 Collector；
 - AgentsharkX 不代理 Agent 流量，不根据时间或名称推断 Agent/任务，也不实现新的规则
-  引擎、业务流量回放系统或流量采集器。PostgreSQL 只保存 AgentsharkX 自己的 Audit
-  归一化记录、可选详情、采集检查点和 SSE Outbox。
+  引擎、业务流量回放系统或业务流量采集器。PostgreSQL 保存 AgentsharkX 自己的 Audit
+  归一化记录、Trace Span/Link/Summary、可选详情、采集检查点和 SSE Outbox。
 
 ## 2. 快速启动预览环境
 
@@ -59,7 +60,8 @@ make preview-bootstrap
 - 生成随机的 PostgreSQL 密码和匹配的连接 URL；
 - 将 `.env` 权限设置为 `0600`；
 - 默认把所有发布端口绑定到 `127.0.0.1`；
-- 在 `.env` 已存在时保留原值并补充缺少的 Phase 13 数据库项，也不会把生成的凭据
+- 生成独立的 Trace Collector Bearer Token；
+- 在 `.env` 已存在时保留原值并补充缺少的 Phase 13/14 数据库和 Collector 项，也不会把生成的凭据
   输出到终端。
 
 不要直接使用未修改的 `deploy/example.env` 启动服务。模板中的占位令牌会被 BFF
@@ -75,7 +77,7 @@ make preview-up
 
 ```text
 宿主机：官方 agentgateway v1.3.1 二进制
-Docker Compose：AgentsharkX + PostgreSQL + AgentGuard server + AgentGuard console
+Docker Compose：AgentsharkX BFF + OTLP Collector + PostgreSQL + AgentGuard server + AgentGuard console
 ```
 
 首次启动会从官方 GitHub Release 下载当前平台的固定版本二进制到被 Git 忽略的
@@ -94,6 +96,7 @@ make preview-status
 运行或健康状态：
 
 - `agentshark`；
+- `agentshark-collector`；
 - `postgres`；
 - `agentguard`；
 - `agentguard-console`。
@@ -175,6 +178,7 @@ make upstream-smoke
 ```bash
 python3 -m venv .venv-quickstart
 .venv-quickstart/bin/pip install \
+  -c ./sdk/python/constraints.txt \
   'agentguard @ git+https://github.com/WhitzardAgent/AgentGuard.git@4b755fb4a4a2763b7e817b3d0220fe5c22187b59'
 ```
 
@@ -456,7 +460,30 @@ export AGENTGUARD_API_KEY='<AgentGuard API Key>'
 `llm_before`、`llm_after`、`tool_before`、`tool_after` 等原始事件阶段。详细契约请参阅
 [Agent integration](agent-integration.md) 和固定提交的 AgentGuard 文档。
 
-### 5.3 验证接入结果
+### 5.3 接入 Phase 14 Trace SDK
+
+SDK 仅支持仓库内本地安装，不发布到 PyPI。仓库禁止 Git Submodule，因此以下命令会把
+已验证的 AgentGuard 完整提交克隆到被忽略的 `third_party/AgentGuard/`，并核验固定
+Commit、许可证和打包文件：
+
+```bash
+make sdk-bootstrap
+python -m pip install -c ./sdk/python/constraints.txt \
+  -e ./third_party/AgentGuard -e ./sdk/python
+```
+
+Agent 进程设置 `AGENTSHARK_TRACE_ENDPOINT`、`AGENTSHARK_TRACE_INGEST_TOKEN`，然后只需
+通过 `AgentShark.from_env()`、`attach_langchain()` 和 `task()` 接入。默认
+`AGENTSHARK_TRACE_CONTENT_MODE=metadata`，不会保存 Prompt、Completion、Tool 参数、结果
+或任务 Goal 正文；`full` 才会写入有大小上限和独立过期时间的 Payload 表。所有模式都
+会在 SDK 和 Collector 两侧再次脱敏 Authorization、Cookie、API Key 和 Password。
+
+同一个 Guard/Agent 实例只允许一个活动 Task；并发复用会明确抛错。MCP 必须显式标记
+`tools/call`，A2A 必须显式提供 `invoke_agent + peer_agent_id`，异步关系使用真实 Span
+Link，禁止按名称或时间推断。Phase 14 只有采集和持久化；Trace 查询 API 和页面属于
+Phase 15，当前不会在 Audit 页面显示 Trace 列表。
+
+### 5.4 验证接入结果
 
 完成一次 Agent 运行后，依次确认：
 
@@ -466,7 +493,7 @@ export AGENTGUARD_API_KEY='<AgentGuard API Key>'
 4. 通过默认请求日志数据库确认 **Audit → Traffic** 出现网关记录；
 5. 只有共享标识完全一致时，跨来源事件才显示为已关联。
 
-### 5.4 正确理解 Home 和 Audit 趋势图
+### 5.5 正确理解 Home 和 Audit 趋势图
 
 Home 的 **Traffic & decisions** 与 Audit 的 **Traffic trend**、**Latency
 trend** 使用同一份 BFF 快照，范围为精确的滚动最近 60 分钟，并拆分为 12 个
@@ -499,6 +526,9 @@ agentgateway 请求/错误和 AgentGuard 决策/明确拒绝展示来源路径�
 | AgentsharkX                  | <http://localhost:8080>                    |
 | AgentsharkX Liveness         | <http://127.0.0.1:8080/healthz>            |
 | AgentsharkX Readiness        | <http://127.0.0.1:8080/readyz>             |
+| Trace Collector OTLP         | `http://127.0.0.1:4318/v1/traces`          |
+| Trace Collector Readiness    | <http://127.0.0.1:4318/readyz>             |
+| Trace Collector Metrics      | <http://127.0.0.1:4318/metrics>            |
 | PostgreSQL（默认仅回环）     | `127.0.0.1:55432`                          |
 | agentgateway 控制台/管理 API | <http://127.0.0.1:15000/ui>                |
 | agentgateway Metrics         | <http://127.0.0.1:15020/metrics>           |
@@ -796,6 +826,8 @@ BFF 会拒绝：
   工具参数和运行时结果；这些内容不会进入列表、SSE 或 BFF 访问日志；
 - `AGENTSHARK_PAYLOAD_RETENTION=0` 是默认值；只有明确设置正时长后，AgentGuard/审批
   完整详情才会在 PostgreSQL 独立 Payload 表中持久化；
+- Trace 默认只采集 metadata；只有显式 `full` 才保存正文到独立 Payload 表，默认 24 小时
+  过期，Trace 元数据默认保留 30 天；
 - 高风险写操作超时后，先确认上游状态再手动重试；
 - AgentsharkX、AgentGuard 和 agentgateway 是独立进程，升级时需要分别核对版本和
   兼容性。

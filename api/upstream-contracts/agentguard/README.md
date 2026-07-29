@@ -60,3 +60,10 @@ state builders and route tests. AgentsharkX uses Traffic only for scalar
 metrics, uses Audit `event_id` for normalized events, and matches Sessions only
 by exact `session_id`. Runtime state, arguments/results, reasons, and plugin
 results are omitted even though the source shape documents their location.
+
+Phase 14 also installs this exact revision under Python 3.12 and verifies the
+runtime client contract used by the repository-local SDK: public `Guard` and
+`Principal`, `Guard.start(principal=...)`, dynamic `attach_langchain`, `close`,
+and the pinned facade-to-enforcer remote bridge required for explicit
+open/closed failure behavior. The check fails on any structural drift; no
+unverified client field is accepted from a floating revision.

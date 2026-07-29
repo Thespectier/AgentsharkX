@@ -1,7 +1,7 @@
 # Upstream compatibility
 
-Last upstream verification: 2026-07-28. Phase 13 persistence notes updated
-2026-07-29 without adding an upstream contract.
+Last upstream verification: 2026-07-28. Phase 14 Collector/SDK notes updated
+2026-07-29 without adding a management-plane field or route.
 
 Phase 13 still prevents direct browser contact with either upstream. The
 agentgateway adapter reads request-log summary, complete detail, and Analytics
@@ -12,6 +12,8 @@ verified label, detection, runtime-rule, and approval mutations with
 `X-Api-Key`, source-scoped errors, strict response bounds, and no automatic
 write retries. The pinned agentgateway admin token setting is not transmitted
 because the selected upstream exposes no verified native admin-auth header.
+The OTLP Collector uses the official OpenTelemetry protobuf contract and never
+reads agentgateway or AgentGuard management fields.
 
 ## Pinned baseline
 
@@ -354,6 +356,20 @@ server and frontend services. AgentsharkX Compose preserves that topology while
 pointing the build context at the verified full Git revision instead of copying
 or vendoring GPL source into AgentsharkX.
 
+Phase 14 separately verified the pinned AgentGuard revision under Python 3.12:
+editable install succeeds, public `Guard` and `Principal` imports succeed,
+`Guard.start(principal=...)` returns the compatibility facade, dynamic
+`attach_langchain()` is available after start, and `close()` succeeds. The
+exact pinned facade-to-enforcer bridge used to implement the explicit SDK
+open/closed remote-failure modes is also asserted by the contract check; a
+change to that pinned source structure fails validation instead of silently
+changing enforcement. The
+repository deliberately forbids Git submodules, so `make sdk-bootstrap` clones
+that exact revision into ignored `third_party/AgentGuard/`, verifies `HEAD`,
+`LICENSE`, and `pyproject.toml`, and refuses a mismatched checkout. This is the
+documented exception to the implementation plan's submodule preference; it
+preserves the immutable pin without introducing floating or copied source.
+
 For Phase 7, the production image embeds only the AgentsharkX Web build and Go
 BFF. agentgateway and AgentGuard remain separate Compose services and SPDX
 packages connected over HTTP. The AgentGuard quickstart client is installed
@@ -367,8 +383,10 @@ field was added to the adapter.
 
 The release E2E fixtures implement only already-frozen contract shapes and run
 outside default Compose. They prove BFF/browser orchestration, including a hard
-navigation followed by CSRF recovery and one approval, but do not replace live
-upstream compatibility verification. The image and Compose build passed on
+navigation followed by CSRF recovery and one approval, and separately prove
+migration-owner startup plus authenticated OTLP Collector persistence across a
+Collector restart. They do not replace live upstream compatibility verification.
+The image and Compose build passed on
 2026-07-23 with the pinned Node 24.13.0, Go 1.26.5, and Alpine 3.23.3 digests.
 
 ## Authentication and exposure
@@ -381,12 +399,14 @@ publishes management ports to `127.0.0.1` unless explicitly changed.
 
 ## License boundary
 
-agentgateway is Apache-2.0. AgentGuard is GPL-3.0. AgentsharkX integrates them as
-separate processes over HTTP and does not copy, vendor, link, or subclass their
-implementations. AgentGuard source fetched during a Compose build is not part
-of this repository. This technical separation is not a legal opinion; before a
-release, regenerate the dependency/license inventory and obtain a formal
-license review.
+agentgateway is Apache-2.0. AgentGuard is GPL-3.0. The AgentsharkX server
+integrates both as separate processes over HTTP and does not copy or vendor
+their implementations. The repository-local Python SDK imports a separately
+installed pinned AgentGuard package but neither copies its client code nor
+publishes a combined package; `third_party/AgentGuard/` is ignored and retained
+with its upstream license/notice files in the local checkout. These technical
+boundaries are not a legal opinion. Before distributing the SDK or a combined
+agent environment, obtain a formal license review and regenerate the inventory.
 
 ## Upgrade protocol
 

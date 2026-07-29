@@ -14,6 +14,7 @@ import (
 
 	"github.com/Thespectier/AgentsharkX/apps/server/internal/model"
 	"github.com/Thespectier/AgentsharkX/apps/server/internal/storage"
+	"github.com/Thespectier/AgentsharkX/apps/server/internal/telemetry"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -50,7 +51,8 @@ func TestPostgresStoreLifecycle(t *testing.T) {
 	now := time.Now().UTC()
 	options := Options{
 		MaxConnections: 4, MinConnections: 0, ConnectTimeout: 2 * time.Second,
-		EventRetention: 24 * time.Hour, PayloadRetention: 4 * time.Hour, OutboxRetention: 4 * time.Hour,
+		EventRetention: 24 * time.Hour, TraceRetention: 24 * time.Hour,
+		PayloadRetention: 4 * time.Hour, OutboxRetention: 4 * time.Hour,
 		Now: func() time.Time { return now },
 	}
 	firstPool := testPool(t, databaseURL, schema)
@@ -130,6 +132,7 @@ func TestPostgresStoreLifecycle(t *testing.T) {
 	if _, err := store.GetEvent(t.Context(), model.SourceAgentGateway, rollbackEvent.ID); !errors.Is(err, storage.ErrNotFound) {
 		t.Fatalf("transaction rollback lookup = %v", err)
 	}
+	traceFixture := exercisePostgresTraceWrites(t, store, now)
 
 	firstPool.Close()
 	secondPool := testPool(t, databaseURL, schema)
@@ -142,6 +145,11 @@ func TestPostgresStoreLifecycle(t *testing.T) {
 	publicDetail, err := restarted.GetEvent(t.Context(), model.SourceAgentGateway, "gateway:first")
 	if err != nil || publicDetail.ID != first.ID {
 		t.Fatalf("restart public ID lookup = %#v, %v", publicDetail, err)
+	}
+	traceSummary, err := restarted.GetTraceSummary(t.Context(), traceFixture.traceID)
+	if err != nil || traceSummary.Status != "succeeded" || traceSummary.Completeness != "verified" ||
+		traceSummary.LLMCalls != 1 || traceSummary.MCPCalls != 1 || traceSummary.A2ACalls != 1 {
+		t.Fatalf("restart trace summary = %#v, %v", traceSummary, err)
 	}
 	var storedPublicID, storedUpstreamID string
 	if err := secondPool.QueryRow(t.Context(), `
@@ -267,6 +275,62 @@ SELECT public_id, upstream_id FROM audit_events WHERE source = $1 AND public_id 
 	if _, err := tightened.GetPayload(t.Context(), results[0].EventID); !errors.Is(err, storage.ErrNotFound) {
 		t.Fatalf("expired payload error = %v", err)
 	}
+	if _, err := tightened.GetTracePayload(t.Context(), traceFixture.traceID, traceFixture.rootSpanID, "task.goal"); !errors.Is(err, storage.ErrTraceNotFound) {
+		t.Fatalf("expired trace payload error = %v", err)
+	}
+	traceSpans, err := tightened.GetTraceSpans(t.Context(), traceFixture.traceID)
+	if err != nil || len(traceSpans) != 5 {
+		t.Fatalf("trace payload prune removed span metadata: %#v, %v", traceSpans, err)
+	}
+	var replayedRoot telemetry.Span
+	for _, span := range traceSpans {
+		if span.SpanID == traceFixture.rootSpanID {
+			replayedRoot = span
+			break
+		}
+	}
+	if replayedRoot.SpanID == "" || replayedRoot.ContentState != telemetry.ContentStateExpired {
+		t.Fatalf("expired root span = %#v", replayedRoot)
+	}
+	replayedRoot.ContentState = telemetry.ContentStateCaptured
+	replayedDocument := json.RawMessage(`{"goal":"replayed-private"}`)
+	replayedExpiry := now.Add(time.Hour)
+	replayedResult, err := tightened.WriteBatch(t.Context(), telemetry.TraceBatch{
+		Spans: []telemetry.Span{replayedRoot},
+		Payloads: []telemetry.Payload{{
+			TraceID: traceFixture.traceID, SpanID: traceFixture.rootSpanID, Kind: "task.goal",
+			ContentType: "application/json", Encoding: "identity", PayloadJSON: replayedDocument,
+			RedactionState: telemetry.ContentStateCaptured, SizeBytes: int64(len(replayedDocument)),
+			ExpiresAt: &replayedExpiry, CreatedAt: now,
+		}},
+	})
+	if err != nil || replayedResult.Duplicates != 1 || replayedResult.Inserted != 0 || replayedResult.Updated != 0 {
+		t.Fatalf("expired trace replay = %#v, %v", replayedResult, err)
+	}
+	if _, err := tightened.GetTracePayload(t.Context(), traceFixture.traceID, traceFixture.rootSpanID, "task.goal"); !errors.Is(err, storage.ErrTraceNotFound) {
+		t.Fatalf("expired trace payload was revived: %v", err)
+	}
+	traceSpans, err = tightened.GetTraceSpans(t.Context(), traceFixture.traceID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, span := range traceSpans {
+		if span.SpanID == traceFixture.rootSpanID && span.ContentState != telemetry.ContentStateExpired {
+			t.Fatalf("expired trace content state regressed: %#v", span)
+		}
+	}
+	var tombstoneState string
+	var payloadBytesNull, payloadJSONNull bool
+	var tombstoneSize int64
+	if err := secondPool.QueryRow(t.Context(), `
+SELECT redaction_state, payload_bytes IS NULL, payload_json IS NULL, size_bytes
+FROM trace_payloads
+WHERE trace_id = $1 AND span_id = $2 AND payload_kind = 'task.goal'
+`, traceFixture.traceID, traceFixture.rootSpanID).Scan(
+		&tombstoneState, &payloadBytesNull, &payloadJSONNull, &tombstoneSize,
+	); err != nil || tombstoneState != telemetry.ContentStateExpired || !payloadBytesNull || !payloadJSONNull || tombstoneSize != 0 {
+		t.Fatalf("trace payload tombstone = %q/%v/%v/%d, %v", tombstoneState, payloadBytesNull, payloadJSONNull, tombstoneSize, err)
+	}
 	replay, err = tightened.ReplayAfter(t.Context(), 0, 10)
 	if err != nil || replay.Oldest != 0 || replay.Latest != 10 || len(replay.Messages) != 0 {
 		t.Fatalf("pruned replay = %#v, %v", replay, err)
@@ -278,6 +342,9 @@ SELECT public_id, upstream_id FROM audit_events WHERE source = $1 AND public_id 
 	}
 	if _, err := restarted.GetEvent(t.Context(), model.SourceAgentGateway, first.ID); !errors.Is(err, storage.ErrNotFound) {
 		t.Fatalf("expired event lookup = %v", err)
+	}
+	if _, err := restarted.GetTraceSummary(t.Context(), traceFixture.traceID); !errors.Is(err, storage.ErrTraceNotFound) {
+		t.Fatalf("expired trace summary lookup = %v", err)
 	}
 	expiredCheckpoint := checkpoint
 	expiredCheckpoint.Cursor = json.RawMessage(`{"eventId":"expired-never-seen"}`)
@@ -309,6 +376,121 @@ SELECT public_id, upstream_id FROM audit_events WHERE source = $1 AND public_id 
 	if err := restarted.Ready(t.Context()); err == nil || !strings.Contains(err.Error(), "checksum") {
 		t.Fatalf("readiness accepted migration checksum drift: %v", err)
 	}
+}
+
+type postgresTraceFixture struct {
+	traceID, rootSpanID string
+}
+
+func exercisePostgresTraceWrites(t *testing.T, store *Store, now time.Time) postgresTraceFixture {
+	t.Helper()
+	const traceID = "11111111111111111111111111111111"
+	child := postgresTraceSpan(traceID, "2222222222222222", "LLM", true, now.Add(time.Second), now.Add(2*time.Second))
+	input, output := int64(2), int64(3)
+	child.InputTokens, child.OutputTokens = &input, &output
+	result, err := store.WriteBatch(t.Context(), telemetry.TraceBatch{Spans: []telemetry.Span{child}})
+	if err != nil || result.Inserted != 1 {
+		t.Fatalf("child-first trace write = %#v, %v", result, err)
+	}
+	summary, err := store.GetTraceSummary(t.Context(), traceID)
+	if err != nil || summary.Status != "unknown" || summary.DurationMS != nil || summary.LLMCalls != 1 {
+		t.Fatalf("child-first trace summary = %#v, %v", summary, err)
+	}
+
+	root := postgresTraceSpan(traceID, "1111111111111111", "AGENT", false, now, time.Time{})
+	root.AgentID, root.SessionID, root.TaskID = "agent", "session", "task"
+	root.Attributes[telemetry.AttributeTaskRoot] = true
+	result, err = store.WriteBatch(t.Context(), telemetry.TraceBatch{Spans: []telemetry.Span{root}})
+	if err != nil || result.Inserted != 1 {
+		t.Fatalf("running root trace write = %#v, %v", result, err)
+	}
+	summary, _ = store.GetTraceSummary(t.Context(), traceID)
+	if summary.Status != "running" || summary.Completeness != "partial" {
+		t.Fatalf("running root summary = %#v", summary)
+	}
+
+	endedAt := now.Add(5 * time.Second)
+	root.EndedAt = &endedAt
+	root.StatusCode = telemetry.StatusOK
+	mcp := postgresTraceSpan(traceID, "3333333333333333", "TOOL", true, now.Add(2*time.Second), now.Add(3*time.Second))
+	mcp.ToolKind = "mcp"
+	mcp.Attributes[telemetry.AttributeMCPMethod] = "tools/call"
+	protocol := postgresTraceSpan(traceID, "4444444444444444", "TOOL", true, now.Add(2*time.Second), now.Add(3*time.Second))
+	protocol.ToolKind = "mcp"
+	protocol.Attributes[telemetry.AttributeMCPMethod] = "tools/list"
+	a2a := postgresTraceSpan(traceID, "5555555555555555", "AGENT", true, now.Add(3*time.Second), now.Add(4*time.Second))
+	a2a.PeerAgentID = "planner"
+	a2a.Attributes["gen_ai.operation.name"] = "invoke_agent"
+	payloadDocument := json.RawMessage(`{"goal":"private"}`)
+	expiresAt := now.Add(time.Hour)
+	result, err = store.WriteBatch(t.Context(), telemetry.TraceBatch{
+		Spans: []telemetry.Span{root, mcp, protocol, a2a},
+		Links: []telemetry.Link{{
+			TraceID: traceID, SpanID: a2a.SpanID,
+			LinkedTraceID: "66666666666666666666666666666666", LinkedSpanID: "7777777777777777",
+			Attributes: map[string]any{"messaging.operation": "publish"},
+		}},
+		Payloads: []telemetry.Payload{{
+			TraceID: traceID, SpanID: root.SpanID, Kind: "task.goal", ContentType: "application/json",
+			Encoding: "identity", PayloadJSON: payloadDocument, RedactionState: telemetry.ContentStateCaptured,
+			SizeBytes: int64(len(payloadDocument)), ExpiresAt: &expiresAt, CreatedAt: now,
+		}},
+	})
+	if err != nil || result.Inserted != 3 || result.Updated != 1 {
+		t.Fatalf("completed trace write = %#v, %v", result, err)
+	}
+	summary, err = store.GetTraceSummary(t.Context(), traceID)
+	if err != nil || summary.Status != "succeeded" || summary.Completeness != "verified" ||
+		summary.LLMCalls != 1 || summary.MCPCalls != 1 || summary.ToolCalls != 1 || summary.A2ACalls != 1 ||
+		summary.TotalTokens != 5 || summary.DurationMS == nil || *summary.DurationMS != 5000 {
+		t.Fatalf("completed trace summary = %#v, %v", summary, err)
+	}
+	links, err := store.GetTraceLinks(t.Context(), traceID)
+	if err != nil || len(links) != 1 || links[0].LinkedSpanID != "7777777777777777" {
+		t.Fatalf("stored trace links = %#v, %v", links, err)
+	}
+	payload, err := store.GetTracePayload(t.Context(), traceID, root.SpanID, "task.goal")
+	if err != nil || !sameJSON(payload.PayloadJSON, payloadDocument) {
+		t.Fatalf("stored trace payload = %#v, %v", payload, err)
+	}
+	duplicate, err := store.WriteBatch(t.Context(), telemetry.TraceBatch{Spans: []telemetry.Span{root}})
+	if err != nil || duplicate.Duplicates != 1 {
+		t.Fatalf("duplicate trace write = %#v, %v", duplicate, err)
+	}
+	root.EndedAt = nil
+	stalePayload := payload
+	stalePayload.PayloadJSON = json.RawMessage(`{"goal":"stale"}`)
+	stalePayload.SizeBytes = int64(len(stalePayload.PayloadJSON))
+	stale, err := store.WriteBatch(t.Context(), telemetry.TraceBatch{
+		Spans: []telemetry.Span{root}, Payloads: []telemetry.Payload{stalePayload},
+	})
+	if err != nil || stale.Duplicates != 1 {
+		t.Fatalf("stale trace write = %#v, %v", stale, err)
+	}
+	payload, _ = store.GetTracePayload(t.Context(), traceID, root.SpanID, "task.goal")
+	if !sameJSON(payload.PayloadJSON, payloadDocument) {
+		t.Fatalf("stale payload replaced terminal payload: %s", payload.PayloadJSON)
+	}
+	return postgresTraceFixture{traceID: traceID, rootSpanID: root.SpanID}
+}
+
+func sameJSON(left, right []byte) bool {
+	var leftValue, rightValue any
+	return json.Unmarshal(left, &leftValue) == nil && json.Unmarshal(right, &rightValue) == nil &&
+		reflect.DeepEqual(leftValue, rightValue)
+}
+
+func postgresTraceSpan(traceID, spanID, kind string, countable bool, startedAt, endedAt time.Time) telemetry.Span {
+	span := telemetry.Span{
+		TraceID: traceID, SpanID: spanID, Name: kind, OpenInferenceKind: kind,
+		StartedAt: startedAt, StatusCode: telemetry.StatusUnset, Countable: countable,
+		ContentState: telemetry.ContentStateNotCollected, Attributes: map[string]any{},
+		Resource: map[string]any{}, Events: []telemetry.Event{},
+	}
+	if !endedAt.IsZero() {
+		span.EndedAt = &endedAt
+	}
+	return span
 }
 
 func testPool(t *testing.T, databaseURL, schema string) *pgxpool.Pool {

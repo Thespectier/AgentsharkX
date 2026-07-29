@@ -7,12 +7,16 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const lockPath = resolve(root, "apps/web/package-lock.json");
 const goModPath = resolve(root, "apps/server/go.mod");
 const goSumPath = resolve(root, "apps/server/go.sum");
+const pythonProjectPath = resolve(root, "sdk/python/pyproject.toml");
+const pythonConstraintsPath = resolve(root, "sdk/python/constraints.txt");
 const versionsPath = resolve(root, "deploy/versions.env");
 const releaseDir = resolve(root, "docs/release");
 const lockText = await readFile(lockPath, "utf8");
 const lock = JSON.parse(lockText);
 const goModText = await readFile(goModPath, "utf8");
 const goSumText = await readFile(goSumPath, "utf8");
+const pythonProjectText = await readFile(pythonProjectPath, "utf8");
+const pythonConstraintsText = await readFile(pythonConstraintsPath, "utf8");
 const versions = Object.fromEntries(
   (await readFile(versionsPath, "utf8"))
     .split("\n")
@@ -22,6 +26,12 @@ const versions = Object.fromEntries(
       return [line.slice(0, separator), line.slice(separator + 1)];
     }),
 );
+const agentGuardRevision = versions.AGENTGUARD_GIT_REVISION ?? "";
+if (!/^[0-9a-f]{40}$/i.test(agentGuardRevision)) {
+  throw new Error(
+    "deploy/versions.env must contain a full AgentGuard Git revision",
+  );
+}
 
 const dependenciesByIdentity = new Map();
 for (const [location, metadata] of Object.entries(lock.packages ?? {})) {
@@ -92,22 +102,140 @@ const goRuntimeDefinitions = [
   },
   {
     path: "golang.org/x/sync",
-    version: "v0.17.0",
+    version: "v0.22.0",
     license: "BSD-3-Clause",
-    licenseSource: "https://github.com/golang/sync/blob/v0.17.0/LICENSE",
+    licenseSource: "https://github.com/golang/sync/blob/v0.22.0/LICENSE",
   },
   {
     path: "golang.org/x/text",
-    version: "v0.29.0",
+    version: "v0.40.0",
     license: "BSD-3-Clause",
-    licenseSource: "https://github.com/golang/text/blob/v0.29.0/LICENSE",
+    licenseSource: "https://github.com/golang/text/blob/v0.40.0/LICENSE",
+  },
+  {
+    path: "github.com/grpc-ecosystem/grpc-gateway/v2",
+    version: "v2.29.0",
+    license: "BSD-3-Clause",
+    licenseSource: "https://github.com/grpc-ecosystem/grpc-gateway/blob/v2.29.0/LICENSE.txt",
+    dependencies: [
+      "golang.org/x/net",
+      "golang.org/x/sys",
+      "golang.org/x/text",
+      "google.golang.org/genproto/googleapis/api",
+      "google.golang.org/genproto/googleapis/rpc",
+      "google.golang.org/grpc",
+      "google.golang.org/protobuf",
+    ],
+  },
+  {
+    path: "go.opentelemetry.io/proto/otlp",
+    version: "v1.11.0",
+    license: "Apache-2.0",
+    licenseSource: "https://github.com/open-telemetry/opentelemetry-proto-go/blob/v1.11.0/LICENSE",
+    direct: true,
+    dependencies: [
+      "github.com/grpc-ecosystem/grpc-gateway/v2",
+      "google.golang.org/grpc",
+      "google.golang.org/protobuf",
+    ],
+  },
+  {
+    path: "golang.org/x/net",
+    version: "v0.57.0",
+    license: "BSD-3-Clause",
+    licenseSource: "https://github.com/golang/net/blob/v0.57.0/LICENSE",
+    dependencies: ["golang.org/x/sys", "golang.org/x/text"],
+  },
+  {
+    path: "golang.org/x/sys",
+    version: "v0.47.0",
+    license: "BSD-3-Clause",
+    licenseSource: "https://github.com/golang/sys/blob/v0.47.0/LICENSE",
+  },
+  {
+    path: "google.golang.org/genproto/googleapis/api",
+    version: "v0.0.0-20260720211330-0afa2a65878a",
+    license: "Apache-2.0",
+    licenseSource: "https://github.com/googleapis/go-genproto/blob/0afa2a65878a/LICENSE",
+    dependencies: ["google.golang.org/protobuf"],
+  },
+  {
+    path: "google.golang.org/genproto/googleapis/rpc",
+    version: "v0.0.0-20260720211330-0afa2a65878a",
+    license: "Apache-2.0",
+    licenseSource: "https://github.com/googleapis/go-genproto/blob/0afa2a65878a/LICENSE",
+    dependencies: ["google.golang.org/protobuf"],
+  },
+  {
+    path: "google.golang.org/grpc",
+    version: "v1.82.1",
+    license: "Apache-2.0",
+    licenseSource: "https://github.com/grpc/grpc-go/blob/v1.82.1/LICENSE",
+    dependencies: [
+      "golang.org/x/net",
+      "golang.org/x/sys",
+      "google.golang.org/genproto/googleapis/rpc",
+      "google.golang.org/protobuf",
+    ],
+  },
+  {
+    path: "google.golang.org/protobuf",
+    version: "v1.36.11",
+    license: "BSD-3-Clause",
+    licenseSource: "https://github.com/protocolbuffers/protobuf-go/blob/v1.36.11/LICENSE",
+    direct: true,
   },
 ].sort((left, right) => left.path.localeCompare(right.path));
 const goRequirements = parseGoRequirements(goModText);
 const goSums = parseGoSums(goSumText);
 validateGoRuntimeManifest(goRuntimeDefinitions, goRequirements, goSums);
 
-const releaseVersion = versions.AGENTSHARK_VERSION ?? "0.8.0-preview";
+const pythonDirectDependencies = new Set([
+  "openinference-instrumentation",
+  "openinference-instrumentation-langchain",
+  "openinference-instrumentation-mcp",
+  "opentelemetry-api",
+  "opentelemetry-exporter-otlp-proto-http",
+  "opentelemetry-sdk",
+]);
+const pythonRuntimeDefinitions = [
+  ["certifi", "2026.7.22", "MPL-2.0"],
+  ["charset-normalizer", "3.4.9", "MIT"],
+  ["googleapis-common-protos", "1.75.0", "Apache-2.0"],
+  ["idna", "3.18", "BSD-3-Clause"],
+  ["openinference-instrumentation", "0.1.54", "Apache-2.0"],
+  ["openinference-instrumentation-langchain", "0.1.67", "Apache-2.0"],
+  ["openinference-instrumentation-mcp", "2.0.3", "Apache-2.0"],
+  ["openinference-semantic-conventions", "0.1.30", "Apache-2.0"],
+  ["opentelemetry-api", "1.44.0", "Apache-2.0"],
+  ["opentelemetry-exporter-otlp-proto-common", "1.44.0", "Apache-2.0"],
+  ["opentelemetry-exporter-otlp-proto-http", "1.44.0", "Apache-2.0"],
+  ["opentelemetry-instrumentation", "0.65b0", "Apache-2.0"],
+  ["opentelemetry-proto", "1.44.0", "Apache-2.0"],
+  ["opentelemetry-sdk", "1.44.0", "Apache-2.0"],
+  ["opentelemetry-semantic-conventions", "0.65b0", "Apache-2.0"],
+  ["packaging", "26.2", "Apache-2.0 OR BSD-2-Clause"],
+  ["protobuf", "7.35.1", "BSD-3-Clause"],
+  ["requests", "2.34.2", "Apache-2.0"],
+  ["typing-extensions", "4.16.0", "PSF-2.0"],
+  ["urllib3", "2.7.0", "MIT"],
+  ["wrapt", "2.3.0", "BSD-2-Clause"],
+]
+  .map(([name, version, license]) => ({
+    name,
+    version,
+    license,
+    direct: pythonDirectDependencies.has(name),
+  }))
+  .sort((left, right) => left.name.localeCompare(right.name));
+const pythonConstraints = parsePythonConstraints(pythonConstraintsText);
+validatePythonRuntimeManifest(
+  pythonRuntimeDefinitions,
+  pythonConstraints,
+  pythonProjectText,
+);
+
+const releaseVersion = versions.AGENTSHARK_VERSION ?? "0.9.0-preview";
 const created = "2026-07-29T00:00:00Z";
 const rootPackages = [
   packageEntry(
@@ -121,6 +249,12 @@ const rootPackages = [
     lock.packages?.[""]?.version ?? "0.1.0",
     "Apache-2.0",
     "APPLICATION",
+  ),
+  packageEntry(
+    "AgentsharkX Python SDK",
+    "0.1.0",
+    "Apache-2.0",
+    "LIBRARY",
   ),
 ];
 const npmPackages = dependencies.map((dependency) => ({
@@ -173,6 +307,30 @@ const goPackages = goRuntimeDefinitions.map((dependency) => ({
     },
   ],
 }));
+const pythonPackages = pythonRuntimeDefinitions.map((dependency) => ({
+  ...packageEntry(
+    dependency.name,
+    dependency.version,
+    dependency.license,
+    "LIBRARY",
+  ),
+  SPDXID: spdxID(`pypi-${dependency.name}-${dependency.version}`),
+  externalRefs: [
+    {
+      referenceCategory: "PACKAGE-MANAGER",
+      referenceType: "purl",
+      referenceLocator: `pkg:pypi/${dependency.name}@${dependency.version}`,
+    },
+  ],
+  annotations: [
+    {
+      annotationDate: created,
+      annotationType: "OTHER",
+      annotator: "Tool: AgentsharkX release artifact generator",
+      comment: `${dependency.direct ? "direct" : "transitive"} runtime dependency from sdk/python/constraints.txt; license reviewed from installed distribution metadata`,
+    },
+  ],
+}));
 const upstreamPackages = [
   {
     ...packageEntry(
@@ -188,13 +346,21 @@ const upstreamPackages = [
   {
     ...packageEntry(
       "AgentGuard",
-      versions.AGENTGUARD_VERSION ?? "NOASSERTION",
+      agentGuardRevision,
       "GPL-3.0-only",
       "APPLICATION",
     ),
     SPDXID: "SPDXRef-Upstream-AgentGuard",
-    downloadLocation: "https://github.com/WhitzardAgent/AgentGuard",
+    downloadLocation: `https://github.com/WhitzardAgent/AgentGuard/tree/${agentGuardRevision}`,
     supplier: "Organization: WhitzardAgent",
+    annotations: [
+      {
+        annotationDate: created,
+        annotationType: "OTHER",
+        annotator: "Tool: AgentsharkX release artifact generator",
+        comment: `Pinned source revision for separately installed AgentGuard; preview image label ${versions.AGENTGUARD_VERSION ?? "NOASSERTION"}`,
+      },
+    ],
   },
   {
     ...packageEntry(
@@ -232,6 +398,7 @@ const document = {
     ...rootPackages,
     ...npmPackages,
     ...goPackages,
+    ...pythonPackages,
     ...upstreamPackages,
   ],
   relationships: [
@@ -254,6 +421,11 @@ const document = {
         relatedSpdxElement: goPackageByPath.get(relatedPath).SPDXID,
       })),
     ),
+    ...pythonPackages.map((item) => ({
+      spdxElementId: rootPackages[2].SPDXID,
+      relationshipType: "DEPENDS_ON",
+      relatedSpdxElement: item.SPDXID,
+    })),
     ...upstreamPackages.map((item) => ({
       spdxElementId: rootPackages[0].SPDXID,
       relationshipType: "OTHER",
@@ -261,6 +433,13 @@ const document = {
       comment:
         "Runtime management or SQL integration; the service remains a separate process and image.",
     })),
+    {
+      spdxElementId: rootPackages[2].SPDXID,
+      relationshipType: "DEPENDS_ON",
+      relatedSpdxElement: "SPDXRef-Upstream-AgentGuard",
+      comment:
+        "The repository-local Python SDK imports the separately installed pinned AgentGuard package; AgentGuard source is not copied into the SDK.",
+    },
   ],
   annotations: [
     {
@@ -280,7 +459,13 @@ const document = {
       annotationType: "OTHER",
       annotator: "Tool: AgentsharkX release artifact generator",
       comment:
-        "Go module membership is the reviewed linux/amd64 runtime graph for ./cmd/agentshark; test-only module dependencies are excluded.",
+        "Go module membership is the reviewed linux/amd64 runtime graph for ./cmd/agentshark and ./cmd/agentshark-collector; test-only module dependencies are excluded.",
+    },
+    {
+      annotationDate: created,
+      annotationType: "OTHER",
+      annotator: "Tool: AgentsharkX release artifact generator",
+      comment: `Python SDK pyproject.toml sha256 ${createHash("sha256").update(pythonProjectText).digest("hex")}; constraints.txt sha256 ${createHash("sha256").update(pythonConstraintsText).digest("hex")}`,
     },
   ],
 };
@@ -291,6 +476,12 @@ const goLicenseRows = goRuntimeDefinitions
       `| \`${escapeCell(dependency.path)}\` | \`${escapeCell(dependency.version)}\` | ${dependency.direct ? "runtime (direct)" : "runtime (transitive)"} | ${escapeCell(dependency.license)} |`,
   )
   .join("\n");
+const pythonLicenseRows = pythonRuntimeDefinitions
+  .map(
+    (dependency) =>
+      `| \`${escapeCell(dependency.name)}\` | \`${escapeCell(dependency.version)}\` | ${dependency.direct ? "runtime (direct)" : "runtime (transitive)"} | ${escapeCell(dependency.license)} |`,
+  )
+  .join("\n");
 const licenseRows = dependencies
   .map(
     (dependency) =>
@@ -299,15 +490,21 @@ const licenseRows = dependencies
   .join("\n");
 const licenseDocument = `# Dependency license inventory
 
-Generated from the exact npm lockfile and reviewed Go runtime module graph used by the \`${releaseVersion}\` preview. Go module versions are checked against \`apps/server/go.mod\`, and their content hashes are recorded from \`apps/server/go.sum\`; generation performs no network access. Go licenses were verified from each pinned module's source license. npm licenses are declarations from the lockfile; \`NOASSERTION\` entries require manual review before redistribution.
+Generated from the exact npm lockfile, reviewed Go runtime module graph, and pinned local Python SDK resolution used by the \`${releaseVersion}\` preview. Go module versions are checked against \`apps/server/go.mod\`, and their content hashes are recorded from \`apps/server/go.sum\`. Python versions are checked against \`sdk/python/constraints.txt\`; runtime package licenses were reviewed from installed distribution metadata. Generation performs no network access. npm licenses are declarations from the lockfile; \`NOASSERTION\` entries require manual review before redistribution.
 
-Runtime services are separate processes: agentgateway is Apache-2.0, AgentGuard is GPL-3.0-only, and PostgreSQL uses the PostgreSQL license. Their source and image obligations remain independent from the AgentsharkX Apache-2.0 image.
+Runtime services are separate processes: agentgateway is Apache-2.0, AgentGuard at full source revision \`${agentGuardRevision}\` is GPL-3.0-only, and PostgreSQL uses the PostgreSQL license. Their source and image obligations remain independent from the AgentsharkX Apache-2.0 image. The repository-local Python SDK imports a separately installed pinned AgentGuard checkout for local agent integration; it does not copy AgentGuard source or publish a combined package. Distribution requires a separate license review.
 
 ## Go runtime modules
 
 | Package | Version | Scope | Declared license |
 | --- | --- | --- | --- |
 ${goLicenseRows}
+
+## Python SDK runtime packages
+
+| Package | Version | Scope | Declared license |
+| --- | --- | --- | --- |
+${pythonLicenseRows}
 
 ## npm packages
 
@@ -323,7 +520,7 @@ await writeFile(
 );
 await writeFile(resolve(releaseDir, "dependency-licenses.md"), licenseDocument);
 console.log(
-  `release artifacts: ${document.packages.length} packages, ${dependencies.length} npm dependencies, ${goRuntimeDefinitions.length} Go runtime modules`,
+  `release artifacts: ${document.packages.length} packages, ${dependencies.length} npm dependencies, ${goRuntimeDefinitions.length} Go runtime modules, ${pythonRuntimeDefinitions.length} Python runtime packages`,
 );
 
 function packageEntry(name, version, license, primaryPackagePurpose) {
@@ -436,6 +633,43 @@ function validateGoRuntimeManifest(definitions, requirements, sums) {
           `unclassified runtime relationship ${dependency.path} -> ${relatedPath}`,
         );
       }
+    }
+  }
+}
+
+function parsePythonConstraints(text) {
+  const constraints = new Map();
+  for (const rawLine of text.split("\n")) {
+    const line = rawLine.replace(/\s+#.*$/, "").trim();
+    if (!line || line.startsWith("#")) continue;
+    const match = line.match(/^([A-Za-z0-9_.-]+)==([^\s]+)$/);
+    if (!match) {
+      throw new Error(`unsupported Python constraint: ${line}`);
+    }
+    const name = match[1].toLowerCase().replaceAll("_", "-");
+    if (constraints.has(name)) {
+      throw new Error(`duplicate Python constraint: ${name}`);
+    }
+    constraints.set(name, match[2]);
+  }
+  return constraints;
+}
+
+function validatePythonRuntimeManifest(definitions, constraints, projectText) {
+  for (const dependency of definitions) {
+    const version = constraints.get(dependency.name);
+    if (version !== dependency.version) {
+      throw new Error(
+        `review ${dependency.name} metadata: constraints have ${version ?? "no version"}, manifest expects ${dependency.version}`,
+      );
+    }
+    if (
+      dependency.direct &&
+      !projectText.includes(`"${dependency.name}==${dependency.version}"`)
+    ) {
+      throw new Error(
+        `direct Python dependency ${dependency.name} must match pyproject.toml`,
+      );
     }
   }
 }

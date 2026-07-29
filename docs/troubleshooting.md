@@ -72,7 +72,34 @@ source-specific recovery guidance.
   explicit `local`/`development` environment bound to a loopback listener.
 
 Run `make preview-bootstrap` to create a safe local `.env`; it never overwrites
-existing values and can add missing Phase 13 database settings.
+existing values and can add missing Phase 13/14 database and Collector settings.
+
+## Trace Collector or SDK is unavailable
+
+Check the Collector independently from the BFF and upstreams:
+
+```bash
+curl -fsS http://127.0.0.1:4318/healthz
+curl -fsS http://127.0.0.1:4318/readyz
+curl -fsS http://127.0.0.1:4318/metrics
+./scripts/standalone-compose.sh logs agentshark-collector
+```
+
+Liveness with failed readiness means the process is running but PostgreSQL or
+the embedded Trace migration is unavailable. Confirm the dedicated
+`AGENTSHARK_COLLECTOR_DATABASE_URL`, when set, names the migrated database and
+has Trace-table privileges. Do not print that URL. A 401 from `/v1/traces`
+means the SDK and Collector `AGENTSHARK_TRACE_INGEST_TOKEN` values differ; a
+415 means the client is not sending OTLP protobuf or declared an unsupported
+encoding; 413 means the compressed, decompressed, or Span-count limit was hit.
+
+Trace export failure does not fail agent business work. Call `flush()` and
+`close()` explicitly before process exit, inspect the aggregate metrics, and
+keep the SDK's Batch settings below the Collector Span limit. AgentGuard
+unavailability is separate: closed mode rejects startup/decisions, while open
+mode must be explicitly configured and reports that execution is unprotected.
+Run `make sdk-agentguard-contract` if the local pinned dependency does not
+install or `attach_langchain()` is missing.
 
 ## PostgreSQL or Audit is unavailable
 
@@ -141,6 +168,11 @@ therefore also verifies PostgreSQL connectivity, applied migrations, and Audit
 history restoration. Neither
 endpoint claims that either upstream is healthy. Inspect System for upstream
 state and `docker inspect` for the container health log.
+
+The Collector container overrides the image's BFF healthcheck and probes
+`http://127.0.0.1:4318/readyz`. If only `agentshark-collector` is unhealthy,
+inspect its database role/migrations and Collector configuration rather than
+the BFF's port 8080.
 
 ## Native gateway port is unavailable
 

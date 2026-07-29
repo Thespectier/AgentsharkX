@@ -2,8 +2,8 @@
   "spdxVersion": "SPDX-2.3",
   "dataLicense": "CC0-1.0",
   "SPDXID": "SPDXRef-DOCUMENT",
-  "name": "AgentsharkX-0.8.0-preview",
-  "documentNamespace": "https://github.com/Thespectier/AgentsharkX/sbom/0.8.0-preview",
+  "name": "AgentsharkX-0.9.0-preview",
+  "documentNamespace": "https://github.com/Thespectier/AgentsharkX/sbom/0.9.0-preview",
   "creationInfo": {
     "created": "2026-07-29T00:00:00Z",
     "creators": [
@@ -12,14 +12,15 @@
     "licenseListVersion": "3.26"
   },
   "documentDescribes": [
-    "SPDXRef-AgentsharkX-server-0.8.0-preview",
-    "SPDXRef-AgentsharkX-web-0.1.0"
+    "SPDXRef-AgentsharkX-server-0.9.0-preview",
+    "SPDXRef-AgentsharkX-web-0.1.0",
+    "SPDXRef-AgentsharkX-Python-SDK-0.1.0"
   ],
   "packages": [
     {
       "name": "AgentsharkX server",
-      "SPDXID": "SPDXRef-AgentsharkX-server-0.8.0-preview",
-      "versionInfo": "0.8.0-preview",
+      "SPDXID": "SPDXRef-AgentsharkX-server-0.9.0-preview",
+      "versionInfo": "0.9.0-preview",
       "downloadLocation": "NOASSERTION",
       "filesAnalyzed": false,
       "licenseConcluded": "NOASSERTION",
@@ -37,6 +38,17 @@
       "licenseDeclared": "Apache-2.0",
       "copyrightText": "NOASSERTION",
       "primaryPackagePurpose": "APPLICATION"
+    },
+    {
+      "name": "AgentsharkX Python SDK",
+      "SPDXID": "SPDXRef-AgentsharkX-Python-SDK-0.1.0",
+      "versionInfo": "0.1.0",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "Apache-2.0",
+      "copyrightText": "NOASSERTION",
+      "primaryPackagePurpose": "LIBRARY"
     },
     {
       "name": "@adobe/css-tools",
@@ -9685,6 +9697,32 @@
       ]
     },
     {
+      "name": "github.com/grpc-ecosystem/grpc-gateway/v2",
+      "SPDXID": "SPDXRef-go-github.com-grpc-ecosystem-grpc-gateway-v2-v2.29.0",
+      "versionInfo": "v2.29.0",
+      "downloadLocation": "https://proxy.golang.org/github.com/grpc-ecosystem/grpc-gateway/v2/@v/v2.29.0.zip",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "BSD-3-Clause",
+      "copyrightText": "NOASSERTION",
+      "primaryPackagePurpose": "LIBRARY",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:golang/github.com/grpc-ecosystem/grpc-gateway/v2@v2.29.0"
+        }
+      ],
+      "annotations": [
+        {
+          "annotationDate": "2026-07-29T00:00:00Z",
+          "annotationType": "OTHER",
+          "annotator": "Tool: AgentsharkX release artifact generator",
+          "comment": "transitive runtime dependency from apps/server/go.mod; go.sum h1:5VipnvEpbqr2gA2VbM+nYVbkIF28c5ZQfqCBQ5g2xfk=; declared license verified at https://github.com/grpc-ecosystem/grpc-gateway/blob/v2.29.0/LICENSE.txt"
+        }
+      ]
+    },
+    {
       "name": "github.com/jackc/pgpassfile",
       "SPDXID": "SPDXRef-go-github.com-jackc-pgpassfile-v1.0.0",
       "versionInfo": "v1.0.0",
@@ -9789,10 +9827,36 @@
       ]
     },
     {
-      "name": "golang.org/x/sync",
-      "SPDXID": "SPDXRef-go-golang.org-x-sync-v0.17.0",
-      "versionInfo": "v0.17.0",
-      "downloadLocation": "https://proxy.golang.org/golang.org/x/sync/@v/v0.17.0.zip",
+      "name": "go.opentelemetry.io/proto/otlp",
+      "SPDXID": "SPDXRef-go-go.opentelemetry.io-proto-otlp-v1.11.0",
+      "versionInfo": "v1.11.0",
+      "downloadLocation": "https://proxy.golang.org/go.opentelemetry.io/proto/otlp/@v/v1.11.0.zip",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "Apache-2.0",
+      "copyrightText": "NOASSERTION",
+      "primaryPackagePurpose": "LIBRARY",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:golang/go.opentelemetry.io/proto/otlp@v1.11.0"
+        }
+      ],
+      "annotations": [
+        {
+          "annotationDate": "2026-07-29T00:00:00Z",
+          "annotationType": "OTHER",
+          "annotator": "Tool: AgentsharkX release artifact generator",
+          "comment": "direct runtime dependency from apps/server/go.mod; go.sum h1:5rrYs0Ykyj50sdU/JU0x8etU+LubXWb+gED6TbEdMIk=; declared license verified at https://github.com/open-telemetry/opentelemetry-proto-go/blob/v1.11.0/LICENSE"
+        }
+      ]
+    },
+    {
+      "name": "golang.org/x/net",
+      "SPDXID": "SPDXRef-go-golang.org-x-net-v0.57.0",
+      "versionInfo": "v0.57.0",
+      "downloadLocation": "https://proxy.golang.org/golang.org/x/net/@v/v0.57.0.zip",
       "filesAnalyzed": false,
       "licenseConcluded": "NOASSERTION",
       "licenseDeclared": "BSD-3-Clause",
@@ -9802,7 +9866,7 @@
         {
           "referenceCategory": "PACKAGE-MANAGER",
           "referenceType": "purl",
-          "referenceLocator": "pkg:golang/golang.org/x/sync@v0.17.0"
+          "referenceLocator": "pkg:golang/golang.org/x/net@v0.57.0"
         }
       ],
       "annotations": [
@@ -9810,15 +9874,67 @@
           "annotationDate": "2026-07-29T00:00:00Z",
           "annotationType": "OTHER",
           "annotator": "Tool: AgentsharkX release artifact generator",
-          "comment": "transitive runtime dependency from apps/server/go.mod; go.sum h1:l60nONMj9l5drqw6jlhIELNv9I0A4OFgRsG9k2oT9Ug=; declared license verified at https://github.com/golang/sync/blob/v0.17.0/LICENSE"
+          "comment": "transitive runtime dependency from apps/server/go.mod; go.sum h1:K5+3DljvIuDG9/Jv9rvyMywYNFCQ9RSUY6OOTTkT+tE=; declared license verified at https://github.com/golang/net/blob/v0.57.0/LICENSE"
+        }
+      ]
+    },
+    {
+      "name": "golang.org/x/sync",
+      "SPDXID": "SPDXRef-go-golang.org-x-sync-v0.22.0",
+      "versionInfo": "v0.22.0",
+      "downloadLocation": "https://proxy.golang.org/golang.org/x/sync/@v/v0.22.0.zip",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "BSD-3-Clause",
+      "copyrightText": "NOASSERTION",
+      "primaryPackagePurpose": "LIBRARY",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:golang/golang.org/x/sync@v0.22.0"
+        }
+      ],
+      "annotations": [
+        {
+          "annotationDate": "2026-07-29T00:00:00Z",
+          "annotationType": "OTHER",
+          "annotator": "Tool: AgentsharkX release artifact generator",
+          "comment": "transitive runtime dependency from apps/server/go.mod; go.sum h1:SZjpbeLmrCk4xhRSZFNZW5gFUeCeFgjekvI/+gfScek=; declared license verified at https://github.com/golang/sync/blob/v0.22.0/LICENSE"
+        }
+      ]
+    },
+    {
+      "name": "golang.org/x/sys",
+      "SPDXID": "SPDXRef-go-golang.org-x-sys-v0.47.0",
+      "versionInfo": "v0.47.0",
+      "downloadLocation": "https://proxy.golang.org/golang.org/x/sys/@v/v0.47.0.zip",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "BSD-3-Clause",
+      "copyrightText": "NOASSERTION",
+      "primaryPackagePurpose": "LIBRARY",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:golang/golang.org/x/sys@v0.47.0"
+        }
+      ],
+      "annotations": [
+        {
+          "annotationDate": "2026-07-29T00:00:00Z",
+          "annotationType": "OTHER",
+          "annotator": "Tool: AgentsharkX release artifact generator",
+          "comment": "transitive runtime dependency from apps/server/go.mod; go.sum h1:o7XGOvZQCADBQQ4Y7VNq2dRWQR7JmOUW8Kxx4ZsNgWs=; declared license verified at https://github.com/golang/sys/blob/v0.47.0/LICENSE"
         }
       ]
     },
     {
       "name": "golang.org/x/text",
-      "SPDXID": "SPDXRef-go-golang.org-x-text-v0.29.0",
-      "versionInfo": "v0.29.0",
-      "downloadLocation": "https://proxy.golang.org/golang.org/x/text/@v/v0.29.0.zip",
+      "SPDXID": "SPDXRef-go-golang.org-x-text-v0.40.0",
+      "versionInfo": "v0.40.0",
+      "downloadLocation": "https://proxy.golang.org/golang.org/x/text/@v/v0.40.0.zip",
       "filesAnalyzed": false,
       "licenseConcluded": "NOASSERTION",
       "licenseDeclared": "BSD-3-Clause",
@@ -9828,7 +9944,7 @@
         {
           "referenceCategory": "PACKAGE-MANAGER",
           "referenceType": "purl",
-          "referenceLocator": "pkg:golang/golang.org/x/text@v0.29.0"
+          "referenceLocator": "pkg:golang/golang.org/x/text@v0.40.0"
         }
       ],
       "annotations": [
@@ -9836,7 +9952,657 @@
           "annotationDate": "2026-07-29T00:00:00Z",
           "annotationType": "OTHER",
           "annotator": "Tool: AgentsharkX release artifact generator",
-          "comment": "transitive runtime dependency from apps/server/go.mod; go.sum h1:1neNs90w9YzJ9BocxfsQNHKuAT4pkghyXc4nhZ6sJvk=; declared license verified at https://github.com/golang/text/blob/v0.29.0/LICENSE"
+          "comment": "transitive runtime dependency from apps/server/go.mod; go.sum h1:Ub2Z6/xjgF1WrYQz2nuITOEegKFtiIy+rieRJ5lHZKs=; declared license verified at https://github.com/golang/text/blob/v0.40.0/LICENSE"
+        }
+      ]
+    },
+    {
+      "name": "google.golang.org/genproto/googleapis/api",
+      "SPDXID": "SPDXRef-go-google.golang.org-genproto-googleapis-api-v0.0.0-20260720211330-0afa2a65878a",
+      "versionInfo": "v0.0.0-20260720211330-0afa2a65878a",
+      "downloadLocation": "https://proxy.golang.org/google.golang.org/genproto/googleapis/api/@v/v0.0.0-20260720211330-0afa2a65878a.zip",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "Apache-2.0",
+      "copyrightText": "NOASSERTION",
+      "primaryPackagePurpose": "LIBRARY",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:golang/google.golang.org/genproto/googleapis/api@v0.0.0-20260720211330-0afa2a65878a"
+        }
+      ],
+      "annotations": [
+        {
+          "annotationDate": "2026-07-29T00:00:00Z",
+          "annotationType": "OTHER",
+          "annotator": "Tool: AgentsharkX release artifact generator",
+          "comment": "transitive runtime dependency from apps/server/go.mod; go.sum h1:97PfJ4tCxY5C7NzzgGqQEMZmXbISdvSArNNEOoUGKBg=; declared license verified at https://github.com/googleapis/go-genproto/blob/0afa2a65878a/LICENSE"
+        }
+      ]
+    },
+    {
+      "name": "google.golang.org/genproto/googleapis/rpc",
+      "SPDXID": "SPDXRef-go-google.golang.org-genproto-googleapis-rpc-v0.0.0-20260720211330-0afa2a65878a",
+      "versionInfo": "v0.0.0-20260720211330-0afa2a65878a",
+      "downloadLocation": "https://proxy.golang.org/google.golang.org/genproto/googleapis/rpc/@v/v0.0.0-20260720211330-0afa2a65878a.zip",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "Apache-2.0",
+      "copyrightText": "NOASSERTION",
+      "primaryPackagePurpose": "LIBRARY",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:golang/google.golang.org/genproto/googleapis/rpc@v0.0.0-20260720211330-0afa2a65878a"
+        }
+      ],
+      "annotations": [
+        {
+          "annotationDate": "2026-07-29T00:00:00Z",
+          "annotationType": "OTHER",
+          "annotator": "Tool: AgentsharkX release artifact generator",
+          "comment": "transitive runtime dependency from apps/server/go.mod; go.sum h1:qI/YMH1ep2qQtqcp00gMQyoU7mjvbhg88GJKCvfoLj0=; declared license verified at https://github.com/googleapis/go-genproto/blob/0afa2a65878a/LICENSE"
+        }
+      ]
+    },
+    {
+      "name": "google.golang.org/grpc",
+      "SPDXID": "SPDXRef-go-google.golang.org-grpc-v1.82.1",
+      "versionInfo": "v1.82.1",
+      "downloadLocation": "https://proxy.golang.org/google.golang.org/grpc/@v/v1.82.1.zip",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "Apache-2.0",
+      "copyrightText": "NOASSERTION",
+      "primaryPackagePurpose": "LIBRARY",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:golang/google.golang.org/grpc@v1.82.1"
+        }
+      ],
+      "annotations": [
+        {
+          "annotationDate": "2026-07-29T00:00:00Z",
+          "annotationType": "OTHER",
+          "annotator": "Tool: AgentsharkX release artifact generator",
+          "comment": "transitive runtime dependency from apps/server/go.mod; go.sum h1:NnAxzGRA0677vCa4BUkOAnO5+FfQqVl9iUXeD0IqcGE=; declared license verified at https://github.com/grpc/grpc-go/blob/v1.82.1/LICENSE"
+        }
+      ]
+    },
+    {
+      "name": "google.golang.org/protobuf",
+      "SPDXID": "SPDXRef-go-google.golang.org-protobuf-v1.36.11",
+      "versionInfo": "v1.36.11",
+      "downloadLocation": "https://proxy.golang.org/google.golang.org/protobuf/@v/v1.36.11.zip",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "BSD-3-Clause",
+      "copyrightText": "NOASSERTION",
+      "primaryPackagePurpose": "LIBRARY",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:golang/google.golang.org/protobuf@v1.36.11"
+        }
+      ],
+      "annotations": [
+        {
+          "annotationDate": "2026-07-29T00:00:00Z",
+          "annotationType": "OTHER",
+          "annotator": "Tool: AgentsharkX release artifact generator",
+          "comment": "direct runtime dependency from apps/server/go.mod; go.sum h1:fV6ZwhNocDyBLK0dj+fg8ektcVegBBuEolpbTQyBNVE=; declared license verified at https://github.com/protocolbuffers/protobuf-go/blob/v1.36.11/LICENSE"
+        }
+      ]
+    },
+    {
+      "name": "certifi",
+      "SPDXID": "SPDXRef-pypi-certifi-2026.7.22",
+      "versionInfo": "2026.7.22",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "MPL-2.0",
+      "copyrightText": "NOASSERTION",
+      "primaryPackagePurpose": "LIBRARY",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:pypi/certifi@2026.7.22"
+        }
+      ],
+      "annotations": [
+        {
+          "annotationDate": "2026-07-29T00:00:00Z",
+          "annotationType": "OTHER",
+          "annotator": "Tool: AgentsharkX release artifact generator",
+          "comment": "transitive runtime dependency from sdk/python/constraints.txt; license reviewed from installed distribution metadata"
+        }
+      ]
+    },
+    {
+      "name": "charset-normalizer",
+      "SPDXID": "SPDXRef-pypi-charset-normalizer-3.4.9",
+      "versionInfo": "3.4.9",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "MIT",
+      "copyrightText": "NOASSERTION",
+      "primaryPackagePurpose": "LIBRARY",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:pypi/charset-normalizer@3.4.9"
+        }
+      ],
+      "annotations": [
+        {
+          "annotationDate": "2026-07-29T00:00:00Z",
+          "annotationType": "OTHER",
+          "annotator": "Tool: AgentsharkX release artifact generator",
+          "comment": "transitive runtime dependency from sdk/python/constraints.txt; license reviewed from installed distribution metadata"
+        }
+      ]
+    },
+    {
+      "name": "googleapis-common-protos",
+      "SPDXID": "SPDXRef-pypi-googleapis-common-protos-1.75.0",
+      "versionInfo": "1.75.0",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "Apache-2.0",
+      "copyrightText": "NOASSERTION",
+      "primaryPackagePurpose": "LIBRARY",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:pypi/googleapis-common-protos@1.75.0"
+        }
+      ],
+      "annotations": [
+        {
+          "annotationDate": "2026-07-29T00:00:00Z",
+          "annotationType": "OTHER",
+          "annotator": "Tool: AgentsharkX release artifact generator",
+          "comment": "transitive runtime dependency from sdk/python/constraints.txt; license reviewed from installed distribution metadata"
+        }
+      ]
+    },
+    {
+      "name": "idna",
+      "SPDXID": "SPDXRef-pypi-idna-3.18",
+      "versionInfo": "3.18",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "BSD-3-Clause",
+      "copyrightText": "NOASSERTION",
+      "primaryPackagePurpose": "LIBRARY",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:pypi/idna@3.18"
+        }
+      ],
+      "annotations": [
+        {
+          "annotationDate": "2026-07-29T00:00:00Z",
+          "annotationType": "OTHER",
+          "annotator": "Tool: AgentsharkX release artifact generator",
+          "comment": "transitive runtime dependency from sdk/python/constraints.txt; license reviewed from installed distribution metadata"
+        }
+      ]
+    },
+    {
+      "name": "openinference-instrumentation",
+      "SPDXID": "SPDXRef-pypi-openinference-instrumentation-0.1.54",
+      "versionInfo": "0.1.54",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "Apache-2.0",
+      "copyrightText": "NOASSERTION",
+      "primaryPackagePurpose": "LIBRARY",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:pypi/openinference-instrumentation@0.1.54"
+        }
+      ],
+      "annotations": [
+        {
+          "annotationDate": "2026-07-29T00:00:00Z",
+          "annotationType": "OTHER",
+          "annotator": "Tool: AgentsharkX release artifact generator",
+          "comment": "direct runtime dependency from sdk/python/constraints.txt; license reviewed from installed distribution metadata"
+        }
+      ]
+    },
+    {
+      "name": "openinference-instrumentation-langchain",
+      "SPDXID": "SPDXRef-pypi-openinference-instrumentation-langchain-0.1.67",
+      "versionInfo": "0.1.67",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "Apache-2.0",
+      "copyrightText": "NOASSERTION",
+      "primaryPackagePurpose": "LIBRARY",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:pypi/openinference-instrumentation-langchain@0.1.67"
+        }
+      ],
+      "annotations": [
+        {
+          "annotationDate": "2026-07-29T00:00:00Z",
+          "annotationType": "OTHER",
+          "annotator": "Tool: AgentsharkX release artifact generator",
+          "comment": "direct runtime dependency from sdk/python/constraints.txt; license reviewed from installed distribution metadata"
+        }
+      ]
+    },
+    {
+      "name": "openinference-instrumentation-mcp",
+      "SPDXID": "SPDXRef-pypi-openinference-instrumentation-mcp-2.0.3",
+      "versionInfo": "2.0.3",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "Apache-2.0",
+      "copyrightText": "NOASSERTION",
+      "primaryPackagePurpose": "LIBRARY",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:pypi/openinference-instrumentation-mcp@2.0.3"
+        }
+      ],
+      "annotations": [
+        {
+          "annotationDate": "2026-07-29T00:00:00Z",
+          "annotationType": "OTHER",
+          "annotator": "Tool: AgentsharkX release artifact generator",
+          "comment": "direct runtime dependency from sdk/python/constraints.txt; license reviewed from installed distribution metadata"
+        }
+      ]
+    },
+    {
+      "name": "openinference-semantic-conventions",
+      "SPDXID": "SPDXRef-pypi-openinference-semantic-conventions-0.1.30",
+      "versionInfo": "0.1.30",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "Apache-2.0",
+      "copyrightText": "NOASSERTION",
+      "primaryPackagePurpose": "LIBRARY",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:pypi/openinference-semantic-conventions@0.1.30"
+        }
+      ],
+      "annotations": [
+        {
+          "annotationDate": "2026-07-29T00:00:00Z",
+          "annotationType": "OTHER",
+          "annotator": "Tool: AgentsharkX release artifact generator",
+          "comment": "transitive runtime dependency from sdk/python/constraints.txt; license reviewed from installed distribution metadata"
+        }
+      ]
+    },
+    {
+      "name": "opentelemetry-api",
+      "SPDXID": "SPDXRef-pypi-opentelemetry-api-1.44.0",
+      "versionInfo": "1.44.0",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "Apache-2.0",
+      "copyrightText": "NOASSERTION",
+      "primaryPackagePurpose": "LIBRARY",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:pypi/opentelemetry-api@1.44.0"
+        }
+      ],
+      "annotations": [
+        {
+          "annotationDate": "2026-07-29T00:00:00Z",
+          "annotationType": "OTHER",
+          "annotator": "Tool: AgentsharkX release artifact generator",
+          "comment": "direct runtime dependency from sdk/python/constraints.txt; license reviewed from installed distribution metadata"
+        }
+      ]
+    },
+    {
+      "name": "opentelemetry-exporter-otlp-proto-common",
+      "SPDXID": "SPDXRef-pypi-opentelemetry-exporter-otlp-proto-common-1.44.0",
+      "versionInfo": "1.44.0",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "Apache-2.0",
+      "copyrightText": "NOASSERTION",
+      "primaryPackagePurpose": "LIBRARY",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:pypi/opentelemetry-exporter-otlp-proto-common@1.44.0"
+        }
+      ],
+      "annotations": [
+        {
+          "annotationDate": "2026-07-29T00:00:00Z",
+          "annotationType": "OTHER",
+          "annotator": "Tool: AgentsharkX release artifact generator",
+          "comment": "transitive runtime dependency from sdk/python/constraints.txt; license reviewed from installed distribution metadata"
+        }
+      ]
+    },
+    {
+      "name": "opentelemetry-exporter-otlp-proto-http",
+      "SPDXID": "SPDXRef-pypi-opentelemetry-exporter-otlp-proto-http-1.44.0",
+      "versionInfo": "1.44.0",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "Apache-2.0",
+      "copyrightText": "NOASSERTION",
+      "primaryPackagePurpose": "LIBRARY",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:pypi/opentelemetry-exporter-otlp-proto-http@1.44.0"
+        }
+      ],
+      "annotations": [
+        {
+          "annotationDate": "2026-07-29T00:00:00Z",
+          "annotationType": "OTHER",
+          "annotator": "Tool: AgentsharkX release artifact generator",
+          "comment": "direct runtime dependency from sdk/python/constraints.txt; license reviewed from installed distribution metadata"
+        }
+      ]
+    },
+    {
+      "name": "opentelemetry-instrumentation",
+      "SPDXID": "SPDXRef-pypi-opentelemetry-instrumentation-0.65b0",
+      "versionInfo": "0.65b0",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "Apache-2.0",
+      "copyrightText": "NOASSERTION",
+      "primaryPackagePurpose": "LIBRARY",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:pypi/opentelemetry-instrumentation@0.65b0"
+        }
+      ],
+      "annotations": [
+        {
+          "annotationDate": "2026-07-29T00:00:00Z",
+          "annotationType": "OTHER",
+          "annotator": "Tool: AgentsharkX release artifact generator",
+          "comment": "transitive runtime dependency from sdk/python/constraints.txt; license reviewed from installed distribution metadata"
+        }
+      ]
+    },
+    {
+      "name": "opentelemetry-proto",
+      "SPDXID": "SPDXRef-pypi-opentelemetry-proto-1.44.0",
+      "versionInfo": "1.44.0",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "Apache-2.0",
+      "copyrightText": "NOASSERTION",
+      "primaryPackagePurpose": "LIBRARY",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:pypi/opentelemetry-proto@1.44.0"
+        }
+      ],
+      "annotations": [
+        {
+          "annotationDate": "2026-07-29T00:00:00Z",
+          "annotationType": "OTHER",
+          "annotator": "Tool: AgentsharkX release artifact generator",
+          "comment": "transitive runtime dependency from sdk/python/constraints.txt; license reviewed from installed distribution metadata"
+        }
+      ]
+    },
+    {
+      "name": "opentelemetry-sdk",
+      "SPDXID": "SPDXRef-pypi-opentelemetry-sdk-1.44.0",
+      "versionInfo": "1.44.0",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "Apache-2.0",
+      "copyrightText": "NOASSERTION",
+      "primaryPackagePurpose": "LIBRARY",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:pypi/opentelemetry-sdk@1.44.0"
+        }
+      ],
+      "annotations": [
+        {
+          "annotationDate": "2026-07-29T00:00:00Z",
+          "annotationType": "OTHER",
+          "annotator": "Tool: AgentsharkX release artifact generator",
+          "comment": "direct runtime dependency from sdk/python/constraints.txt; license reviewed from installed distribution metadata"
+        }
+      ]
+    },
+    {
+      "name": "opentelemetry-semantic-conventions",
+      "SPDXID": "SPDXRef-pypi-opentelemetry-semantic-conventions-0.65b0",
+      "versionInfo": "0.65b0",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "Apache-2.0",
+      "copyrightText": "NOASSERTION",
+      "primaryPackagePurpose": "LIBRARY",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:pypi/opentelemetry-semantic-conventions@0.65b0"
+        }
+      ],
+      "annotations": [
+        {
+          "annotationDate": "2026-07-29T00:00:00Z",
+          "annotationType": "OTHER",
+          "annotator": "Tool: AgentsharkX release artifact generator",
+          "comment": "transitive runtime dependency from sdk/python/constraints.txt; license reviewed from installed distribution metadata"
+        }
+      ]
+    },
+    {
+      "name": "packaging",
+      "SPDXID": "SPDXRef-pypi-packaging-26.2",
+      "versionInfo": "26.2",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "Apache-2.0 OR BSD-2-Clause",
+      "copyrightText": "NOASSERTION",
+      "primaryPackagePurpose": "LIBRARY",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:pypi/packaging@26.2"
+        }
+      ],
+      "annotations": [
+        {
+          "annotationDate": "2026-07-29T00:00:00Z",
+          "annotationType": "OTHER",
+          "annotator": "Tool: AgentsharkX release artifact generator",
+          "comment": "transitive runtime dependency from sdk/python/constraints.txt; license reviewed from installed distribution metadata"
+        }
+      ]
+    },
+    {
+      "name": "protobuf",
+      "SPDXID": "SPDXRef-pypi-protobuf-7.35.1",
+      "versionInfo": "7.35.1",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "BSD-3-Clause",
+      "copyrightText": "NOASSERTION",
+      "primaryPackagePurpose": "LIBRARY",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:pypi/protobuf@7.35.1"
+        }
+      ],
+      "annotations": [
+        {
+          "annotationDate": "2026-07-29T00:00:00Z",
+          "annotationType": "OTHER",
+          "annotator": "Tool: AgentsharkX release artifact generator",
+          "comment": "transitive runtime dependency from sdk/python/constraints.txt; license reviewed from installed distribution metadata"
+        }
+      ]
+    },
+    {
+      "name": "requests",
+      "SPDXID": "SPDXRef-pypi-requests-2.34.2",
+      "versionInfo": "2.34.2",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "Apache-2.0",
+      "copyrightText": "NOASSERTION",
+      "primaryPackagePurpose": "LIBRARY",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:pypi/requests@2.34.2"
+        }
+      ],
+      "annotations": [
+        {
+          "annotationDate": "2026-07-29T00:00:00Z",
+          "annotationType": "OTHER",
+          "annotator": "Tool: AgentsharkX release artifact generator",
+          "comment": "transitive runtime dependency from sdk/python/constraints.txt; license reviewed from installed distribution metadata"
+        }
+      ]
+    },
+    {
+      "name": "typing-extensions",
+      "SPDXID": "SPDXRef-pypi-typing-extensions-4.16.0",
+      "versionInfo": "4.16.0",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "PSF-2.0",
+      "copyrightText": "NOASSERTION",
+      "primaryPackagePurpose": "LIBRARY",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:pypi/typing-extensions@4.16.0"
+        }
+      ],
+      "annotations": [
+        {
+          "annotationDate": "2026-07-29T00:00:00Z",
+          "annotationType": "OTHER",
+          "annotator": "Tool: AgentsharkX release artifact generator",
+          "comment": "transitive runtime dependency from sdk/python/constraints.txt; license reviewed from installed distribution metadata"
+        }
+      ]
+    },
+    {
+      "name": "urllib3",
+      "SPDXID": "SPDXRef-pypi-urllib3-2.7.0",
+      "versionInfo": "2.7.0",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "MIT",
+      "copyrightText": "NOASSERTION",
+      "primaryPackagePurpose": "LIBRARY",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:pypi/urllib3@2.7.0"
+        }
+      ],
+      "annotations": [
+        {
+          "annotationDate": "2026-07-29T00:00:00Z",
+          "annotationType": "OTHER",
+          "annotator": "Tool: AgentsharkX release artifact generator",
+          "comment": "transitive runtime dependency from sdk/python/constraints.txt; license reviewed from installed distribution metadata"
+        }
+      ]
+    },
+    {
+      "name": "wrapt",
+      "SPDXID": "SPDXRef-pypi-wrapt-2.3.0",
+      "versionInfo": "2.3.0",
+      "downloadLocation": "NOASSERTION",
+      "filesAnalyzed": false,
+      "licenseConcluded": "NOASSERTION",
+      "licenseDeclared": "BSD-2-Clause",
+      "copyrightText": "NOASSERTION",
+      "primaryPackagePurpose": "LIBRARY",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:pypi/wrapt@2.3.0"
+        }
+      ],
+      "annotations": [
+        {
+          "annotationDate": "2026-07-29T00:00:00Z",
+          "annotationType": "OTHER",
+          "annotator": "Tool: AgentsharkX release artifact generator",
+          "comment": "transitive runtime dependency from sdk/python/constraints.txt; license reviewed from installed distribution metadata"
         }
       ]
     },
@@ -9855,14 +10621,22 @@
     {
       "name": "AgentGuard",
       "SPDXID": "SPDXRef-Upstream-AgentGuard",
-      "versionInfo": "main-4b755fb",
-      "downloadLocation": "https://github.com/WhitzardAgent/AgentGuard",
+      "versionInfo": "4b755fb4a4a2763b7e817b3d0220fe5c22187b59",
+      "downloadLocation": "https://github.com/WhitzardAgent/AgentGuard/tree/4b755fb4a4a2763b7e817b3d0220fe5c22187b59",
       "filesAnalyzed": false,
       "licenseConcluded": "NOASSERTION",
       "licenseDeclared": "GPL-3.0-only",
       "copyrightText": "NOASSERTION",
       "primaryPackagePurpose": "APPLICATION",
-      "supplier": "Organization: WhitzardAgent"
+      "supplier": "Organization: WhitzardAgent",
+      "annotations": [
+        {
+          "annotationDate": "2026-07-29T00:00:00Z",
+          "annotationType": "OTHER",
+          "annotator": "Tool: AgentsharkX release artifact generator",
+          "comment": "Pinned source revision for separately installed AgentGuard; preview image label main-4b755fb"
+        }
+      ]
     },
     {
       "name": "PostgreSQL",
@@ -11734,9 +12508,54 @@
       "relatedSpdxElement": "SPDXRef-npm-zod-3.25.76"
     },
     {
-      "spdxElementId": "SPDXRef-AgentsharkX-server-0.8.0-preview",
+      "spdxElementId": "SPDXRef-AgentsharkX-server-0.9.0-preview",
       "relationshipType": "DEPENDS_ON",
       "relatedSpdxElement": "SPDXRef-go-github.com-jackc-pgx-v5-v5.10.0"
+    },
+    {
+      "spdxElementId": "SPDXRef-AgentsharkX-server-0.9.0-preview",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-go-go.opentelemetry.io-proto-otlp-v1.11.0"
+    },
+    {
+      "spdxElementId": "SPDXRef-AgentsharkX-server-0.9.0-preview",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-go-google.golang.org-protobuf-v1.36.11"
+    },
+    {
+      "spdxElementId": "SPDXRef-go-github.com-grpc-ecosystem-grpc-gateway-v2-v2.29.0",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-go-golang.org-x-net-v0.57.0"
+    },
+    {
+      "spdxElementId": "SPDXRef-go-github.com-grpc-ecosystem-grpc-gateway-v2-v2.29.0",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-go-golang.org-x-sys-v0.47.0"
+    },
+    {
+      "spdxElementId": "SPDXRef-go-github.com-grpc-ecosystem-grpc-gateway-v2-v2.29.0",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-go-golang.org-x-text-v0.40.0"
+    },
+    {
+      "spdxElementId": "SPDXRef-go-github.com-grpc-ecosystem-grpc-gateway-v2-v2.29.0",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-go-google.golang.org-genproto-googleapis-api-v0.0.0-20260720211330-0afa2a65878a"
+    },
+    {
+      "spdxElementId": "SPDXRef-go-github.com-grpc-ecosystem-grpc-gateway-v2-v2.29.0",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-go-google.golang.org-genproto-googleapis-rpc-v0.0.0-20260720211330-0afa2a65878a"
+    },
+    {
+      "spdxElementId": "SPDXRef-go-github.com-grpc-ecosystem-grpc-gateway-v2-v2.29.0",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-go-google.golang.org-grpc-v1.82.1"
+    },
+    {
+      "spdxElementId": "SPDXRef-go-github.com-grpc-ecosystem-grpc-gateway-v2-v2.29.0",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-go-google.golang.org-protobuf-v1.36.11"
     },
     {
       "spdxElementId": "SPDXRef-go-github.com-jackc-pgx-v5-v5.10.0",
@@ -11756,30 +12575,196 @@
     {
       "spdxElementId": "SPDXRef-go-github.com-jackc-pgx-v5-v5.10.0",
       "relationshipType": "DEPENDS_ON",
-      "relatedSpdxElement": "SPDXRef-go-golang.org-x-sync-v0.17.0"
+      "relatedSpdxElement": "SPDXRef-go-golang.org-x-sync-v0.22.0"
     },
     {
       "spdxElementId": "SPDXRef-go-github.com-jackc-pgx-v5-v5.10.0",
       "relationshipType": "DEPENDS_ON",
-      "relatedSpdxElement": "SPDXRef-go-golang.org-x-text-v0.29.0"
+      "relatedSpdxElement": "SPDXRef-go-golang.org-x-text-v0.40.0"
     },
     {
-      "spdxElementId": "SPDXRef-AgentsharkX-server-0.8.0-preview",
+      "spdxElementId": "SPDXRef-go-go.opentelemetry.io-proto-otlp-v1.11.0",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-go-github.com-grpc-ecosystem-grpc-gateway-v2-v2.29.0"
+    },
+    {
+      "spdxElementId": "SPDXRef-go-go.opentelemetry.io-proto-otlp-v1.11.0",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-go-google.golang.org-grpc-v1.82.1"
+    },
+    {
+      "spdxElementId": "SPDXRef-go-go.opentelemetry.io-proto-otlp-v1.11.0",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-go-google.golang.org-protobuf-v1.36.11"
+    },
+    {
+      "spdxElementId": "SPDXRef-go-golang.org-x-net-v0.57.0",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-go-golang.org-x-sys-v0.47.0"
+    },
+    {
+      "spdxElementId": "SPDXRef-go-golang.org-x-net-v0.57.0",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-go-golang.org-x-text-v0.40.0"
+    },
+    {
+      "spdxElementId": "SPDXRef-go-google.golang.org-genproto-googleapis-api-v0.0.0-20260720211330-0afa2a65878a",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-go-google.golang.org-protobuf-v1.36.11"
+    },
+    {
+      "spdxElementId": "SPDXRef-go-google.golang.org-genproto-googleapis-rpc-v0.0.0-20260720211330-0afa2a65878a",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-go-google.golang.org-protobuf-v1.36.11"
+    },
+    {
+      "spdxElementId": "SPDXRef-go-google.golang.org-grpc-v1.82.1",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-go-golang.org-x-net-v0.57.0"
+    },
+    {
+      "spdxElementId": "SPDXRef-go-google.golang.org-grpc-v1.82.1",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-go-golang.org-x-sys-v0.47.0"
+    },
+    {
+      "spdxElementId": "SPDXRef-go-google.golang.org-grpc-v1.82.1",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-go-google.golang.org-genproto-googleapis-rpc-v0.0.0-20260720211330-0afa2a65878a"
+    },
+    {
+      "spdxElementId": "SPDXRef-go-google.golang.org-grpc-v1.82.1",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-go-google.golang.org-protobuf-v1.36.11"
+    },
+    {
+      "spdxElementId": "SPDXRef-AgentsharkX-Python-SDK-0.1.0",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-pypi-certifi-2026.7.22"
+    },
+    {
+      "spdxElementId": "SPDXRef-AgentsharkX-Python-SDK-0.1.0",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-pypi-charset-normalizer-3.4.9"
+    },
+    {
+      "spdxElementId": "SPDXRef-AgentsharkX-Python-SDK-0.1.0",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-pypi-googleapis-common-protos-1.75.0"
+    },
+    {
+      "spdxElementId": "SPDXRef-AgentsharkX-Python-SDK-0.1.0",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-pypi-idna-3.18"
+    },
+    {
+      "spdxElementId": "SPDXRef-AgentsharkX-Python-SDK-0.1.0",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-pypi-openinference-instrumentation-0.1.54"
+    },
+    {
+      "spdxElementId": "SPDXRef-AgentsharkX-Python-SDK-0.1.0",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-pypi-openinference-instrumentation-langchain-0.1.67"
+    },
+    {
+      "spdxElementId": "SPDXRef-AgentsharkX-Python-SDK-0.1.0",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-pypi-openinference-instrumentation-mcp-2.0.3"
+    },
+    {
+      "spdxElementId": "SPDXRef-AgentsharkX-Python-SDK-0.1.0",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-pypi-openinference-semantic-conventions-0.1.30"
+    },
+    {
+      "spdxElementId": "SPDXRef-AgentsharkX-Python-SDK-0.1.0",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-pypi-opentelemetry-api-1.44.0"
+    },
+    {
+      "spdxElementId": "SPDXRef-AgentsharkX-Python-SDK-0.1.0",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-pypi-opentelemetry-exporter-otlp-proto-common-1.44.0"
+    },
+    {
+      "spdxElementId": "SPDXRef-AgentsharkX-Python-SDK-0.1.0",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-pypi-opentelemetry-exporter-otlp-proto-http-1.44.0"
+    },
+    {
+      "spdxElementId": "SPDXRef-AgentsharkX-Python-SDK-0.1.0",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-pypi-opentelemetry-instrumentation-0.65b0"
+    },
+    {
+      "spdxElementId": "SPDXRef-AgentsharkX-Python-SDK-0.1.0",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-pypi-opentelemetry-proto-1.44.0"
+    },
+    {
+      "spdxElementId": "SPDXRef-AgentsharkX-Python-SDK-0.1.0",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-pypi-opentelemetry-sdk-1.44.0"
+    },
+    {
+      "spdxElementId": "SPDXRef-AgentsharkX-Python-SDK-0.1.0",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-pypi-opentelemetry-semantic-conventions-0.65b0"
+    },
+    {
+      "spdxElementId": "SPDXRef-AgentsharkX-Python-SDK-0.1.0",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-pypi-packaging-26.2"
+    },
+    {
+      "spdxElementId": "SPDXRef-AgentsharkX-Python-SDK-0.1.0",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-pypi-protobuf-7.35.1"
+    },
+    {
+      "spdxElementId": "SPDXRef-AgentsharkX-Python-SDK-0.1.0",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-pypi-requests-2.34.2"
+    },
+    {
+      "spdxElementId": "SPDXRef-AgentsharkX-Python-SDK-0.1.0",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-pypi-typing-extensions-4.16.0"
+    },
+    {
+      "spdxElementId": "SPDXRef-AgentsharkX-Python-SDK-0.1.0",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-pypi-urllib3-2.7.0"
+    },
+    {
+      "spdxElementId": "SPDXRef-AgentsharkX-Python-SDK-0.1.0",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-pypi-wrapt-2.3.0"
+    },
+    {
+      "spdxElementId": "SPDXRef-AgentsharkX-server-0.9.0-preview",
       "relationshipType": "OTHER",
       "relatedSpdxElement": "SPDXRef-Upstream-agentgateway",
       "comment": "Runtime management or SQL integration; the service remains a separate process and image."
     },
     {
-      "spdxElementId": "SPDXRef-AgentsharkX-server-0.8.0-preview",
+      "spdxElementId": "SPDXRef-AgentsharkX-server-0.9.0-preview",
       "relationshipType": "OTHER",
       "relatedSpdxElement": "SPDXRef-Upstream-AgentGuard",
       "comment": "Runtime management or SQL integration; the service remains a separate process and image."
     },
     {
-      "spdxElementId": "SPDXRef-AgentsharkX-server-0.8.0-preview",
+      "spdxElementId": "SPDXRef-AgentsharkX-server-0.9.0-preview",
       "relationshipType": "OTHER",
       "relatedSpdxElement": "SPDXRef-Upstream-PostgreSQL",
       "comment": "Runtime management or SQL integration; the service remains a separate process and image."
+    },
+    {
+      "spdxElementId": "SPDXRef-AgentsharkX-Python-SDK-0.1.0",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-Upstream-AgentGuard",
+      "comment": "The repository-local Python SDK imports the separately installed pinned AgentGuard package; AgentGuard source is not copied into the SDK."
     }
   ],
   "annotations": [
@@ -11793,13 +12778,19 @@
       "annotationDate": "2026-07-29T00:00:00Z",
       "annotationType": "OTHER",
       "annotator": "Tool: AgentsharkX release artifact generator",
-      "comment": "go.mod sha256 c280ce5b60568a07d5307a73f9401b01009ec30e744536a69b3848b19f8b4d7c; go.sum sha256 10f85f016b4bb4919ddc6453cc8c09962bc186a29d39ed064332a23ed5a58115"
+      "comment": "go.mod sha256 223ca0aa26abf43861f3523fa1557686007fd67023512f397cf67f418de3bfc3; go.sum sha256 89cf09139d4d9cd02f880b6ca0ee258128be9b4223f78307b3f2285260ac6b1a"
     },
     {
       "annotationDate": "2026-07-29T00:00:00Z",
       "annotationType": "OTHER",
       "annotator": "Tool: AgentsharkX release artifact generator",
-      "comment": "Go module membership is the reviewed linux/amd64 runtime graph for ./cmd/agentshark; test-only module dependencies are excluded."
+      "comment": "Go module membership is the reviewed linux/amd64 runtime graph for ./cmd/agentshark and ./cmd/agentshark-collector; test-only module dependencies are excluded."
+    },
+    {
+      "annotationDate": "2026-07-29T00:00:00Z",
+      "annotationType": "OTHER",
+      "annotator": "Tool: AgentsharkX release artifact generator",
+      "comment": "Python SDK pyproject.toml sha256 094541f528088eb1101d64771d9b6bbc4a9ac2e44e531ef10177e2b2f7ef5ae8; constraints.txt sha256 fe67758396b6e59ec22c0327069b880dbad6bda0a8a25396310cab6c4829baa1"
     }
   ]
 }

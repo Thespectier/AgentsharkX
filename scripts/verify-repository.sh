@@ -9,6 +9,11 @@ required_files=(
   apps/server/go.sum
   apps/server/migrations/embed.go
   apps/server/migrations/000001_persistent_audit.sql
+  apps/server/migrations/000002_trace_ingest.sql
+  apps/server/cmd/agentshark-collector/main.go
+  apps/server/cmd/e2e-trace/main.go
+  apps/server/internal/telemetry/normalize/normalize.go
+  apps/server/internal/telemetry/receiver/handler.go
   apps/web/README.md
   apps/web/package.json
   apps/web/package-lock.json
@@ -28,6 +33,11 @@ required_files=(
   docs/release/dependency-licenses.md
   docs/release/security-scan.md
   examples/agentguard_minimal.py
+  examples/agentshark_trace_minimal.py
+  sdk/python/pyproject.toml
+  sdk/python/constraints.txt
+  sdk/python/README.md
+  sdk/python/src/agentshark/runtime.py
   docs/architecture.md
   docs/capability-matrix.md
   docs/upstream-compatibility.md
@@ -39,6 +49,8 @@ required_files=(
   docs/screenshots/system-degraded-1440.png
   docs/screenshots/lighthouse-accessibility.json
   scripts/bootstrap-preview.sh
+  scripts/bootstrap-sdk.sh
+  scripts/verify-agentguard-sdk.sh
   scripts/agentgateway-standalone.sh
   scripts/standalone-compose.sh
   scripts/preview.sh
@@ -105,6 +117,24 @@ if ! grep -qx 'AGENTSHARK_DATABASE_BIND=127.0.0.1' deploy/example.env; then
   exit 1
 fi
 
+if ! grep -qx 'AGENTSHARK_DATABASE_AUTO_MIGRATE=true' deploy/example.env ||
+  ! grep -Fqx 'COPY --from=server-build /out/agentshark-migrate /usr/local/bin/agentshark-migrate' deploy/Dockerfile; then
+  echo "preview migrations must remain enabled and the production migration binary must remain packaged" >&2
+  exit 1
+fi
+
+if ! grep -qx 'AGENTSHARK_COLLECTOR_BIND=127.0.0.1' deploy/example.env ||
+  ! grep -qx 'AGENTSHARK_TRACE_CONTENT_MODE=metadata' deploy/example.env; then
+  echo "the default Trace Collector must remain loopback-published and metadata-only" >&2
+  exit 1
+fi
+
+if ! grep -Fqx '      AGENTSHARK_COLLECTOR_LISTEN_ADDR: 0.0.0.0:4318' deploy/compose.yaml ||
+  ! grep -Fqx 'EXPOSE 8080 4318' deploy/Dockerfile; then
+  echo "the Collector container listener and published image port must remain fixed at 4318" >&2
+  exit 1
+fi
+
 if ! grep -Fqx '    image: ${POSTGRES_IMAGE}:${POSTGRES_VERSION}' deploy/compose.yaml || \
   ! grep -Fqx '      - "${AGENTSHARK_DATABASE_BIND}:${AGENTSHARK_DATABASE_PORT}:5432"' deploy/compose.yaml; then
   echo "Compose must use the pinned PostgreSQL image and configurable loopback publication" >&2
@@ -113,6 +143,8 @@ fi
 
 for script in \
   scripts/bootstrap-preview.sh \
+  scripts/bootstrap-sdk.sh \
+  scripts/verify-agentguard-sdk.sh \
   scripts/agentgateway-standalone.sh \
   scripts/gateway-observability-smoke.sh \
   scripts/release-e2e.sh \
@@ -131,6 +163,8 @@ bash -n \
   scripts/standalone-compose.sh \
   scripts/preview.sh \
   scripts/bootstrap-preview.sh \
+  scripts/bootstrap-sdk.sh \
+  scripts/verify-agentguard-sdk.sh \
   scripts/release-e2e.sh \
   scripts/test-postgres.sh
 
@@ -169,6 +203,18 @@ fi
 if rg -n '/node_modules/|node_modules%2F' \
   docs/release/sbom.spdx.json docs/release/dependency-licenses.md; then
   echo "release artifacts contain an npm installation path instead of a package name" >&2
+  exit 1
+fi
+
+agentguard_revision="$(sed -n 's/^AGENTGUARD_GIT_REVISION=//p' deploy/versions.env)"
+if ! AGENTGUARD_SBOM_REVISION="$agentguard_revision" node -e '
+  const document = JSON.parse(require("node:fs").readFileSync("docs/release/sbom.spdx.json", "utf8"));
+  const revision = process.env.AGENTGUARD_SBOM_REVISION;
+  const pinned = document.packages.some((item) => item.SPDXID === "SPDXRef-Upstream-AgentGuard" && item.versionInfo === revision && item.downloadLocation.endsWith(revision));
+  const sdkDependency = document.relationships.some((item) => item.spdxElementId === "SPDXRef-AgentsharkX-Python-SDK-0.1.0" && item.relationshipType === "DEPENDS_ON" && item.relatedSpdxElement === "SPDXRef-Upstream-AgentGuard");
+  if (!pinned || !sdkDependency) process.exit(1);
+'; then
+  echo "SBOM must pin the full AgentGuard revision and relate it to the Python SDK" >&2
   exit 1
 fi
 

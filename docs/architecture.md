@@ -1,6 +1,6 @@
 # Architecture
 
-Status: Phase 13 persistent Audit foundation over the Phase 12 management surface, verified 2026-07-29.
+Status: Phase 14 OTLP Trace ingest and local SDK over the persistent Phase 13 management surface, verified 2026-07-29.
 
 ## Context
 
@@ -22,6 +22,7 @@ Browser ──HTTPS──> AgentsharkX Web + Go BFF
                                                  ▲
 Agent runtime ───────────── AgentGuard client ────┘
 Agent runtime ───────────── business traffic ─────────> agentgateway
+Agent runtime ──OTLP/HTTP protobuf──> AgentsharkX Collector ──SQL──> PostgreSQL
 ```
 
 AgentsharkX never sits in the agent business-data path. The browser never
@@ -34,7 +35,7 @@ capability registry, and error state for each source.
 | ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
 | agentgateway | LLM/MCP/A2A/HTTP proxying, routes, providers, policies, guardrails, request logs, cost and latency telemetry                                   | AgentGuard runtime identities, reviews, or rules                           |
 | AgentGuard   | Runtime interception, resources, labels, runtime rules, approvals, traffic, sessions, and security audit                                       | Gateway routing or transport policy                                        |
-| AgentsharkX  | Console navigation, admin authentication, source adapters, capability detection, normalization, aggregation, persistent Audit projections/checkpoints/outbox, SSE, and high-frequency workflows | Proxying, task inference, a rules engine, business-traffic replay, or upstream source-of-truth storage |
+| AgentsharkX  | Console navigation, admin authentication, source adapters, capability detection, normalization, aggregation, persistent Audit/Trace records, SSE, OTLP ingest, and high-frequency workflows | Proxying, heuristic task inference, a rules engine, business-traffic replay, or upstream source-of-truth storage |
 
 ## BFF boundaries
 
@@ -58,8 +59,13 @@ The Go BFF is organized into the following packages:
   trends, persistent event writes, source checkpoints, and a bounded current
   activity snapshot.
 - `aggregate`: source-preserving view models and partial-result handling.
-- `storage`: small Audit event, payload, checkpoint, outbox, readiness, migration,
-  and retention interfaces with PostgreSQL production and memory test adapters.
+- `storage`: small Audit and Trace write/read, payload, checkpoint, outbox,
+  readiness, migration, and retention interfaces with PostgreSQL production and
+  memory test adapters.
+- `telemetry/normalize`: centralized OTLP semantic mapping with unknown
+  attributes retained and credentials/content defensively separated.
+- `telemetry/assembler`: exact, explicit Trace summary rules; it never uses
+  span names or time proximity for deduplication or causality.
 - `stream`: commit notification only; PostgreSQL outbox sequences are the sole
   SSE IDs and replay source.
 - `api`: OpenAPI-backed HTTP handlers and standard errors.
@@ -327,8 +333,44 @@ Normalized Audit state, source checkpoints, and SSE delivery rows are durable
 in the AgentsharkX PostgreSQL database. The bundled preview separately
 configures agentgateway's upstream-owned SQLite request-log store under ignored
 `.cache/agentgateway-standalone/data/`; neither database replaces the other's
-source of truth. AgentsharkX still provides no task model, DAG, payload vault,
-business replay engine, or traffic collector.
+source of truth. AgentsharkX still provides no inferred task model, DAG,
+payload vault, business replay engine, or business-traffic collector.
+
+## Phase 14 Trace ingest boundary
+
+`agentshark-collector` is an independent Go process. It accepts only
+authenticated `POST /v1/traces` OTLP/HTTP protobuf, supports identity or gzip
+encoding, and enforces compressed, decompressed, Span-count, and request-time
+limits before one transactional batch write. `/healthz` is process liveness,
+`/readyz` checks migrations/database access, and `/metrics` exposes only
+aggregate receive/reject/duplicate/write-latency values. None of these endpoints
+is a proxy for agent business traffic.
+
+The Collector preserves explicit Resource, instrumentation Scope, Span, Event,
+and Link data plus raw attributes and semantic-convention versions. It rejects
+invalid W3C Trace/Span IDs per Span, accepts valid siblings, permits child-first
+arrival, and makes exact Span resends idempotent. A later terminal update may
+complete a Span; a stale unfinished retry cannot regress terminal state.
+Summary assembly uses only `parent_span_id` for tree edges and only OTLP Span
+Links for asynchronous relationships. Task status/duration is verified only
+from an explicit Task Root Span. There is no name similarity, timestamp
+proximity, or session-to-trace inference.
+
+The local Python SDK owns a process-wide OTel provider with Batch export and
+one-time LangChain/MCP instrumentation, while each `AgentShark` runtime retains
+its own exporter and pinned AgentGuard facade. Task context uses `ContextVar`;
+the mutable Guard/Agent pair rejects overlapping tasks. MCP is countable only
+for explicit `TOOL + agentshark.tool.kind=mcp + tools/call`. A2A is countable
+only for explicit `invoke_agent + peer_agent_id`; W3C propagation or an actual
+Span Link carries cross-process relationships.
+
+`metadata` is the default content mode. Prompt/completion/tool bodies, task
+goals, status descriptions, and exception bodies are removed from Span metadata.
+`full` stores them in `trace_payloads` with a per-item limit and independent
+expiry; credentials are redacted in every mode by both SDK and Collector.
+Trace metadata defaults to 30 days and is pruned independently. Phase 14 does
+not expose a BFF Trace query/list/detail endpoint, SSE event, or frontend view;
+those contracts begin in Phase 15.
 
 ## Security baseline
 
@@ -347,26 +389,29 @@ business replay engine, or traffic collector.
 - Authenticated Protect policy and guardrail configuration returns complete
   source-owned JSON. Application logs and mutation receipts contain only
   operation metadata; bodies are not copied into summary lists or SSE responses.
-- The default Phase 13 preview runs the pinned agentgateway binary on the host
+- The default Phase 14 preview runs the pinned agentgateway binary on the host
   and publishes the remaining management services on loopback. It is a
   development topology, not an internet-facing deployment.
 
-## Phase 13 deployment boundary
+## Phase 14 deployment boundary
 
 The production Dockerfile has independent pinned Node and Go build stages. It
 builds Web with `VITE_ENABLE_MOCKS=false`, replaces the development placeholder
 assets before compiling, and embeds the resulting SPA into the Go binary. The
-runtime stage contains only Alpine CA certificates and the static binary, runs
-as UID/GID `65532:65532`, and exposes one same-origin port. `/healthz` is public
-and reports process liveness only. `/readyz` is also unauthenticated and returns
+runtime stage contains Alpine CA certificates and static BFF, Collector, and
+migration-only binaries, runs as UID/GID `65532:65532`, and declares the BFF's
+`8080` and the Collector's `4318` ports. Compose runs one process per service, fixes the
+Collector's container listener to `0.0.0.0:4318`, and publishes both only on
+their configured host bindings. `/healthz` is public and reports process
+liveness only. `/readyz` is also unauthenticated and returns
 success only when PostgreSQL is reachable, embedded migration checks pass, and
 persisted Audit history has been restored into the current process;
 authenticated `/system` diagnostics remain the authority for independent
 upstream state.
 
 The Linux preview runs agentgateway as an official host-native binary while
-Compose runs a pinned PostgreSQL image, builds AgentGuard from its immutable
-main revision, and builds AgentsharkX locally. The database port is published
+Compose runs the BFF and Collector separately, a pinned PostgreSQL image, and
+AgentGuard built from its immutable main revision. The database and Collector ports are published
 only on the configured loopback address, and a named volume survives normal
 `preview-down`/`preview-up` cycles. The binary release, Git revision, and
 per-platform SHA-256 digests are fixed in `deploy/versions.env`; installation

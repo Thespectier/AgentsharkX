@@ -13,10 +13,12 @@ import (
 
 	"github.com/Thespectier/AgentsharkX/apps/server/internal/model"
 	"github.com/Thespectier/AgentsharkX/apps/server/internal/storage"
+	"github.com/Thespectier/AgentsharkX/apps/server/internal/telemetry"
 )
 
 type Options struct {
 	EventRetention   time.Duration
+	TraceRetention   time.Duration
 	PayloadRetention time.Duration
 	OutboxRetention  time.Duration
 	Now              func() time.Time
@@ -38,11 +40,18 @@ type Store struct {
 	outbox             []storage.OutboxMessage
 	nextEventSequence  int64
 	nextOutboxSequence int64
+	traceSpans         map[string]telemetry.Span
+	traceLinks         map[string]telemetry.Link
+	tracePayloads      map[string]telemetry.Payload
+	traceSummaries     map[string]telemetry.Summary
 }
 
 func New(options Options) *Store {
 	if options.EventRetention <= 0 {
 		options.EventRetention = 30 * 24 * time.Hour
+	}
+	if options.TraceRetention <= 0 {
+		options.TraceRetention = 30 * 24 * time.Hour
 	}
 	if options.OutboxRetention <= 0 {
 		options.OutboxRetention = 24 * time.Hour
@@ -53,6 +62,8 @@ func New(options Options) *Store {
 	return &Store{
 		options: options, events: make(map[string]storedEvent), payloads: make(map[string]storage.AuditPayload),
 		checkpoints: make(map[string]storage.Checkpoint), outbox: []storage.OutboxMessage{},
+		traceSpans: make(map[string]telemetry.Span), traceLinks: make(map[string]telemetry.Link),
+		tracePayloads: make(map[string]telemetry.Payload), traceSummaries: make(map[string]telemetry.Summary),
 	}
 }
 
@@ -309,7 +320,7 @@ func (store *Store) ReplayAfter(_ context.Context, after int64, limit int) (stor
 	return batch, nil
 }
 
-func (store *Store) Prune(_ context.Context, now time.Time) error {
+func (store *Store) PruneAudit(_ context.Context, now time.Time) error {
 	store.mu.Lock()
 	defer store.mu.Unlock()
 	now = now.UTC()
@@ -337,6 +348,70 @@ func (store *Store) Prune(_ context.Context, now time.Time) error {
 	}
 	store.outbox = retained
 	return nil
+}
+
+func (store *Store) PruneTraces(_ context.Context, now time.Time) error {
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	now = now.UTC()
+	for key, payload := range store.tracePayloads {
+		if payload.ExpiresAt != nil && !payload.ExpiresAt.After(now) {
+			payload.PayloadBytes = nil
+			payload.PayloadJSON = nil
+			payload.RedactionState = telemetry.ContentStateExpired
+			payload.SizeBytes = 0
+			store.tracePayloads[key] = payload
+		}
+	}
+	for key, span := range store.traceSpans {
+		hasExpiredPayload := false
+		hasRetainedPayload := false
+		for _, payload := range store.tracePayloads {
+			if payload.TraceID != span.TraceID || payload.SpanID != span.SpanID {
+				continue
+			}
+			if payload.RedactionState == telemetry.ContentStateExpired {
+				hasExpiredPayload = true
+			} else {
+				hasRetainedPayload = true
+			}
+		}
+		if hasExpiredPayload && !hasRetainedPayload {
+			span.ContentState = telemetry.ContentStateExpired
+			span.UpdatedAt = now
+			store.traceSpans[key] = span
+		}
+	}
+	traceCutoff := now.Add(-store.options.TraceRetention)
+	for traceID, summary := range store.traceSummaries {
+		if !summary.LastSpanAt.Before(traceCutoff) {
+			continue
+		}
+		delete(store.traceSummaries, traceID)
+		for key, span := range store.traceSpans {
+			if span.TraceID == traceID {
+				delete(store.traceSpans, key)
+			}
+		}
+		for key, link := range store.traceLinks {
+			if link.TraceID == traceID {
+				delete(store.traceLinks, key)
+			}
+		}
+		for key, payload := range store.tracePayloads {
+			if payload.TraceID == traceID {
+				delete(store.tracePayloads, key)
+			}
+		}
+	}
+	return nil
+}
+
+func (store *Store) Prune(ctx context.Context, now time.Time) error {
+	if err := store.PruneAudit(ctx, now); err != nil {
+		return err
+	}
+	return store.PruneTraces(ctx, now)
 }
 
 func cloneEvent(event model.UnifiedEvent) model.UnifiedEvent {

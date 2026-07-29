@@ -15,19 +15,27 @@ RUN go mod download
 COPY apps/server/ ./
 RUN find internal/web/static -mindepth 1 -delete
 COPY --from=web-build /src/apps/web/dist/ ./internal/web/static/
-ARG AGENTSHARK_VERSION=0.8.0-preview
+ARG AGENTSHARK_VERSION=0.9.0-preview
 ARG AGENTSHARK_REVISION=unknown
 RUN CGO_ENABLED=0 go build -trimpath \
     -ldflags="-s -w -X main.version=${AGENTSHARK_VERSION} -X main.revision=${AGENTSHARK_REVISION}" \
-    -o /out/agentshark ./cmd/agentshark
+    -o /out/agentshark ./cmd/agentshark \
+    && CGO_ENABLED=0 go build -trimpath \
+    -ldflags="-s -w -X main.version=${AGENTSHARK_VERSION} -X main.revision=${AGENTSHARK_REVISION}" \
+    -o /out/agentshark-collector ./cmd/agentshark-collector
+RUN CGO_ENABLED=0 go build -trimpath \
+    -ldflags="-s -w -X main.version=${AGENTSHARK_VERSION} -X main.revision=${AGENTSHARK_REVISION}" \
+    -o /out/agentshark-migrate ./cmd/agentshark-migrate
 
 FROM alpine:3.23.3@sha256:25109184c71bdad752c8312a8623239686a9a2071e8825f20acb8f2198c3f659
 RUN apk add --no-cache ca-certificates \
     && addgroup -S -g 65532 agentshark \
     && adduser -S -D -H -u 65532 -G agentshark agentshark
 COPY --from=server-build /out/agentshark /usr/local/bin/agentshark
+COPY --from=server-build /out/agentshark-collector /usr/local/bin/agentshark-collector
+COPY --from=server-build /out/agentshark-migrate /usr/local/bin/agentshark-migrate
 USER 65532:65532
-EXPOSE 8080
+EXPOSE 8080 4318
 HEALTHCHECK --interval=10s --timeout=3s --start-period=10s --retries=6 \
   CMD wget -q -O /dev/null http://127.0.0.1:8080/readyz || exit 1
 ENTRYPOINT ["/usr/local/bin/agentshark"]

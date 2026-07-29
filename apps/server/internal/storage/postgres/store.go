@@ -21,6 +21,7 @@ type Options struct {
 	MinConnections   int32
 	ConnectTimeout   time.Duration
 	EventRetention   time.Duration
+	TraceRetention   time.Duration
 	PayloadRetention time.Duration
 	OutboxRetention  time.Duration
 	Now              func() time.Time
@@ -50,6 +51,9 @@ func Open(ctx context.Context, databaseURL string, options Options) (*Store, err
 func New(pool *pgxpool.Pool, options Options) *Store {
 	if options.EventRetention <= 0 {
 		options.EventRetention = 30 * 24 * time.Hour
+	}
+	if options.TraceRetention <= 0 {
+		options.TraceRetention = 30 * 24 * time.Hour
 	}
 	if options.OutboxRetention <= 0 {
 		options.OutboxRetention = 24 * time.Hour
@@ -531,7 +535,10 @@ FROM stream_outbox WHERE sequence > $1 ORDER BY sequence ASC LIMIT $2
 	return batch, nil
 }
 
-func (store *Store) Prune(ctx context.Context, now time.Time) error {
+// PruneAudit removes only BFF-owned Audit and SSE records. Keeping Trace
+// retention out of this transaction allows production to grant the BFF
+// read-only access to Trace tables.
+func (store *Store) PruneAudit(ctx context.Context, now time.Time) error {
 	now = now.UTC()
 	transaction, err := store.pool.Begin(ctx)
 	if err != nil {
@@ -565,6 +572,106 @@ WHERE (expires_at IS NOT NULL AND expires_at <= $1) OR created_at <= $2
 		return err
 	}
 	return transaction.Commit(ctx)
+}
+
+// PruneTraces removes Collector-owned Trace records and expires content
+// payloads. Collector writes and retention use the same ordered advisory locks.
+func (store *Store) PruneTraces(ctx context.Context, now time.Time) error {
+	now = now.UTC()
+	transaction, err := store.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = transaction.Rollback(ctx) }()
+	traceCutoff := now.Add(-store.options.TraceRetention)
+	rows, err := transaction.Query(ctx, `
+SELECT trace_id
+FROM (
+    SELECT trace_id FROM trace_payloads WHERE expires_at IS NOT NULL AND expires_at <= $1
+    UNION
+    SELECT trace_id FROM trace_summaries WHERE last_span_at < $2
+) AS affected_traces
+ORDER BY trace_id
+`, now, traceCutoff)
+	if err != nil {
+		return err
+	}
+	var affectedTraceIDs []string
+	for rows.Next() {
+		var traceID string
+		if err := rows.Scan(&traceID); err != nil {
+			rows.Close()
+			return err
+		}
+		affectedTraceIDs = append(affectedTraceIDs, traceID)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return err
+	}
+	rows.Close()
+	// Trace writers acquire the same sorted advisory locks before touching
+	// payload rows. Keeping this order prevents prune/write lock inversion.
+	for _, traceID := range affectedTraceIDs {
+		if _, err := transaction.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1, $2))`, traceID, traceAdvisoryLockSeed); err != nil {
+			return err
+		}
+	}
+	if _, err := transaction.Exec(ctx, `
+UPDATE trace_payloads
+SET payload_bytes = NULL,
+    payload_json = NULL,
+    redaction_state = 'expired',
+    size_bytes = 0
+WHERE expires_at IS NOT NULL
+  AND expires_at <= $1
+  AND redaction_state <> 'expired'
+`, now); err != nil {
+		return err
+	}
+	if _, err := transaction.Exec(ctx, `
+UPDATE trace_spans AS span
+SET content_state = 'expired', updated_at = $1
+WHERE EXISTS (
+    SELECT 1 FROM trace_payloads AS payload
+    WHERE payload.trace_id = span.trace_id
+      AND payload.span_id = span.span_id
+      AND payload.redaction_state = 'expired'
+)
+AND NOT EXISTS (
+    SELECT 1 FROM trace_payloads AS payload
+    WHERE payload.trace_id = span.trace_id
+      AND payload.span_id = span.span_id
+      AND payload.redaction_state <> 'expired'
+)
+AND span.content_state <> 'expired'
+`, now); err != nil {
+		return err
+	}
+	for _, traceID := range affectedTraceIDs {
+		if _, err := transaction.Exec(ctx, `
+DELETE FROM trace_spans
+WHERE trace_id = $1
+  AND EXISTS (
+      SELECT 1 FROM trace_summaries WHERE trace_id = $1 AND last_span_at < $2
+  )
+`, traceID, traceCutoff); err != nil {
+			return err
+		}
+		if _, err := transaction.Exec(ctx, `DELETE FROM trace_summaries WHERE trace_id = $1 AND last_span_at < $2`, traceID, traceCutoff); err != nil {
+			return err
+		}
+	}
+	return transaction.Commit(ctx)
+}
+
+// Prune is retained for tests and maintenance tools that own both domains.
+// Runtime services call the narrower ownership-specific methods above.
+func (store *Store) Prune(ctx context.Context, now time.Time) error {
+	if err := store.PruneAudit(ctx, now); err != nil {
+		return err
+	}
+	return store.PruneTraces(ctx, now)
 }
 
 type eventMetadata struct {

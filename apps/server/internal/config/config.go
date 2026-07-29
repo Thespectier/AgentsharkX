@@ -27,10 +27,12 @@ type Upstream struct {
 
 type Database struct {
 	URL              Secret
+	AutoMigrate      bool
 	MaxConnections   int
 	MinConnections   int
 	ConnectTimeout   time.Duration
 	EventRetention   time.Duration
+	TraceRetention   time.Duration
 	PayloadRetention time.Duration
 	OutboxRetention  time.Duration
 }
@@ -69,9 +71,10 @@ func Load(lookup LookupFunc) (Config, error) {
 		},
 		GuardRelease: valueOr(lookup, "AGENTGUARD_VERSION", ""),
 		Database: Database{
-			URL:            NewSecret(valueOr(lookup, "AGENTSHARK_DATABASE_URL", "")),
+			URL: NewSecret(valueOr(lookup, "AGENTSHARK_DATABASE_URL", "")), AutoMigrate: true,
 			MaxConnections: 10, MinConnections: 1, ConnectTimeout: 5 * time.Second,
-			EventRetention: 30 * 24 * time.Hour, PayloadRetention: 0, OutboxRetention: 24 * time.Hour,
+			EventRetention: 30 * 24 * time.Hour, TraceRetention: 30 * 24 * time.Hour,
+			PayloadRetention: 0, OutboxRetention: 24 * time.Hour,
 		},
 		UpstreamTimeout:  3 * time.Second,
 		ScanTimeout:      90 * time.Second,
@@ -80,6 +83,9 @@ func Load(lookup LookupFunc) (Config, error) {
 	}
 
 	var err error
+	if cfg.Database.AutoMigrate, err = boolValue(lookup, "AGENTSHARK_DATABASE_AUTO_MIGRATE", cfg.Database.AutoMigrate); err != nil {
+		return Config{}, err
+	}
 	if cfg.AuthDisabled, err = boolValue(lookup, "AGENTSHARK_AUTH_DISABLED", false); err != nil {
 		return Config{}, err
 	}
@@ -108,6 +114,9 @@ func Load(lookup LookupFunc) (Config, error) {
 		return Config{}, err
 	}
 	if cfg.Database.EventRetention, err = durationValue(lookup, "AGENTSHARK_EVENT_RETENTION", cfg.Database.EventRetention); err != nil {
+		return Config{}, err
+	}
+	if cfg.Database.TraceRetention, err = durationValue(lookup, "AGENTSHARK_TRACE_RETENTION", cfg.Database.TraceRetention); err != nil {
 		return Config{}, err
 	}
 	if cfg.Database.PayloadRetention, err = durationValue(lookup, "AGENTSHARK_PAYLOAD_RETENTION", cfg.Database.PayloadRetention); err != nil {
@@ -189,6 +198,9 @@ func (cfg Config) Validate() error {
 	if cfg.Database.EventRetention < time.Hour {
 		validationErrors = append(validationErrors, errors.New("AGENTSHARK_EVENT_RETENTION must be at least 1h"))
 	}
+	if cfg.Database.TraceRetention < time.Hour {
+		validationErrors = append(validationErrors, errors.New("AGENTSHARK_TRACE_RETENTION must be at least 1h"))
+	}
 	if cfg.Database.PayloadRetention < 0 || (cfg.Database.PayloadRetention > 0 && cfg.Database.PayloadRetention < time.Hour) || cfg.Database.PayloadRetention > cfg.Database.EventRetention {
 		validationErrors = append(validationErrors, errors.New("AGENTSHARK_PAYLOAD_RETENTION must be 0 or between 1h and AGENTSHARK_EVENT_RETENTION"))
 	}
@@ -199,9 +211,10 @@ func (cfg Config) Validate() error {
 }
 
 func (cfg Config) SafeSummary() string {
-	return fmt.Sprintf("listen=%s environment=%s auth_disabled=%t cookie_secure=%t gateway=%s guard=%s database=%s timeout=%s scan_timeout=%s retries=%d poll=%s",
+	return fmt.Sprintf("listen=%s environment=%s auth_disabled=%t cookie_secure=%t gateway=%s guard=%s database=%s database_auto_migrate=%t timeout=%s scan_timeout=%s retries=%d poll=%s",
 		cfg.ListenAddr, cfg.Environment, cfg.AuthDisabled, cfg.CookieSecure, safeEndpoint(cfg.Gateway.BaseURL),
-		safeEndpoint(cfg.Guard.BaseURL), safeDatabaseEndpoint(cfg.Database.URL.Value()), cfg.UpstreamTimeout, cfg.ScanTimeout, cfg.UpstreamRetryMax, cfg.PollInterval)
+		safeEndpoint(cfg.Guard.BaseURL), safeDatabaseEndpoint(cfg.Database.URL.Value()), cfg.Database.AutoMigrate,
+		cfg.UpstreamTimeout, cfg.ScanTimeout, cfg.UpstreamRetryMax, cfg.PollInterval)
 }
 
 func safeEndpoint(raw string) string {

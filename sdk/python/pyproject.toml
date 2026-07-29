@@ -1,0 +1,51 @@
+[build-system]
+requires = ["setuptools==80.9.0", "wheel==0.46.2"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agentshark"
+version = "0.1.0"
+description = "Local AgentsharkX tracing and AgentGuard runtime SDK"
+readme = "README.md"
+requires-python = ">=3.11,<3.15"
+license = "Apache-2.0"
+dependencies = [
+  "openinference-instrumentation==0.1.54",
+  "openinference-instrumentation-langchain==0.1.67",
+  "openinference-instrumentation-mcp==2.0.3",
+  "opentelemetry-api==1.44.0",
+  "opentelemetry-exporter-otlp-proto-http==1.44.0",
+  "opentelemetry-sdk==1.44.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "langchain-core==1.3.3",
+  "mypy==1.18.2",
+  "pytest==9.0.2",
+  "pytest-asyncio==1.3.0",
+  "ruff==0.14.14",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["B", "E", "F", "I", "UP"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+packages = ["agentshark"]
+
+[[tool.mypy.overrides]]
+module = ["agentguard", "agentguard.*"]
+ignore_missing_imports = true

@@ -7,6 +7,7 @@ mkdir -p "$work_dir"
 
 fixture_pid=""
 server_pid=""
+collector_pid=""
 preview_pid=""
 database_container=""
 session_cookie="$work_dir/restart-session.cookies"
@@ -14,7 +15,7 @@ audit_after_restart="$work_dir/audit-after-restart.json"
 stream_before_restart="$work_dir/stream-before-restart.txt"
 stream_after_restart="$work_dir/stream-after-restart.txt"
 cleanup() {
-  for pid in "$preview_pid" "$server_pid" "$fixture_pid"; do
+  for pid in "$preview_pid" "$collector_pid" "$server_pid" "$fixture_pid"; do
     if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
       kill "$pid" 2>/dev/null || true
       wait "$pid" 2>/dev/null || true
@@ -29,10 +30,17 @@ trap cleanup EXIT
 
 build_go() {
   if command -v go >/dev/null 2>&1; then
-    (cd "$root_dir/apps/server" && CGO_ENABLED=0 go build -o "$work_dir/e2e-upstreams" ./cmd/e2e-upstreams && CGO_ENABLED=0 go build -o "$work_dir/agentshark" ./cmd/agentshark)
+    (
+      cd "$root_dir/apps/server"
+      CGO_ENABLED=0 go build -o "$work_dir/e2e-upstreams" ./cmd/e2e-upstreams
+      CGO_ENABLED=0 go build -o "$work_dir/e2e-trace" ./cmd/e2e-trace
+      CGO_ENABLED=0 go build -o "$work_dir/agentshark" ./cmd/agentshark
+      CGO_ENABLED=0 go build -o "$work_dir/agentshark-collector" ./cmd/agentshark-collector
+      CGO_ENABLED=0 go build -o "$work_dir/agentshark-migrate" ./cmd/agentshark-migrate
+    )
   else
     docker run --rm -e CGO_ENABLED=0 -v "$root_dir:/src" -w /src/apps/server golang:1.26.5-alpine \
-      sh -c 'go build -o /src/.cache/release-e2e/e2e-upstreams ./cmd/e2e-upstreams && go build -o /src/.cache/release-e2e/agentshark ./cmd/agentshark'
+      sh -c 'go build -o /src/.cache/release-e2e/e2e-upstreams ./cmd/e2e-upstreams && go build -o /src/.cache/release-e2e/e2e-trace ./cmd/e2e-trace && go build -o /src/.cache/release-e2e/agentshark ./cmd/agentshark && go build -o /src/.cache/release-e2e/agentshark-collector ./cmd/agentshark-collector && go build -o /src/.cache/release-e2e/agentshark-migrate ./cmd/agentshark-migrate'
   fi
 }
 
@@ -93,8 +101,29 @@ start_server() {
   AGENTGUARD_VERSION=main-4b755fb \
   AGENTSHARK_POLL_INTERVAL=1s \
   AGENTSHARK_DATABASE_URL="$AGENTSHARK_RELEASE_DATABASE_URL" \
+  AGENTSHARK_DATABASE_AUTO_MIGRATE=false \
   "$work_dir/agentshark" >>"$work_dir/server.log" 2>&1 &
   server_pid=$!
+}
+
+start_collector() {
+  AGENTSHARK_COLLECTOR_LISTEN_ADDR=127.0.0.1:19418 \
+  AGENTSHARK_COLLECTOR_DATABASE_URL="$AGENTSHARK_RELEASE_DATABASE_URL" \
+  AGENTSHARK_TRACE_INGEST_TOKEN=release-trace-ingest-token-with-entropy \
+  AGENTSHARK_TRACE_CONTENT_MODE=metadata \
+  "$work_dir/agentshark-collector" >>"$work_dir/collector.log" 2>&1 &
+  collector_pid=$!
+}
+
+assert_trace_persisted() {
+  local stage="$1"
+  local counts
+  counts="$(docker exec "$database_container" psql -qAt -U agentshark -d agentshark_release_e2e -c \
+    "SELECT (SELECT count(*) FROM trace_spans WHERE trace_id = '11111111111111111111111111111111' AND span_id = '2222222222222222' AND task_id = 'release-task' AND agent_id = 'release-agent')::text || ':' || (SELECT count(*) FROM trace_summaries WHERE trace_id = '11111111111111111111111111111111' AND task_id = 'release-task' AND root_agent_id = 'release-agent' AND status = 'succeeded' AND completeness = 'verified')::text")"
+  if [[ "$counts" != "1:1" ]]; then
+    echo "release E2E Trace persistence check failed $stage: $counts" >&2
+    exit 1
+  fi
 }
 
 login_for_restart_check() {
@@ -107,6 +136,8 @@ login_for_restart_check() {
 
 build_go
 start_database
+AGENTSHARK_DATABASE_URL="$AGENTSHARK_RELEASE_DATABASE_URL" \
+  "$work_dir/agentshark-migrate" >"$work_dir/migrate.log" 2>&1
 AGENTSHARK_E2E_GUARD_ADDR=0.0.0.0:19001 \
   "$work_dir/e2e-upstreams" >"$work_dir/upstreams.log" 2>&1 &
 fixture_pid=$!
@@ -115,6 +146,22 @@ wait_for "http://127.0.0.1:19000/api/runtime"
 : >"$work_dir/server.log"
 start_server
 wait_for "http://127.0.0.1:19080/readyz"
+
+: >"$work_dir/collector.log"
+start_collector
+wait_for "http://127.0.0.1:19418/readyz"
+AGENTSHARK_E2E_TRACE_ENDPOINT=http://127.0.0.1:19418/v1/traces \
+AGENTSHARK_E2E_TRACE_TOKEN=release-trace-ingest-token-with-entropy \
+  "$work_dir/e2e-trace"
+curl -fsS http://127.0.0.1:19418/metrics | grep -qx 'agentshark_collector_spans_inserted_total 1'
+assert_trace_persisted "before Collector restart"
+
+kill "$collector_pid"
+wait "$collector_pid"
+collector_pid=""
+start_collector
+wait_for "http://127.0.0.1:19418/readyz"
+assert_trace_persisted "after Collector restart"
 
 VITE_ENABLE_MOCKS=false npm --prefix "$root_dir/apps/web" run build >/dev/null
 VITE_ENABLE_MOCKS=false VITE_BFF_PROXY_TARGET=http://127.0.0.1:19080 \

@@ -45,7 +45,8 @@ func main() {
 	databaseStore, err := storagepostgres.Open(rootContext, cfg.Database.URL.Value(), storagepostgres.Options{
 		MaxConnections: int32(cfg.Database.MaxConnections), MinConnections: int32(cfg.Database.MinConnections),
 		ConnectTimeout: cfg.Database.ConnectTimeout, EventRetention: cfg.Database.EventRetention,
-		PayloadRetention: cfg.Database.PayloadRetention, OutboxRetention: cfg.Database.OutboxRetention,
+		TraceRetention: cfg.Database.TraceRetention, PayloadRetention: cfg.Database.PayloadRetention,
+		OutboxRetention: cfg.Database.OutboxRetention,
 	})
 	if err != nil {
 		logger.Error("database configuration rejected", "error", err.Error())
@@ -95,12 +96,12 @@ func main() {
 	handler := webconsole.New(apiHandler)
 
 	health := aggregator.Refresh(rootContext)
-	persistenceReady := initializePersistence(rootContext, databaseStore, auditService, health, logger)
+	persistenceReady := initializePersistence(rootContext, databaseStore, auditService, health, logger, cfg.Database.AutoMigrate)
 	go monitorHealth(rootContext, aggregator, auditService, logger, cfg.PollInterval)
 	if persistenceReady {
 		go monitorAudit(rootContext, auditService, cfg.PollInterval)
 	} else {
-		go recoverPersistence(rootContext, databaseStore, auditService, aggregator, logger, cfg.PollInterval)
+		go recoverPersistence(rootContext, databaseStore, auditService, aggregator, logger, cfg.PollInterval, cfg.Database.AutoMigrate)
 	}
 	go maintainPersistence(rootContext, databaseStore, logger)
 
@@ -217,11 +218,16 @@ func monitorHealth(ctx context.Context, aggregator *aggregate.Service, auditServ
 	}
 }
 
-func initializePersistence(ctx context.Context, store *storagepostgres.Store, auditService *audit.Service, health []model.SourceHealth, logger *slog.Logger) bool {
+func initializePersistence(ctx context.Context, store *storagepostgres.Store, auditService *audit.Service, health []model.SourceHealth, logger *slog.Logger, autoMigrate bool) bool {
 	migrationContext, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	if err := store.Migrate(migrationContext); err != nil {
-		logger.Error("database migration unavailable", "error", err.Error())
+	if autoMigrate {
+		if err := store.Migrate(migrationContext); err != nil {
+			logger.Error("database migration unavailable", "error", err.Error())
+			return false
+		}
+	} else if err := store.Ready(migrationContext); err != nil {
+		logger.Error("database schema unavailable", "error", err.Error())
 		return false
 	}
 	if err := auditService.Restore(migrationContext); err != nil {
@@ -238,11 +244,11 @@ func initializePersistence(ctx context.Context, store *storagepostgres.Store, au
 	return true
 }
 
-func recoverPersistence(ctx context.Context, store *storagepostgres.Store, auditService *audit.Service, aggregator *aggregate.Service, logger *slog.Logger, pollInterval time.Duration) {
+func recoverPersistence(ctx context.Context, store *storagepostgres.Store, auditService *audit.Service, aggregator *aggregate.Service, logger *slog.Logger, pollInterval time.Duration, autoMigrate bool) {
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
 	for {
-		if initializePersistence(ctx, store, auditService, aggregator.Snapshot(), logger) {
+		if initializePersistence(ctx, store, auditService, aggregator.Snapshot(), logger, autoMigrate) {
 			logger.Info("persistent Audit storage recovered")
 			monitorAudit(ctx, auditService, pollInterval)
 			return
@@ -256,7 +262,7 @@ func recoverPersistence(ctx context.Context, store *storagepostgres.Store, audit
 }
 
 func maintainPersistence(ctx context.Context, store *storagepostgres.Store, logger *slog.Logger) {
-	if err := store.Prune(ctx, time.Now().UTC()); err != nil {
+	if err := store.PruneAudit(ctx, time.Now().UTC()); err != nil {
 		logger.Warn("database retention cleanup unavailable", "error", err.Error())
 	}
 	ticker := time.NewTicker(time.Hour)
@@ -266,7 +272,7 @@ func maintainPersistence(ctx context.Context, store *storagepostgres.Store, logg
 		case <-ctx.Done():
 			return
 		case now := <-ticker.C:
-			if err := store.Prune(ctx, now.UTC()); err != nil {
+			if err := store.PruneAudit(ctx, now.UTC()); err != nil {
 				logger.Warn("database retention cleanup unavailable", "error", err.Error())
 			}
 		}

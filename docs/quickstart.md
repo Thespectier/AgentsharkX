@@ -1,7 +1,7 @@
 # 10-minute preview quickstart
 
 This path starts the pinned agentgateway release and AgentGuard main snapshot,
-the AgentsharkX `0.8.0-preview` image, and PostgreSQL, then emits one real
+the AgentsharkX `0.9.0-preview` BFF/Collector image, and PostgreSQL, then emits one real
 AgentGuard event. The default integrated topology supports Linux x86_64/arm64
 and macOS arm64, and requires Docker with Compose v2, `curl`, `jq`, a SHA-256 utility,
 OpenSSL, Python 3.11+, and Git. Agentgateway runs as a verified host-native
@@ -15,8 +15,8 @@ make preview-bootstrap
 
 The command creates an ignored `.env` with mode `0600`, random administrator,
 AgentGuard, and PostgreSQL credentials, and loopback-only database publication.
-For an existing `.env`, it preserves existing values and adds missing Phase 13
-database settings. It also creates an ignored `.agentgateway.env` for provider
+For an existing `.env`, it preserves existing values and adds missing Phase
+13/14 database and Trace Collector settings. It also creates an ignored `.agentgateway.env` for provider
 credentials. It never replaces an existing
 file or prints credentials. Review every `*_BIND` value before changing it from
 loopback.
@@ -51,6 +51,17 @@ curl -fsS http://127.0.0.1:8080/readyz
 connectivity, completed embedded migrations, and restored Audit history; it
 does not require either upstream to be healthy.
 
+Check the independent Collector without sending a Trace:
+
+```bash
+curl -fsS http://127.0.0.1:4318/healthz
+curl -fsS http://127.0.0.1:4318/readyz
+curl -fsS http://127.0.0.1:4318/metrics
+```
+
+The Collector accepts authenticated protobuf only at `/v1/traces`; a browser
+GET is not an ingest test.
+
 Docker Desktop automatically uses `host.docker.internal`; native Linux Docker
 uses host networking. Use `make preview-container-up` if neither connector is
 available. That fallback runs agentgateway in its pinned container and requires
@@ -63,6 +74,7 @@ Install the exact pinned AgentGuard client in a disposable virtual environment:
 ```bash
 python3 -m venv .venv-quickstart
 .venv-quickstart/bin/pip install \
+  -c ./sdk/python/constraints.txt \
   'agentguard @ git+https://github.com/WhitzardAgent/AgentGuard.git@4b755fb4a4a2763b7e817b3d0220fe5c22187b59'
 ```
 
@@ -82,16 +94,44 @@ AgentGuard tool event and **Trust → Agents** shows the explicit quickstart age
 No prompt, tool arguments, session key, API key, or raw sensitive response is
 returned to the browser.
 
-## 4. Stop
+## 4. Emit the first Task Trace
+
+Clone the exact pinned AgentGuard source into the ignored local dependency
+directory, then install both local packages:
+
+```bash
+make sdk-bootstrap
+.venv-quickstart/bin/pip install -c ./sdk/python/constraints.txt \
+  -e ./third_party/AgentGuard -e './sdk/python[dev]'
+```
+
+Load the generated Collector token and point AgentGuard at its host listener:
+
+```bash
+set -a
+. ./.env
+set +a
+AGENTGUARD_SERVER_URL=http://127.0.0.1:38080 \
+AGENTGUARD_API_KEY="$AGENTGUARD_ADMIN_TOKEN" \
+  .venv-quickstart/bin/python examples/agentshark_trace_minimal.py
+```
+
+The example exports a Task Root plus a real LangChain span through the Batch
+OTLP exporter. Phase 14 persists the Trace and summary, but deliberately has no
+BFF Trace list/detail API or frontend view; inspect it through PostgreSQL or
+Collector metrics until Phase 15 adds the read experience.
+
+## 5. Stop
 
 ```bash
 make preview-down
 ```
 
 `.env` and `.venv-quickstart` remain local. The PostgreSQL volume and normalized
-Audit history survive a normal stop/start; scan jobs and rule-check tokens remain
-in memory and disappear when the container stops. Payload retention is disabled
-by default. See [Database operations](database.md) before changing retention,
+Audit and Trace history survive a normal stop/start; scan jobs and rule-check
+tokens remain in memory and disappear when the container stops. Audit payload
+retention is disabled by default; Trace content defaults to metadata-only and
+full Trace payloads expire after 24 hours. See [Database operations](database.md) before changing retention,
 backing up data, or intentionally deleting the volume.
 
 See [Agent integration](agent-integration.md) for framework adapters and

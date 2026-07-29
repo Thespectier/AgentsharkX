@@ -43,6 +43,15 @@ jobs:
       - name: Generated client, format, type, unit, and production build
         run: make web-check
 
+  sdk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Python SDK unit, framework, type, and lint checks
+        run: make sdk-test
+      - name: Pinned AgentGuard editable-install and public API contract
+        run: make sdk-agentguard-contract
+
   contract:
     runs-on: ubuntu-latest
     steps:

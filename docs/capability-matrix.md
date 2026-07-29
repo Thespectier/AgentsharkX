@@ -27,6 +27,10 @@ ordered source-owned parent objects without adding a guardrail engine.
 Phase 13 adds the AgentsharkX-owned PostgreSQL Audit event, payload, checkpoint,
 and outbox stores, stable event pagination, database readiness, and restart-safe
 SSE delivery. It adds no upstream route or inferred upstream field.
+Phase 14 adds an independent OTLP/HTTP protobuf Collector, durable Trace
+storage/summary assembly, and a repository-local Python SDK with pinned
+AgentGuard, LangChain, MCP, and A2A integrations. It adds no upstream management
+field and intentionally exposes no BFF Trace query contract before Phase 15.
 
 ## Status vocabulary
 
@@ -133,13 +137,27 @@ auditor-management surface.
 | Task graph                        | neither                                   | unavailable | outside product boundary                                                             | Must not be implemented.                                                                                                                                                                                                                                                                          |
 | Business replay/payload vault     | neither                                   | unavailable | outside product boundary                                                             | Delivery replay from the summary-only outbox is not business replay; do not add execution replay or an unbounded payload vault.                                                                                                                                                                   |
 
+## Trace ingest and local SDK
+
+| AgentsharkX capability | Source | Status | Evidence | Rule |
+| --- | --- | --- | --- | --- |
+| OTLP/HTTP protobuf ingest | AgentsharkX Collector | supported | Phase 14 receiver auth, gzip, body/Span limits, timeout, partial-rejection, readiness, and metrics tests | Accept only `POST /v1/traces`; never log request bodies, bearer tokens, or storage errors. Collector traffic is telemetry, not proxied agent business traffic. |
+| Durable Span/Link/Payload storage | AgentsharkX | supported | Phase 14 memory and PostgreSQL out-of-order, resend, terminal-update, restart, migration, and retention tests | Preserve raw attributes, Resource, Events, Scope/version, and semconv version. Use only exact IDs, `parent_span_id`, and Span Links; no time/name inference. |
+| Trace summary assembly | AgentsharkX | supported | Phase 14 table-driven LLM/Tool/Retriever/MCP/A2A/token/error/root-state tests | Count only explicit countable interactions. Task duration/status is verified only from an explicit ended Task Root. |
+| Python Task/LangChain SDK | AgentsharkX SDK | supported | Phase 14 sync/async/thread ContextVar, automatic real LangChain LLM/Tool/Retriever, repeat instrumentation/attach, flush, and exporter-failure tests | One process provider and instrumentation registration; one mutable Guard/Agent instance rejects concurrent tasks. Export failure never changes business results. |
+| Pinned AgentGuard facade | AgentGuard `4b755fb4...` | supported | Exact editable-install and `Guard`/`Principal`/`start`/dynamic `attach_langchain`/`close` contract check | Clone the immutable revision into ignored `third_party/AgentGuard`; do not copy or modify its client source. Closed is the production default; open must be explicit. |
+| Trace content modes | AgentsharkX SDK + Collector | supported | Phase 14 `none`/`metadata`/`full`, truncation, status/exception, nested credential, and separate payload expiry tests | Default `metadata`; content never remains in Span metadata. `full` uses bounded separately retained payloads. Credentials are redacted in every mode. |
+| Explicit MCP classification | AgentsharkX SDK | supported | Phase 14 `initialize`, `tools/list`, `tools/call`, wrapping, and fixed-count tests | Count only `TOOL + tool.kind=mcp + method=tools/call + countable=true`; do not infer MCP from a LangChain Tool name. |
+| Explicit A2A propagation and links | AgentsharkX SDK | supported | Phase 14 W3C carrier, remote continuation, detached Link, async wrapper, and fixed-count tests | Count only `invoke_agent + peer_agent_id + countable=true`; do not fabricate remote internals or parent IDs. |
+| Trace BFF query/list/detail/UI | AgentsharkX | unavailable | Deferred Phase 15 OpenAPI and frontend work | Ingest persistence is not authorization for an undocumented BFF route or Mock Trace UI. |
+
 ## Release evidence
 
 | Gate            | Status    | Evidence                                                                                             |
 | --------------- | --------- | ---------------------------------------------------------------------------------------------------- |
-| Go and Web      | supported | `make verify`, race tests, generated-client check, browser suite                                     |
-| Contract        | supported | OpenAPI `0.8.0-preview`, upstream samples, Compose render check                                      |
-| Full path       | supported | real BFF fixture E2E: login → Connect → emit → Audit → approve                                       |
+| Go, SDK, and Web | supported | `make verify`, Go/Python race-context tests, generated-client check, browser suite                  |
+| Contract        | supported | OpenAPI `0.9.0-preview`, pinned AgentGuard SDK check, upstream samples, Compose render check          |
+| Full path       | supported | real BFF/browser workflow plus migration-only startup, OTLP Collector ingest, and Collector-restart persistence |
 | Native gateway  | supported | pinned binary version/revision and per-platform SHA-256 verification; Linux integrated-preview smoke |
 | Container       | supported | pinned multi-stage build, embedded production Web, non-root runtime, healthcheck                     |
 | Secret boundary | supported | tracked-file patterns plus production browser-bundle sentinel scan                                   |

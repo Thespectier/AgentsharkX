@@ -25,10 +25,12 @@ func TestLoadValidConfigurationAndRedactsSecrets(t *testing.T) {
 		"AGENTSHARK_UPSTREAM_RETRY_MAX":       "2",
 		"AGENTSHARK_POLL_INTERVAL":            "3s",
 		"AGENTSHARK_DATABASE_URL":             "postgresql://agentshark:database-secret@postgres.test:5432/agentshark?sslmode=disable",
+		"AGENTSHARK_DATABASE_AUTO_MIGRATE":    "false",
 		"AGENTSHARK_DATABASE_MAX_CONNS":       "12",
 		"AGENTSHARK_DATABASE_MIN_CONNS":       "2",
 		"AGENTSHARK_DATABASE_CONNECT_TIMEOUT": "4s",
 		"AGENTSHARK_EVENT_RETENTION":          "720h",
+		"AGENTSHARK_TRACE_RETENTION":          "336h",
 		"AGENTSHARK_PAYLOAD_RETENTION":        "24h",
 		"AGENTSHARK_OUTBOX_RETENTION":         "12h",
 	}
@@ -42,6 +44,12 @@ func TestLoadValidConfigurationAndRedactsSecrets(t *testing.T) {
 	}
 	if cfg.UpstreamTimeout != 750*time.Millisecond || cfg.ScanTimeout != 45*time.Second || cfg.UpstreamRetryMax != 2 {
 		t.Fatalf("unexpected upstream policy: timeout=%s scan=%s retry=%d", cfg.UpstreamTimeout, cfg.ScanTimeout, cfg.UpstreamRetryMax)
+	}
+	if cfg.Database.TraceRetention != 14*24*time.Hour {
+		t.Fatalf("trace retention = %s", cfg.Database.TraceRetention)
+	}
+	if cfg.Database.AutoMigrate {
+		t.Fatal("database auto-migrate should honor the configured false value")
 	}
 	if got := cfg.AdminToken.Value(); got != values["AGENTSHARK_ADMIN_TOKEN"] {
 		t.Fatalf("admin token did not round trip")
@@ -66,13 +74,16 @@ func TestLoadRejectsMissingDatabaseAndInvalidRetention(t *testing.T) {
 		"AGENTSHARK_ADMIN_TOKEN":      "admin-token-with-enough-entropy",
 		"AGENTGUARD_ADMIN_TOKEN":      "guard-secret-with-enough-entropy",
 		"AGENTSHARK_EVENT_RETENTION":  "1h",
+		"AGENTSHARK_TRACE_RETENTION":  "30m",
 		"AGENTSHARK_OUTBOX_RETENTION": "2h",
 	}
 	_, err := Load(func(key string) (string, bool) {
 		value, ok := values[key]
 		return value, ok
 	})
-	if err == nil || !strings.Contains(err.Error(), "AGENTSHARK_DATABASE_URL") || !strings.Contains(err.Error(), "AGENTSHARK_OUTBOX_RETENTION") {
+	if err == nil || !strings.Contains(err.Error(), "AGENTSHARK_DATABASE_URL") ||
+		!strings.Contains(err.Error(), "AGENTSHARK_TRACE_RETENTION") ||
+		!strings.Contains(err.Error(), "AGENTSHARK_OUTBOX_RETENTION") {
 		t.Fatalf("expected database validation errors, got %v", err)
 	}
 }

@@ -46,7 +46,7 @@ required_paths=(
 )
 
 search -q '^openapi: 3\.1\.0$' "$spec"
-search -q '^  version: 0\.8\.0-preview$' "$spec"
+search -q '^  version: 0\.9\.0-preview$' "$spec"
 search -q '^paths:$' "$spec"
 for path in "${required_paths[@]}"; do
   if ! search -Fq "  $path:" "$spec"; then

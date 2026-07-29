@@ -34,7 +34,7 @@ up_preview() {
       "$root_dir/scripts/preview-compose.sh" stop agentgateway >/dev/null 2>&1 || true
       "$root_dir/scripts/agentgateway-standalone.sh" start
       "$root_dir/scripts/standalone-compose.sh" up --build -d \
-        agentshark agentguard agentguard-console
+        agentshark agentshark-collector agentguard agentguard-console
       ;;
     container)
       "$root_dir/scripts/agentgateway-standalone.sh" stop >/dev/null 2>&1 || true

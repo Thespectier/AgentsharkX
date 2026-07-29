@@ -1,19 +1,53 @@
 # Dependency license inventory
 
-Generated from the exact npm lockfile and reviewed Go runtime module graph used by the `0.8.0-preview` preview. Go module versions are checked against `apps/server/go.mod`, and their content hashes are recorded from `apps/server/go.sum`; generation performs no network access. Go licenses were verified from each pinned module's source license. npm licenses are declarations from the lockfile; `NOASSERTION` entries require manual review before redistribution.
+Generated from the exact npm lockfile, reviewed Go runtime module graph, and pinned local Python SDK resolution used by the `0.9.0-preview` preview. Go module versions are checked against `apps/server/go.mod`, and their content hashes are recorded from `apps/server/go.sum`. Python versions are checked against `sdk/python/constraints.txt`; runtime package licenses were reviewed from installed distribution metadata. Generation performs no network access. npm licenses are declarations from the lockfile; `NOASSERTION` entries require manual review before redistribution.
 
-Runtime services are separate processes: agentgateway is Apache-2.0, AgentGuard is GPL-3.0-only, and PostgreSQL uses the PostgreSQL license. Their source and image obligations remain independent from the AgentsharkX Apache-2.0 image.
+Runtime services are separate processes: agentgateway is Apache-2.0, AgentGuard at full source revision `4b755fb4a4a2763b7e817b3d0220fe5c22187b59` is GPL-3.0-only, and PostgreSQL uses the PostgreSQL license. Their source and image obligations remain independent from the AgentsharkX Apache-2.0 image. The repository-local Python SDK imports a separately installed pinned AgentGuard checkout for local agent integration; it does not copy AgentGuard source or publish a combined package. Distribution requires a separate license review.
 
 ## Go runtime modules
 
 | Package | Version | Scope | Declared license |
 | --- | --- | --- | --- |
+| `github.com/grpc-ecosystem/grpc-gateway/v2` | `v2.29.0` | runtime (transitive) | BSD-3-Clause |
 | `github.com/jackc/pgpassfile` | `v1.0.0` | runtime (transitive) | MIT |
 | `github.com/jackc/pgservicefile` | `v0.0.0-20240606120523-5a60cdf6a761` | runtime (transitive) | MIT |
 | `github.com/jackc/pgx/v5` | `v5.10.0` | runtime (direct) | MIT |
 | `github.com/jackc/puddle/v2` | `v2.2.2` | runtime (transitive) | MIT |
-| `golang.org/x/sync` | `v0.17.0` | runtime (transitive) | BSD-3-Clause |
-| `golang.org/x/text` | `v0.29.0` | runtime (transitive) | BSD-3-Clause |
+| `go.opentelemetry.io/proto/otlp` | `v1.11.0` | runtime (direct) | Apache-2.0 |
+| `golang.org/x/net` | `v0.57.0` | runtime (transitive) | BSD-3-Clause |
+| `golang.org/x/sync` | `v0.22.0` | runtime (transitive) | BSD-3-Clause |
+| `golang.org/x/sys` | `v0.47.0` | runtime (transitive) | BSD-3-Clause |
+| `golang.org/x/text` | `v0.40.0` | runtime (transitive) | BSD-3-Clause |
+| `google.golang.org/genproto/googleapis/api` | `v0.0.0-20260720211330-0afa2a65878a` | runtime (transitive) | Apache-2.0 |
+| `google.golang.org/genproto/googleapis/rpc` | `v0.0.0-20260720211330-0afa2a65878a` | runtime (transitive) | Apache-2.0 |
+| `google.golang.org/grpc` | `v1.82.1` | runtime (transitive) | Apache-2.0 |
+| `google.golang.org/protobuf` | `v1.36.11` | runtime (direct) | BSD-3-Clause |
+
+## Python SDK runtime packages
+
+| Package | Version | Scope | Declared license |
+| --- | --- | --- | --- |
+| `certifi` | `2026.7.22` | runtime (transitive) | MPL-2.0 |
+| `charset-normalizer` | `3.4.9` | runtime (transitive) | MIT |
+| `googleapis-common-protos` | `1.75.0` | runtime (transitive) | Apache-2.0 |
+| `idna` | `3.18` | runtime (transitive) | BSD-3-Clause |
+| `openinference-instrumentation` | `0.1.54` | runtime (direct) | Apache-2.0 |
+| `openinference-instrumentation-langchain` | `0.1.67` | runtime (direct) | Apache-2.0 |
+| `openinference-instrumentation-mcp` | `2.0.3` | runtime (direct) | Apache-2.0 |
+| `openinference-semantic-conventions` | `0.1.30` | runtime (transitive) | Apache-2.0 |
+| `opentelemetry-api` | `1.44.0` | runtime (direct) | Apache-2.0 |
+| `opentelemetry-exporter-otlp-proto-common` | `1.44.0` | runtime (transitive) | Apache-2.0 |
+| `opentelemetry-exporter-otlp-proto-http` | `1.44.0` | runtime (direct) | Apache-2.0 |
+| `opentelemetry-instrumentation` | `0.65b0` | runtime (transitive) | Apache-2.0 |
+| `opentelemetry-proto` | `1.44.0` | runtime (transitive) | Apache-2.0 |
+| `opentelemetry-sdk` | `1.44.0` | runtime (direct) | Apache-2.0 |
+| `opentelemetry-semantic-conventions` | `0.65b0` | runtime (transitive) | Apache-2.0 |
+| `packaging` | `26.2` | runtime (transitive) | Apache-2.0 OR BSD-2-Clause |
+| `protobuf` | `7.35.1` | runtime (transitive) | BSD-3-Clause |
+| `requests` | `2.34.2` | runtime (transitive) | Apache-2.0 |
+| `typing-extensions` | `4.16.0` | runtime (transitive) | PSF-2.0 |
+| `urllib3` | `2.7.0` | runtime (transitive) | MIT |
+| `wrapt` | `2.3.0` | runtime (transitive) | BSD-2-Clause |
 
 ## npm packages
 
