@@ -3,8 +3,8 @@
 Deterministic Playwright release and feature baselines are stored here:
 
 - [`home-1440.png`](home-1440.png): 1440 × 1000 desktop Home with the Agent
-  monitoring overview, Beijing-time greeting, live metrics, security queue, and
-  source-distinct activity.
+  monitoring overview, Beijing-time greeting, live metrics, the rolling traffic
+  and decision trend, security queue, and source-distinct activity.
 - [`audit-1280.png`](audit-1280.png): 1280 × 800 laptop Agent Trace list, the
   default Audit destination, with filters and explicit trace evidence.
 - [`connect-1280.png`](connect-1280.png): 1280 × 900 Connect overview with all

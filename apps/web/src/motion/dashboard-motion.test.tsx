@@ -2,7 +2,7 @@ import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
 import type { UnifiedEvent } from "../types";
-import { ActivityRail } from "./dashboard-motion";
+import { ActivityRail, RequestTrendChart } from "./dashboard-motion";
 
 const events: UnifiedEvent[] = [
   {
@@ -23,5 +23,14 @@ describe("activity rail", () => {
     expect(screen.getByText("Runtime protection")).toBeVisible();
     expect(screen.getByText("Agentshark Runtime blocked a protected action")).toBeVisible();
     expect(screen.queryByText(/AgentGuard/)).not.toBeInTheDocument();
+  });
+});
+
+describe("request trend chart", () => {
+  it("shows an explicit empty state when the overview has no trend buckets", () => {
+    render(<RequestTrendChart data={[]} />);
+
+    expect(screen.getByText("No traffic or decision data in the last 60 minutes.")).toBeVisible();
+    expect(screen.queryByRole("img")).not.toBeInTheDocument();
   });
 });

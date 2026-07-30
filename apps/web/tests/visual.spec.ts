@@ -13,6 +13,7 @@ test("desktop home visual baseline", async ({ page }) => {
   await waitForStableShell(page);
   await expect(page.getByText("Monitored agents", { exact: true })).toBeVisible();
   await expect(page.getByText("Runtime state is not reported")).toBeVisible();
+  await expect(page.getByText("Traffic & decisions", { exact: true })).toBeVisible();
   await expect(page).toHaveScreenshot("home-1440.png");
 });
 

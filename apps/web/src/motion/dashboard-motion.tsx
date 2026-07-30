@@ -1,9 +1,26 @@
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
+import {
+  Area,
+  AreaChart,
+  CartesianGrid,
+  Line,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 
 import { SeverityBadge, SourceBadge, cn } from "../components/ui";
-import { formatTimeWithZone, productizeText } from "../lib/format";
+import {
+  displayTimeZoneLabel,
+  formatCount,
+  formatTimeWithZone,
+  formatTrendTick,
+  formatTrendTimestamp,
+  productizeText,
+} from "../lib/format";
 import { useI18n } from "../lib/i18n";
-import type { UnifiedEvent } from "../types";
+import type { TrendPoint, UnifiedEvent } from "../types";
 
 export function ActivityRail({ events, limit = 6 }: { events: UnifiedEvent[]; limit?: number }) {
   const reduced = useReducedMotion();
@@ -40,6 +57,109 @@ export function ActivityRail({ events, limit = 6 }: { events: UnifiedEvent[]; li
           </motion.article>
         ))}
       </AnimatePresence>
+    </div>
+  );
+}
+
+export function RequestTrendChart({ data }: { data: TrendPoint[] }) {
+  const reduced = useReducedMotion();
+  const { locale, t } = useI18n();
+
+  if (data.length === 0) {
+    return (
+      <div className="trend-empty" role="status">
+        {t("No traffic or decision data in the last 60 minutes.")}
+      </div>
+    );
+  }
+
+  return (
+    <div
+      aria-label={t(
+        "{mode} trend chart for the last 60 minutes in {count} five-minute Beijing-time buckets",
+        { mode: t("requests"), count: data.length },
+      )}
+      className="chart-wrap"
+      role="img"
+    >
+      <ResponsiveContainer height="100%" width="100%">
+        <AreaChart data={data} margin={{ left: 0, right: 0, top: 12, bottom: 0 }}>
+          <defs>
+            <linearGradient id="chart-requests" x1="0" x2="0" y1="0" y2="1">
+              <stop offset="0%" stopColor="#5c92ff" stopOpacity={0.28} />
+              <stop offset="100%" stopColor="#5c92ff" stopOpacity={0} />
+            </linearGradient>
+          </defs>
+          <CartesianGrid stroke="#1c2a3a" strokeDasharray="3 5" vertical={false} />
+          <XAxis
+            axisLine={false}
+            dataKey="time"
+            fontSize={11}
+            interval={1}
+            stroke="#718196"
+            tickFormatter={formatTrendTick}
+            tickLine={false}
+          />
+          <YAxis
+            allowDecimals={false}
+            axisLine={false}
+            domain={[0, "auto"]}
+            fontSize={11}
+            stroke="#718196"
+            tickFormatter={formatCount}
+            tickLine={false}
+            width={45}
+            yAxisId="traffic"
+          />
+          <YAxis
+            allowDecimals={false}
+            axisLine={false}
+            domain={[0, "auto"]}
+            fontSize={11}
+            orientation="right"
+            stroke="#a56b78"
+            tickFormatter={formatCount}
+            tickLine={false}
+            width={38}
+            yAxisId="decisions"
+          />
+          <Tooltip
+            contentStyle={{
+              background: "#101927",
+              border: "1px solid #26384d",
+              borderRadius: 8,
+              color: "#eef5ff",
+              fontSize: 12,
+            }}
+            cursor={{ stroke: "#41536a" }}
+            formatter={(value, name) => [formatCount(Number(value)), String(name)]}
+            labelFormatter={(value) =>
+              `${formatTrendTimestamp(String(value), locale)} ${displayTimeZoneLabel} · ${t("5-minute bucket")}`
+            }
+          />
+          <Area
+            animationDuration={reduced ? 0 : 650}
+            dataKey="requests"
+            fill="url(#chart-requests)"
+            name={t("Requests")}
+            stroke="#5c92ff"
+            strokeWidth={2}
+            type="monotone"
+            yAxisId="traffic"
+          />
+          <Line
+            animationDuration={reduced ? 0 : 650}
+            dataKey="denied"
+            dot={false}
+            name={t("Denied")}
+            stroke="#ff627d"
+            strokeDasharray="4 4"
+            strokeWidth={1.5}
+            type="monotone"
+            yAxisId="decisions"
+          />
+        </AreaChart>
+      </ResponsiveContainer>
     </div>
   );
 }

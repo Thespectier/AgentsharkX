@@ -312,6 +312,7 @@ const zhCN: Record<string, string> = {
   "This view is driven by authenticated Phase 2 BFF responses.":
     "此视图由经过身份验证的第二阶段 BFF 响应驱动。",
   "No security events in this range.": "此时间范围内没有安全事件。",
+  "No traffic or decision data in the last 60 minutes.": "最近 60 分钟内没有流量或决策数据。",
   "Mock SSE connected": "模拟 SSE 已连接",
   "Live SSE connected": "实时 SSE 已连接",
   "Dynamic elements on this page are driven by clearly labelled MSW REST and SSE fixtures.":

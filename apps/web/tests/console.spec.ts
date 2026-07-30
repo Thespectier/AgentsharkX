@@ -28,7 +28,10 @@ test("Home shows monitored Agent counts and explicit runtime-state availability"
   await expect(overview.getByText("Running agents", { exact: true })).toBeVisible();
   await expect(overview.getByText("Runtime state is not reported")).toBeVisible();
   await expect(overview.getByText("research-copilot", { exact: true })).toBeVisible();
-  await expect(page.getByText("Agent traffic & decisions")).toHaveCount(0);
+  await expect(page.getByText("Traffic & decisions", { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("img", { name: /requests trend chart for the last 60 minutes/i }),
+  ).toBeVisible();
 });
 
 test("Home greeting follows Beijing time and the persisted language switch localizes the shell", async ({

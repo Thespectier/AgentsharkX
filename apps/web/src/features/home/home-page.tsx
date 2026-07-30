@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { ArrowRight, CheckCircle2, ShieldCheck, Sparkles, TerminalSquare } from "lucide-react";
-import { ActivityRail } from "../../motion/dashboard-motion";
+import { ActivityRail, RequestTrendChart } from "../../motion/dashboard-motion";
 import { formatError, getScenario, isMockMode, requestOperation } from "../../lib/api";
 import { formatTimeWithZone, productizeText, sourceLabel } from "../../lib/format";
 import { useBeijingGreeting, useI18n } from "../../lib/i18n";
@@ -228,7 +228,26 @@ export function HomePage() {
         ))}
       </div>
 
-      <div className="content-grid content-grid--single">
+      <div className="content-grid content-grid--wide">
+        <Card className="chart-card">
+          <CardHeader
+            action={
+              <div className="chart-legend">
+                <span>
+                  <i className="legend-dot legend-dot--blue" />
+                  {t("Requests")}
+                </span>
+                <span>
+                  <i className="legend-dot legend-dot--danger" />
+                  {t("Denied")}
+                </span>
+              </div>
+            }
+            description="Exact rolling 60 minutes in 5-minute Beijing-time buckets; requests and explicit denies use independent axes."
+            title="Traffic & decisions"
+          />
+          <RequestTrendChart data={data.trend} />
+        </Card>
         <Card className="security-queue">
           <CardHeader
             action={
