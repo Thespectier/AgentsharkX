@@ -117,9 +117,12 @@ AGENTGUARD_API_KEY="$AGENTGUARD_ADMIN_TOKEN" \
 ```
 
 The example exports a Task Root plus a real LangChain span through the Batch
-OTLP exporter. Phase 14 persists the Trace and summary, but deliberately has no
-BFF Trace list/detail API or frontend view; inspect it through PostgreSQL or
-Collector metrics until Phase 15 adds the read experience.
+OTLP exporter. Open **Audit / Traces**, locate task
+`agentshark-trace-quickstart`, open its Trace, and select either node or Span row
+to inspect the retained detail in the drawer. The flow draws only explicit
+parent and Span-Link relationships. With the default `metadata` content mode,
+the drawer reports payload content as not collected instead of showing a blank
+value.
 
 ## 5. Stop
 

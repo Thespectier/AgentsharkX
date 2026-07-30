@@ -32,18 +32,20 @@ type storedEvent struct {
 }
 
 type Store struct {
-	mu                 sync.RWMutex
-	options            Options
-	events             map[string]storedEvent
-	payloads           map[string]storage.AuditPayload
-	checkpoints        map[string]storage.Checkpoint
-	outbox             []storage.OutboxMessage
-	nextEventSequence  int64
-	nextOutboxSequence int64
-	traceSpans         map[string]telemetry.Span
-	traceLinks         map[string]telemetry.Link
-	tracePayloads      map[string]telemetry.Payload
-	traceSummaries     map[string]telemetry.Summary
+	mu                       sync.RWMutex
+	options                  Options
+	events                   map[string]storedEvent
+	payloads                 map[string]storage.AuditPayload
+	checkpoints              map[string]storage.Checkpoint
+	outbox                   []storage.OutboxMessage
+	nextEventSequence        int64
+	nextOutboxSequence       int64
+	traceSpans               map[string]telemetry.Span
+	traceLinks               map[string]telemetry.Link
+	tracePayloads            map[string]telemetry.Payload
+	traceSummaries           map[string]telemetry.Summary
+	traceSummarySequences    map[string]int64
+	nextTraceSummarySequence int64
 }
 
 func New(options Options) *Store {
@@ -64,6 +66,7 @@ func New(options Options) *Store {
 		checkpoints: make(map[string]storage.Checkpoint), outbox: []storage.OutboxMessage{},
 		traceSpans: make(map[string]telemetry.Span), traceLinks: make(map[string]telemetry.Link),
 		tracePayloads: make(map[string]telemetry.Payload), traceSummaries: make(map[string]telemetry.Summary),
+		traceSummarySequences: make(map[string]int64),
 	}
 }
 
@@ -312,6 +315,14 @@ func (store *Store) ReplayAfter(_ context.Context, after int64, limit int) (stor
 			continue
 		}
 		message.Event = cloneEvent(message.Event)
+		if message.Trace != nil {
+			trace := cloneTraceSummary(*message.Trace)
+			message.Trace = &trace
+		}
+		if message.ExpiresAt != nil {
+			expiresAt := *message.ExpiresAt
+			message.ExpiresAt = &expiresAt
+		}
 		batch.Messages = append(batch.Messages, message)
 		if len(batch.Messages) == limit {
 			break
@@ -388,6 +399,7 @@ func (store *Store) PruneTraces(_ context.Context, now time.Time) error {
 			continue
 		}
 		delete(store.traceSummaries, traceID)
+		delete(store.traceSummarySequences, traceID)
 		for key, span := range store.traceSpans {
 			if span.TraceID == traceID {
 				delete(store.traceSpans, key)

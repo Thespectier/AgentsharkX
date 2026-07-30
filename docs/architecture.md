@@ -1,6 +1,6 @@
 # Architecture
 
-Status: Phase 14 OTLP Trace ingest and local SDK over the persistent Phase 13 management surface, verified 2026-07-29.
+Status: Phase 15 Trace query and analysis over the Phase 14 OTLP ingest and persistent Phase 13 management surface, verified 2026-07-30.
 
 ## Context
 
@@ -58,6 +58,8 @@ The Go BFF is organized into the following packages:
   authenticated complete source detail, exact-ID session counts, metrics,
   trends, persistent event writes, source checkpoints, and a bounded current
   activity snapshot.
+- `trace`: authenticated, payload-safe Trace list/detail projections and
+  authenticated single-Span detail reads over the Trace storage contract.
 - `aggregate`: source-preserving view models and partial-result handling.
 - `storage`: small Audit and Trace write/read, payload, checkpoint, outbox,
   readiness, migration, and retention interfaces with PostgreSQL production and
@@ -93,9 +95,11 @@ that session's CSRF value without persisting the administrator token. No fronten
 module imports upstream code or receives an upstream credential.
 
 The application shell owns one SSE connection, deduplicates deliveries by
-outbox ID, upserts events by normalized `(source, id)`, and invalidates
-source-scoped query families when a verified event arrives. A `reset` event
-clears the live cache and refetches REST state. Active queries also refresh on a
+outbox ID, upserts Audit events by normalized `(source, id)`, and invalidates
+source-scoped query families when a verified event arrives. Payload-free Trace
+summary events refresh Trace queries while the list holds new rows behind an
+explicit notice and detail preserves the selected Span. A `reset` event clears
+the live cache and refetches REST state. Active queries also refresh on a
 bounded interval, on navigation, and when the window regains focus. Successful
 AgentGuard mutations invalidate Trust, Protect, Audit, and Overview together so
 cross-page counts and rows converge without a hard browser reload.
@@ -368,9 +372,29 @@ Span Link carries cross-process relationships.
 goals, status descriptions, and exception bodies are removed from Span metadata.
 `full` stores them in `trace_payloads` with a per-item limit and independent
 expiry; credentials are redacted in every mode by both SDK and Collector.
-Trace metadata defaults to 30 days and is pruned independently. Phase 14 does
-not expose a BFF Trace query/list/detail endpoint, SSE event, or frontend view;
-those contracts begin in Phase 15.
+Trace metadata defaults to 30 days and is pruned independently.
+
+## Phase 15 Trace query boundary
+
+The authenticated BFF exposes only `GET /api/v1/audit/traces`,
+`GET /api/v1/audit/traces/{traceId}`, and
+`GET /api/v1/audit/traces/{traceId}/spans/{spanId}`. OpenAPI is the sole public
+contract. List cursors bind an immutable insertion watermark to the complete
+filter set and use stable insertion order; a cursor cannot be reused with
+different filters. One Trace ingest transaction also publishes at most one
+payload-free summary update through the durable SSE outbox.
+
+Trace Detail returns the summary, root projection, stable time-ordered Span
+projections, explicit links, coverage, and truncation totals needed by
+`TraceFlow`. It never returns raw attributes, Resource values, Events, or
+payload bodies, and there is no separate graph API. Only authenticated Span
+Detail reads those complete retained records. Expired or uncollected content is
+an explicit state, not an empty string.
+
+`TraceFlow` draws a solid edge only for a verified `parent_span_id` inside the
+same Trace and a dashed edge only for an explicit OTLP Span Link. Time order is
+layout input, never causality. Bounded grouping and incremental Span rows keep
+large traces usable; reduced-motion mode disables arrival animation.
 
 ## Security baseline
 
@@ -386,6 +410,9 @@ those contracts begin in Phase 15.
 - Authenticated Audit detail returns complete verified upstream event records.
   Application access logs record method/path/status only and do not copy event
   bodies; list, overview, and SSE responses omit raw detail.
+- Authenticated Span detail may return complete Collector-owned attributes,
+  Resource values, Events, and retained payloads. Trace lists, Trace Detail,
+  SSE, and application logs never copy those bodies.
 - Authenticated Protect policy and guardrail configuration returns complete
   source-owned JSON. Application logs and mutation receipts contain only
   operation metadata; bodies are not copied into summary lists or SSE responses.

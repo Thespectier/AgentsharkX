@@ -2,6 +2,7 @@ import { createRootRoute, createRoute, createRouter } from "@tanstack/react-rout
 
 import { AppShell } from "./app-shell";
 import { AuditPage } from "../features/audit/audit-page";
+import { TraceDetailPage, TraceListPage } from "../features/audit/trace-pages";
 import { ConnectPage } from "../features/connect/connect-page";
 import { HomePage } from "../features/home/home-page";
 import { ProtectPage } from "../features/protect/protect-page";
@@ -62,7 +63,17 @@ const protectSectionRoute = createRoute({
 const auditRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "audit",
-  component: AuditPage,
+  component: TraceListPage,
+});
+const auditTracesRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "audit/traces",
+  component: TraceListPage,
+});
+const auditTraceDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "audit/traces/$traceId",
+  component: TraceDetailPage,
 });
 const auditSectionRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -84,6 +95,8 @@ const routeTree = rootRoute.addChildren([
   protectRoute,
   protectSectionRoute,
   auditRoute,
+  auditTracesRoute,
+  auditTraceDetailRoute,
   auditSectionRoute,
   systemRoute,
 ]);

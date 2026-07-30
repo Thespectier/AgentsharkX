@@ -40,6 +40,8 @@ import type {
   RuntimeRuleCheckRequest,
   RuntimeRulePublishRequest,
   SkillDetectionRequest,
+  TraceSpan,
+  TraceSummary,
   TrafficBindMutationRequest,
   TrafficConfiguration,
   TrafficDeleteRequest,
@@ -54,6 +56,9 @@ import {
   auditData,
   baseEvents,
   connectData,
+  mockTraceDetails,
+  mockTraceSpanDetails,
+  mockTraceSummaries,
   overviewData,
   protectApprovals,
   protectSnapshot,
@@ -1370,6 +1375,160 @@ async function startMockScan(request: Request, agentId: string, resourceType: "s
   return HttpResponse.json(trustJobEnvelope(job), { status: 202 });
 }
 
+const traceCapturedAt = "2026-07-30T08:10:00Z";
+let liveTraceRevision = 0;
+
+function traceMeta() {
+  return { fetchedAt: traceCapturedAt, stale: false, partial: false };
+}
+
+function traceFailure(status: number, code: string, message: string): Response {
+  return HttpResponse.json(
+    {
+      error: {
+        code,
+        message,
+        requestId: `req_mock_trace_${status}`,
+        retryable: status >= 500,
+      },
+    } satisfies ApiFailure,
+    { status },
+  );
+}
+
+function advanceRunningTrace(): TraceSummary | undefined {
+  const index = mockTraceSummaries.findIndex((trace) => trace.status === "running");
+  if (index < 0) return undefined;
+
+  const current = mockTraceSummaries[index];
+  const detail = mockTraceDetails[current.traceId];
+  const template = detail?.spans.at(-1);
+  if (!detail || !template) return undefined;
+
+  liveTraceRevision += 1;
+  const timestamp = new Date().toISOString();
+  const span: TraceSpan = {
+    ...template,
+    spanId: `23${liveTraceRevision.toString(16).padStart(14, "0")}`,
+    parentSpanId: current.rootSpanId,
+    name: `Live tool update ${liveTraceRevision}`,
+    openInferenceKind: "TOOL",
+    startedAt: timestamp,
+    endedAt: null,
+    durationMs: null,
+    statusCode: "unset",
+    provider: undefined,
+    model: undefined,
+    toolName: "ops.live-update",
+    toolKind: "local",
+    inputTokens: null,
+    outputTokens: null,
+    totalTokens: null,
+    contentState: "not_collected",
+    receivedAt: timestamp,
+    updatedAt: timestamp,
+  };
+  const summary: TraceSummary = {
+    ...current,
+    toolCalls: current.toolCalls + 1,
+    localToolCalls: current.localToolCalls + 1,
+    spanCount: current.spanCount + 1,
+    lastSpanAt: timestamp,
+    updatedAt: timestamp,
+  };
+
+  mockTraceSummaries[index] = summary;
+  mockTraceDetails[current.traceId] = {
+    ...detail,
+    summary,
+    spans: [...detail.spans, span],
+    coverage: {
+      ...detail.coverage,
+      spanKinds: [...new Set([...detail.coverage.spanKinds, "TOOL"])],
+    },
+    totalSpans: detail.totalSpans + 1,
+  };
+  mockTraceSpanDetails[`${span.traceId}:${span.spanId}`] = {
+    span,
+    attributes: {
+      "agentshark.agent.id": span.agentId,
+      "agentshark.session.id": span.sessionId,
+      "agentshark.task.id": span.taskId,
+      "tool.name": span.toolName,
+      "tool.kind": span.toolKind,
+    },
+    resource: { "service.name": "agentsharkx-mock-runtime" },
+    events: [],
+    payloads: [],
+  };
+  return summary;
+}
+
+async function traceListResponse(request: Request): Promise<Response> {
+  const scenario = scenarioFrom(request);
+  if (scenario === "loading") await delay(30_000);
+  if (scenario === "error") {
+    return traceFailure(503, "DATABASE_UNAVAILABLE", "Trace storage is temporarily unavailable.");
+  }
+  const url = new URL(request.url);
+  let items = scenario === "empty" ? [] : [...mockTraceSummaries];
+  if (scenario === "partial") {
+    items = items.filter((trace) => trace.status === "running" || trace.completeness === "partial");
+  }
+  const status = url.searchParams.get("status");
+  const completeness = url.searchParams.get("completeness");
+  const agentId = url.searchParams.get("agent_id");
+  const sessionId = url.searchParams.get("session_id");
+  const taskId = url.searchParams.get("task_id");
+  const hasError = url.searchParams.get("has_error");
+  const hasA2A = url.searchParams.get("has_a2a");
+  const startedAfter = url.searchParams.get("started_after");
+  const startedBefore = url.searchParams.get("started_before");
+  const query = (url.searchParams.get("query") ?? "").trim().toLowerCase();
+  items = items.filter((trace) => {
+    if (status && trace.status !== status) return false;
+    if (completeness && trace.completeness !== completeness) return false;
+    if (agentId && trace.rootAgentId !== agentId) return false;
+    if (sessionId && trace.sessionId !== sessionId) return false;
+    if (taskId && trace.taskId !== taskId) return false;
+    if (hasError === "true" && trace.errorCount === 0) return false;
+    if (hasError === "false" && trace.errorCount > 0) return false;
+    if (hasA2A === "true" && trace.a2aCalls === 0) return false;
+    if (hasA2A === "false" && trace.a2aCalls > 0) return false;
+    if (startedAfter && trace.startedAt < startedAfter) return false;
+    if (startedBefore && trace.startedAt >= startedBefore) return false;
+    if (
+      query &&
+      ![trace.traceId, trace.taskId, trace.sessionId]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase()
+        .includes(query)
+    )
+      return false;
+    return true;
+  });
+  items.sort((left, right) =>
+    right.startedAt === left.startedAt
+      ? right.traceId.localeCompare(left.traceId)
+      : right.startedAt.localeCompare(left.startedAt),
+  );
+  const cursor = url.searchParams.get("cursor");
+  const match = cursor?.match(/^mock:(\d+)$/);
+  if (cursor && !match) return traceFailure(400, "INVALID_CURSOR", "The Trace cursor is invalid.");
+  const offset = Number(match?.[1] ?? 0);
+  const limit = Math.max(1, Math.min(100, Number(url.searchParams.get("limit") ?? 25) || 25));
+  const page = items.slice(offset, offset + limit);
+  return HttpResponse.json({
+    data: {
+      items: page,
+      nextCursor: offset + limit < items.length ? `mock:${offset + limit}` : null,
+      total: items.length,
+    },
+    meta: traceMeta(),
+  });
+}
+
 export const handlers = [
   http.get(
     "/api/v1/auth/session",
@@ -2129,6 +2288,44 @@ export const handlers = [
       decision === "approve" ? "Approval ticket approved" : "Approval ticket denied",
     );
   }),
+  http.get("/api/v1/audit/traces", ({ request }) => traceListResponse(request)),
+  http.get("/api/v1/audit/traces/:traceId", async ({ request, params }) => {
+    const scenario = scenarioFrom(request);
+    if (scenario === "loading") await delay(30_000);
+    if (scenario === "error") {
+      return traceFailure(503, "DATABASE_UNAVAILABLE", "Trace storage is temporarily unavailable.");
+    }
+    const traceId = String(params.traceId);
+    if (traceId === "ffffffffffffffffffffffffffffffff") {
+      return traceFailure(
+        403,
+        "FORBIDDEN",
+        "This administrator cannot read retained Trace detail.",
+      );
+    }
+    const detail = scenario === "empty" ? undefined : mockTraceDetails[traceId];
+    if (!detail) return traceFailure(404, "NOT_FOUND", "The Trace was not found.");
+    return HttpResponse.json({ data: detail, meta: traceMeta() });
+  }),
+  http.get("/api/v1/audit/traces/:traceId/spans/:spanId", async ({ request, params }) => {
+    const scenario = scenarioFrom(request);
+    if (scenario === "loading") await delay(30_000);
+    if (scenario === "error") {
+      return traceFailure(
+        503,
+        "DATABASE_UNAVAILABLE",
+        "Trace payload storage is temporarily unavailable.",
+      );
+    }
+    const traceId = String(params.traceId);
+    const spanId = String(params.spanId);
+    if (traceId === "ffffffffffffffffffffffffffffffff") {
+      return traceFailure(403, "FORBIDDEN", "This administrator cannot read retained content.");
+    }
+    const detail = scenario === "empty" ? undefined : mockTraceSpanDetails[`${traceId}:${spanId}`];
+    if (!detail) return traceFailure(404, "NOT_FOUND", "The Span was not found in this Trace.");
+    return HttpResponse.json({ data: detail, meta: traceMeta() });
+  }),
   http.get("/api/v1/audit/analytics", ({ request }) => respond(request, auditData, emptyAudit)),
   http.get("/api/v1/audit/events", ({ request }) =>
     listResponse(request, auditData.events, "agentgateway"),
@@ -2163,6 +2360,7 @@ export const handlers = [
     }
 
     let index = 0;
+    let sequence = 0;
     let timer: ReturnType<typeof setInterval> | undefined;
     const encoder = new TextEncoder();
     const stream = new ReadableStream({
@@ -2177,9 +2375,19 @@ export const handlers = [
           };
           controller.enqueue(
             encoder.encode(
-              `id: ${index + 1}\nevent: ${event.kind}\ndata: ${JSON.stringify(event)}\n\n`,
+              `id: ${++sequence}\nevent: ${event.kind}\ndata: ${JSON.stringify(event)}\n\n`,
             ),
           );
+          if (index % 2 === 1) {
+            const trace = advanceRunningTrace();
+            if (trace) {
+              controller.enqueue(
+                encoder.encode(
+                  `id: ${++sequence}\nevent: trace\ndata: ${JSON.stringify(trace)}\n\n`,
+                ),
+              );
+            }
+          }
           index += 1;
         };
         controller.enqueue(encoder.encode(": mock heartbeat\n\n"));

@@ -20,6 +20,17 @@ test("release path starts, authenticates, connects, emits an event, and approves
   await page.goto("/connect/setup");
   await expect(page.getByText("Connection verified")).toBeVisible();
 
+  await page.goto("/audit/traces");
+  const trace = page.getByRole("row", { name: /release-task/ });
+  await expect(trace).toBeVisible({ timeout: 10_000 });
+  await trace.click();
+  await expect(page.getByRole("heading", { level: 1, name: "release-task" })).toBeVisible();
+  await expect(page.getByText(/agentshark-collector/)).toBeVisible();
+  await page.getByRole("button", { name: "Open span agentshark.release.task" }).click();
+  const spanDrawer = page.getByRole("dialog", { name: "agentshark.release.task" });
+  await expect(spanDrawer).toContainText("Payload content was not collected.");
+  await expect(spanDrawer).toContainText("agentshark.task.root");
+
   const emitted = await request.post(`${fixtureURL}/__test/emit`);
   expect(emitted.ok()).toBe(true);
 

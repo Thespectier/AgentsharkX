@@ -25,29 +25,33 @@ import (
 	"github.com/Thespectier/AgentsharkX/apps/server/internal/protect"
 	"github.com/Thespectier/AgentsharkX/apps/server/internal/storage"
 	"github.com/Thespectier/AgentsharkX/apps/server/internal/stream"
+	tracequery "github.com/Thespectier/AgentsharkX/apps/server/internal/trace"
 	"github.com/Thespectier/AgentsharkX/apps/server/internal/trust"
 	"github.com/Thespectier/AgentsharkX/apps/server/internal/upstream"
 )
 
 const maxLoginBodyBytes = 4096
 const maxMutationBodyBytes = 1 << 20
+const defaultStreamReplayInterval = time.Second
 
 type contextKey string
 
 const requestIDKey contextKey = "request-id"
 
 type ServerConfig struct {
-	Sessions    *auth.Manager
-	Aggregate   *aggregate.Service
-	Connect     *connect.Service
-	Trust       *trust.Service
-	Protect     *protect.Service
-	Audit       *audit.Service
-	Stream      *stream.Hub
-	Outbox      storage.OutboxStore
-	Readiness   storage.Readiness
-	Logger      *slog.Logger
-	AuthEnabled bool
+	Sessions             *auth.Manager
+	Aggregate            *aggregate.Service
+	Connect              *connect.Service
+	Trust                *trust.Service
+	Protect              *protect.Service
+	Audit                *audit.Service
+	Traces               *tracequery.Service
+	Stream               *stream.Hub
+	Outbox               storage.OutboxStore
+	Readiness            storage.Readiness
+	StreamReplayInterval time.Duration
+	Logger               *slog.Logger
+	AuthEnabled          bool
 }
 
 type server struct {
@@ -64,6 +68,9 @@ func New(config ServerConfig) http.Handler {
 	}
 	if config.Outbox == nil && config.Audit != nil {
 		config.Outbox = config.Audit.Outbox()
+	}
+	if config.StreamReplayInterval <= 0 {
+		config.StreamReplayInterval = defaultStreamReplayInterval
 	}
 	if config.Readiness == nil && config.Audit != nil {
 		config.Readiness = config.Audit
@@ -134,6 +141,9 @@ func (server *server) routes() {
 	server.mux.Handle("GET /api/v1/protect/approvals", server.requireAuth(http.HandlerFunc(server.protectApprovals)))
 	server.mux.Handle("POST /api/v1/protect/approvals/{ticketId}/approve", server.requireAuth(server.requireCSRF(http.HandlerFunc(server.approveTicket))))
 	server.mux.Handle("POST /api/v1/protect/approvals/{ticketId}/deny", server.requireAuth(server.requireCSRF(http.HandlerFunc(server.denyTicket))))
+	server.mux.Handle("GET /api/v1/audit/traces", server.requireAuth(http.HandlerFunc(server.auditTraces)))
+	server.mux.Handle("GET /api/v1/audit/traces/{traceId}", server.requireAuth(http.HandlerFunc(server.auditTrace)))
+	server.mux.Handle("GET /api/v1/audit/traces/{traceId}/spans/{spanId}", server.requireAuth(http.HandlerFunc(server.auditTraceSpan)))
 	server.mux.Handle("GET /api/v1/audit/analytics", server.requireAuth(http.HandlerFunc(server.auditAnalytics)))
 	server.mux.Handle("GET /api/v1/audit/events", server.requireAuth(http.HandlerFunc(server.auditEvents)))
 	server.mux.Handle("GET /api/v1/audit/events/{source}/{eventId}", server.requireAuth(http.HandlerFunc(server.auditEvent)))
@@ -735,6 +745,36 @@ func (server *server) resolveTicket(writer http.ResponseWriter, request *http.Re
 	server.writeProtectMutation(writer, request, http.StatusOK, envelope, err)
 }
 
+func (server *server) auditTraces(writer http.ResponseWriter, request *http.Request) {
+	if !server.tracesAvailable(writer, request) {
+		return
+	}
+	filter, ok := server.traceFilter(writer, request)
+	if !ok {
+		return
+	}
+	envelope, err := server.config.Traces.List(request.Context(), filter)
+	server.writeTraceResult(writer, request, envelope, err)
+}
+
+func (server *server) auditTrace(writer http.ResponseWriter, request *http.Request) {
+	if !server.tracesAvailable(writer, request) {
+		return
+	}
+	envelope, err := server.config.Traces.Detail(request.Context(), request.PathValue("traceId"))
+	server.writeTraceResult(writer, request, envelope, err)
+}
+
+func (server *server) auditTraceSpan(writer http.ResponseWriter, request *http.Request) {
+	if !server.tracesAvailable(writer, request) {
+		return
+	}
+	envelope, err := server.config.Traces.SpanDetail(
+		request.Context(), request.PathValue("traceId"), request.PathValue("spanId"),
+	)
+	server.writeTraceResult(writer, request, envelope, err)
+}
+
 func (server *server) auditAnalytics(writer http.ResponseWriter, request *http.Request) {
 	if !server.auditAvailable(writer, request) {
 		return
@@ -815,6 +855,77 @@ func (server *server) auditSessions(writer http.ResponseWriter, request *http.Re
 	server.writeJSON(writer, http.StatusOK, model.ResourceEnvelope[[]model.AuditSession]{Data: snapshot.Data.Sessions, Meta: snapshot.Meta})
 }
 
+func (server *server) traceFilter(writer http.ResponseWriter, request *http.Request) (tracequery.Filter, bool) {
+	values := request.URL.Query()
+	valid := true
+	read := func(name string) string {
+		items, present := values[name]
+		if !present {
+			return ""
+		}
+		if len(items) != 1 {
+			valid = false
+			return ""
+		}
+		return items[0]
+	}
+	filter := tracequery.Filter{
+		Cursor: read("cursor"), Limit: 25, Status: read("status"), Completeness: read("completeness"),
+		AgentID: read("agent_id"), SessionID: read("session_id"), TaskID: read("task_id"), Query: read("query"),
+	}
+	if rawLimit := read("limit"); rawLimit != "" {
+		limit, err := strconv.Atoi(rawLimit)
+		if err != nil || limit < 1 || limit > 100 {
+			valid = false
+		} else {
+			filter.Limit = limit
+		}
+	}
+	readBoolean := func(raw string, destination **bool) {
+		if raw == "" {
+			return
+		}
+		value, err := parseTraceBoolean(raw)
+		if err != nil {
+			valid = false
+			return
+		}
+		*destination = &value
+	}
+	readBoolean(read("has_error"), &filter.HasError)
+	readBoolean(read("has_a2a"), &filter.HasA2A)
+	readTime := func(raw string, destination **time.Time) {
+		if raw == "" {
+			return
+		}
+		value, err := time.Parse(time.RFC3339Nano, raw)
+		if err != nil {
+			valid = false
+			return
+		}
+		value = value.UTC()
+		*destination = &value
+	}
+	readTime(read("started_after"), &filter.StartedAfter)
+	readTime(read("started_before"), &filter.StartedBefore)
+	if !valid {
+		server.writeError(writer, request, http.StatusBadRequest, "INVALID_REQUEST", "trace query parameters are invalid", nil, false)
+		return tracequery.Filter{}, false
+	}
+	return filter, true
+}
+
+func parseTraceBoolean(value string) (bool, error) {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "true":
+		return true, nil
+	case "false":
+		return false, nil
+	default:
+		return false, errors.New("invalid boolean")
+	}
+}
+
 type listQuery struct {
 	search string
 	cursor string
@@ -862,6 +973,14 @@ func (server *server) protectAvailable(writer http.ResponseWriter, request *http
 	return false
 }
 
+func (server *server) tracesAvailable(writer http.ResponseWriter, request *http.Request) bool {
+	if server.config.Traces != nil {
+		return true
+	}
+	server.writeError(writer, request, http.StatusServiceUnavailable, "TRACE_UNAVAILABLE", "Trace query integration is unavailable", nil, true)
+	return false
+}
+
 func (server *server) auditAvailable(writer http.ResponseWriter, request *http.Request) bool {
 	if server.config.Audit == nil {
 		server.writeError(writer, request, http.StatusServiceUnavailable, "AUDIT_UNAVAILABLE", "Audit integration is unavailable", nil, true)
@@ -874,6 +993,30 @@ func (server *server) auditAvailable(writer http.ResponseWriter, request *http.R
 		return false
 	}
 	return true
+}
+
+func (server *server) writeTraceResult(writer http.ResponseWriter, request *http.Request, envelope any, err error) {
+	if err == nil {
+		server.writeJSON(writer, http.StatusOK, envelope)
+		return
+	}
+	if errors.Is(err, tracequery.ErrInvalidCursor) {
+		server.writeError(writer, request, http.StatusBadRequest, "INVALID_CURSOR", "pagination cursor is invalid", nil, false)
+		return
+	}
+	if errors.Is(err, tracequery.ErrInvalidRequest) {
+		server.writeError(writer, request, http.StatusBadRequest, "INVALID_REQUEST", "trace query parameters are invalid", nil, false)
+		return
+	}
+	if errors.Is(err, tracequery.ErrNotFound) {
+		server.writeError(writer, request, http.StatusNotFound, "NOT_FOUND", "trace or span was not found", nil, false)
+		return
+	}
+	if errors.Is(err, tracequery.ErrStorageUnavailable) {
+		server.writeError(writer, request, http.StatusServiceUnavailable, "DATABASE_UNAVAILABLE", "persistent Trace storage is unavailable", nil, true)
+		return
+	}
+	server.writeError(writer, request, http.StatusInternalServerError, "INTERNAL_ERROR", "the request could not be completed", nil, true)
 }
 
 func (server *server) writeConnectResult(writer http.ResponseWriter, request *http.Request, envelope any, err error) {
@@ -1182,7 +1325,7 @@ func (server *server) eventStream(writer http.ResponseWriter, request *http.Requ
 		lastSequence = batch.Latest
 	} else {
 		for _, message := range batch.Messages {
-			if err := writeSSE(writer, message.Sequence, message.Event); err != nil {
+			if err := writeSSE(writer, message); err != nil {
 				return
 			}
 			lastSequence = message.Sequence
@@ -1200,7 +1343,7 @@ func (server *server) eventStream(writer http.ResponseWriter, request *http.Requ
 				if message.Sequence <= lastSequence {
 					continue
 				}
-				if err := writeSSE(writer, message.Sequence, message.Event); err != nil {
+				if err := writeSSE(writer, message); err != nil {
 					return err
 				}
 				lastSequence = message.Sequence
@@ -1219,6 +1362,8 @@ func (server *server) eventStream(writer http.ResponseWriter, request *http.Requ
 
 	heartbeat := time.NewTicker(15 * time.Second)
 	defer heartbeat.Stop()
+	replay := time.NewTicker(server.config.StreamReplayInterval)
+	defer replay.Stop()
 	for {
 		select {
 		case <-request.Context().Done():
@@ -1228,10 +1373,12 @@ func (server *server) eventStream(writer http.ResponseWriter, request *http.Requ
 				return
 			}
 			flusher.Flush()
-		case <-heartbeat.C:
+		case <-replay.C:
 			if drain() != nil {
 				return
 			}
+			flusher.Flush()
+		case <-heartbeat.C:
 			if _, err := fmt.Fprint(writer, ": heartbeat\n\n"); err != nil {
 				return
 			}
@@ -1340,12 +1487,29 @@ func (*server) writeJSON(writer http.ResponseWriter, status int, payload any) {
 	_ = json.NewEncoder(writer).Encode(payload)
 }
 
-func writeSSE(writer http.ResponseWriter, sequence int64, event model.UnifiedEvent) error {
-	payload, err := json.Marshal(event)
+func writeSSE(writer http.ResponseWriter, message storage.OutboxMessage) error {
+	eventKind := strings.TrimSpace(message.EventKind)
+	if message.Sequence < 1 || eventKind == "" || strings.ContainsAny(eventKind, "\r\n") {
+		return errors.New("persistent stream message is invalid")
+	}
+	var data any
+	switch message.Topic {
+	case "audit":
+		event := storage.SummaryEvent(message.Event)
+		data = event
+	case "trace":
+		if message.Trace == nil {
+			return errors.New("persistent Trace stream message is incomplete")
+		}
+		data = message.Trace
+	default:
+		return errors.New("persistent stream topic is invalid")
+	}
+	payload, err := json.Marshal(data)
 	if err != nil {
 		return err
 	}
-	_, err = fmt.Fprintf(writer, "id: %d\nevent: %s\ndata: %s\n\n", sequence, event.Kind, payload)
+	_, err = fmt.Fprintf(writer, "id: %d\nevent: %s\ndata: %s\n\n", message.Sequence, eventKind, payload)
 	return err
 }
 

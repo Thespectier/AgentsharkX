@@ -16,6 +16,7 @@ func TestCollectorConfigDefaultsAndDedicatedDatabasePrecedence(t *testing.T) {
 		"AGENTSHARK_DATABASE_URL":            "postgresql://shared:secret@database/shared",
 		"AGENTSHARK_COLLECTOR_DATABASE_URL":  "postgresql://collector:secret@database/traces",
 		"AGENTSHARK_TRACE_PAYLOAD_RETENTION": "24h",
+		"AGENTSHARK_OUTBOX_RETENTION":        "12h",
 		"AGENTSHARK_TRACE_CONTENT_MODE":      "FULL",
 	}
 	config, err := loadCollectorConfig(mapLookup(values))
@@ -27,7 +28,7 @@ func TestCollectorConfigDefaultsAndDedicatedDatabasePrecedence(t *testing.T) {
 	}
 	if config.listenAddress != defaultCollectorAddress || config.contentMode != telemetry.ContentModeFull ||
 		config.payloadRetention != 24*time.Hour || config.traceRetention != 30*24*time.Hour ||
-		config.maxSpansPerRequest != defaultMaxSpansPerRequest {
+		config.outboxRetention != 12*time.Hour || config.maxSpansPerRequest != defaultMaxSpansPerRequest {
 		t.Fatalf("config = %#v", config)
 	}
 }
@@ -65,6 +66,7 @@ func TestCollectorConfigRejectsUnsafeOrUnboundedValues(t *testing.T) {
 		{name: "span batch", key: "AGENTSHARK_COLLECTOR_MAX_SPANS_PER_REQUEST", value: "0", want: "MAX_SPANS_PER_REQUEST"},
 		{name: "payload", key: "AGENTSHARK_TRACE_PAYLOAD_LIMIT_BYTES", value: "12", want: "PAYLOAD_LIMIT_BYTES"},
 		{name: "trace retention", key: "AGENTSHARK_TRACE_RETENTION", value: "30m", want: "TRACE_RETENTION"},
+		{name: "outbox retention", key: "AGENTSHARK_OUTBOX_RETENTION", value: "30s", want: "OUTBOX_RETENTION"},
 	}
 	for _, test := range tests {
 		test := test

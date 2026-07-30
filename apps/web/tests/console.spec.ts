@@ -182,6 +182,118 @@ test("interactive controls have observable behavior", async ({ page }) => {
   ).toBeVisible();
 });
 
+test("Audit Traces supports list filters, deterministic flow, and on-demand Span detail", async ({
+  page,
+}) => {
+  await page.goto("/audit/traces");
+  await expect(
+    page.getByRole("heading", { level: 1, name: "Trace every agent task" }),
+  ).toBeVisible();
+  await page.getByLabel("Filter by A2A").selectOption("true");
+  await page.getByRole("button", { name: "Apply" }).click();
+  await expect(page).toHaveURL(/has_a2a=true/);
+
+  const traceRow = page.getByRole("row", { name: /task-research-042/ });
+  await expect(traceRow).toContainText("1 · observed");
+  await traceRow.click();
+  await expect(page).toHaveURL(/\/audit\/traces\/11111111111111111111111111111111\?has_a2a=true/);
+  await expect(page.getByRole("heading", { level: 1, name: "task-research-042" })).toBeVisible();
+  await expect(page.locator(".trace-metrics")).toContainText("LLM calls3");
+  await expect(page.locator(".trace-metrics")).toContainText("MCP calls2");
+  await expect(page.locator('[data-edge-kind="parent"]')).toHaveCount(7);
+  await expect(page.locator('[data-edge-kind="link"]')).toHaveCount(1);
+  await expect(page.getByRole("group", { name: "Trace flow lanes" })).toBeVisible();
+
+  await page.getByRole("button", { name: "Open span Plan research" }).click();
+  const drawer = page.getByRole("dialog", { name: "Plan research" });
+  await expect(drawer).toBeVisible();
+  await expect(drawer.getByText("Captured content is available below.")).toBeVisible();
+  await expect(drawer.getByText(/Plan the verified inventory research task/)).toBeVisible();
+  await expect(page).toHaveURL(/span=2000000000000002/);
+
+  await page.reload();
+  await expect(page.getByRole("dialog", { name: "Plan research" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Open span Plan research" })).toHaveClass(
+    /trace-flow__node--selected/,
+  );
+});
+
+test("large Trace rendering remains folded and user-bounded", async ({ page }) => {
+  await page.goto("/audit/traces/eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee");
+  const flow = page.locator(".trace-flow");
+  await expect(flow).toBeVisible();
+  await expect(flow).toHaveAttribute("data-node-count", /\d+/);
+  expect(Number(await flow.getAttribute("data-node-count"))).toBeLessThanOrEqual(48);
+  await expect(flow.getByText(/spans folded for clarity/)).toBeVisible();
+
+  await page.getByLabel("TraceFlow node limit").selectOption("24");
+  expect(Number(await flow.getAttribute("data-node-count"))).toBeLessThanOrEqual(24);
+  await expect(page.getByRole("button", { name: "Show 100 more spans" })).toBeVisible();
+});
+
+test("Trace coverage remains readable and contained on mobile", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/audit/traces/11111111111111111111111111111111");
+
+  const coverageLabel = page.locator(".trace-coverage strong");
+  await expect(coverageLabel).toHaveText("Coverage");
+  await expect(coverageLabel).toBeVisible();
+  expect(
+    await coverageLabel.evaluate((element) => element.scrollWidth <= element.clientWidth),
+  ).toBe(true);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
+    true,
+  );
+
+  await page.goto("/audit/traces");
+  const rowDetails = page
+    .getByRole("row", { name: /task-research-042/ })
+    .locator(".trace-row-details");
+  await expect(rowDetails).toBeVisible();
+  await expect(rowDetails).toContainText("LLM 3");
+  await expect(rowDetails).toContainText("MCP 2");
+  await expect(rowDetails).toContainText("Local 1");
+  await expect(rowDetails).toContainText("Tokens 1,626");
+  await expect(rowDetails).toContainText("Risk low");
+});
+
+test("a live Span refreshes its Trace summary without clearing the selected node", async ({
+  page,
+}) => {
+  await page.goto("/audit/traces/22222222222222222222222222222222");
+
+  const selected = page.getByRole("button", { name: "Open span Assess incident" });
+  await selected.click();
+  await expect(selected).toHaveClass(/trace-flow__node--selected/);
+  await expect(page.locator(".trace-flow-controls")).toContainText("3 spans", { timeout: 8_000 });
+  await expect(selected).toHaveClass(/trace-flow__node--selected/);
+  await expect(page.locator(".trace-metrics")).toContainText("Local tools1");
+  await expect(page.getByRole("button", { name: "Open span Live tool update 1" })).toBeVisible();
+});
+
+test("Audit Traces exposes empty, partial, missing, forbidden, and database failure states", async ({
+  page,
+}) => {
+  await page.goto("/audit/traces?scenario=empty");
+  await expect(page.getByRole("heading", { name: "No traces found" })).toBeVisible();
+
+  await page.goto("/audit/traces?scenario=partial");
+  await page.getByRole("row", { name: /task-ops-live/ }).click();
+  await expect(page.getByText("Trace is still running")).toBeVisible();
+  await expect(page.getByText("No A2A interaction observed")).toBeVisible();
+
+  await page.goto("/audit/traces/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+  await expect(page.getByRole("heading", { level: 1, name: "Trace not found" })).toBeVisible();
+
+  await page.goto("/audit/traces/ffffffffffffffffffffffffffffffff");
+  await expect(page.getByRole("heading", { level: 1, name: "Trace access denied" })).toBeVisible();
+
+  await page.goto("/audit/traces?scenario=error");
+  await expect(
+    page.getByRole("heading", { level: 1, name: "Trace database unavailable" }),
+  ).toBeVisible();
+});
+
 test("configuration entry points target both native control planes", async ({ page }) => {
   await page.goto("/connect/overview");
   await expect(page.getByRole("link", { name: "Configure agentgateway" })).toHaveAttribute(

@@ -23,6 +23,7 @@ import (
 	"github.com/Thespectier/AgentsharkX/apps/server/internal/protect"
 	storagepostgres "github.com/Thespectier/AgentsharkX/apps/server/internal/storage/postgres"
 	"github.com/Thespectier/AgentsharkX/apps/server/internal/stream"
+	tracequery "github.com/Thespectier/AgentsharkX/apps/server/internal/trace"
 	"github.com/Thespectier/AgentsharkX/apps/server/internal/trust"
 	webconsole "github.com/Thespectier/AgentsharkX/apps/server/internal/web"
 )
@@ -86,12 +87,13 @@ func main() {
 	consoleLinks.AgentGuardConsole = strings.TrimRight(cfg.Guard.ConsoleURL, "/")
 	hub := stream.NewHub()
 	auditService := audit.NewPersistent(gatewayClient, guardClient, hub, databaseStore, consoleLinks)
+	traceService := tracequery.New(databaseStore)
 	protectService := protect.New(gatewayClient, protectGuardClient, consoleLinks, auditService)
 	aggregator.SetOperational(auditService)
 	sessions := auth.New(cfg.AdminToken.Value(), auth.Options{CookieSecure: cfg.CookieSecure, TTL: 8 * time.Hour})
 	apiHandler := api.New(api.ServerConfig{
 		Sessions: sessions, Aggregate: aggregator, Connect: connectService, Trust: trustService, Protect: protectService,
-		Audit: auditService, Stream: hub, Logger: logger, AuthEnabled: !cfg.AuthDisabled,
+		Audit: auditService, Traces: traceService, Stream: hub, Logger: logger, AuthEnabled: !cfg.AuthDisabled,
 	})
 	handler := webconsole.New(apiHandler)
 

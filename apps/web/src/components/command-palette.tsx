@@ -34,8 +34,8 @@ const commands = [
   },
   {
     label: "Open Audit",
-    hint: "Traffic and security events",
-    path: "/audit/analytics",
+    hint: "Task traces and evidence",
+    path: "/audit/traces",
     icon: Activity,
   },
   { label: "Open System", hint: "Capabilities and sources", path: "/system", icon: Settings },
@@ -100,6 +100,7 @@ export function CommandPalette({
       void navigate({ to: "/trust/$section", params: { section }, search: true });
     else if (path.startsWith("/protect/"))
       void navigate({ to: "/protect/$section", params: { section }, search: true });
+    else if (path === "/audit/traces") void navigate({ to: "/audit/traces", search: true });
     else if (path.startsWith("/audit/"))
       void navigate({ to: "/audit/$section", params: { section }, search: true });
   };

@@ -31,6 +31,10 @@ Phase 14 adds an independent OTLP/HTTP protobuf Collector, durable Trace
 storage/summary assembly, and a repository-local Python SDK with pinned
 AgentGuard, LangChain, MCP, and A2A integrations. It adds no upstream management
 field and intentionally exposes no BFF Trace query contract before Phase 15.
+Phase 15 adds the authenticated OpenAPI Trace list/detail and Span-detail
+contracts, durable payload-free Trace summary delivery, and the Audit Trace
+analysis workflow. It adds no upstream route, graph API, inferred task, or
+time-based relationship.
 
 ## Status vocabulary
 
@@ -149,7 +153,9 @@ auditor-management surface.
 | Trace content modes | AgentsharkX SDK + Collector | supported | Phase 14 `none`/`metadata`/`full`, truncation, status/exception, nested credential, and separate payload expiry tests | Default `metadata`; content never remains in Span metadata. `full` uses bounded separately retained payloads. Credentials are redacted in every mode. |
 | Explicit MCP classification | AgentsharkX SDK | supported | Phase 14 `initialize`, `tools/list`, `tools/call`, wrapping, and fixed-count tests | Count only `TOOL + tool.kind=mcp + method=tools/call + countable=true`; do not infer MCP from a LangChain Tool name. |
 | Explicit A2A propagation and links | AgentsharkX SDK | supported | Phase 14 W3C carrier, remote continuation, detached Link, async wrapper, and fixed-count tests | Count only `invoke_agent + peer_agent_id + countable=true`; do not fabricate remote internals or parent IDs. |
-| Trace BFF query/list/detail/UI | AgentsharkX | unavailable | Deferred Phase 15 OpenAPI and frontend work | Ingest persistence is not authorization for an undocumented BFF route or Mock Trace UI. |
+| Trace BFF list and stable filters | AgentsharkX | supported | Phase 15 memory/PostgreSQL filter, cursor fingerprint, watermark, total, and stable-order tests plus OpenAPI contract checks | List rows and SSE contain summaries only. Cursors are bound to the exact filter set and insertion watermark. |
+| Trace Detail and deterministic flow | AgentsharkX | supported | Phase 15 parent/link projection, ordering, bounded large-Trace, reduced-motion, and browser workflow tests | Solid edges require explicit same-Trace `parent_span_id`; dashed edges require an explicit Span Link. Time order never creates an edge. |
+| Authenticated Span detail | AgentsharkX | supported | Phase 15 authentication, not-found, retained-payload, and projection-boundary tests | Only this endpoint may return complete attributes, Resource, Events, and retained payloads; credentials remain redacted by ingest. |
 
 ## Release evidence
 

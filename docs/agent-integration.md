@@ -79,8 +79,9 @@ the SDK never fabricates a peer's internal spans or a parent from timing.
 
 Run `make sdk-test` for unit/framework checks and
 `make sdk-agentguard-contract` for the exact upstream editable-install/public
-API validation. Phase 14 persists these records but has no BFF Trace read API or
-frontend Trace page; Phase 15 owns that contract.
+API validation. The authenticated Phase 15 BFF lists those records under
+**Audit / Traces**. Trace Detail is payload-safe; select one Span to fetch its
+complete retained attributes, Resource, Events, and payload through Span Detail.
 
 ## Minimal AgentGuard event
 

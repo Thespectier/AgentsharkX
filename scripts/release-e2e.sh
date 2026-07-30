@@ -46,7 +46,12 @@ build_go() {
 
 wait_for() {
   local url="$1"
+  local process_pid="${2:-}"
   for _ in $(seq 1 80); do
+    if [[ -n "$process_pid" ]] && ! kill -0 "$process_pid" 2>/dev/null; then
+      echo "release E2E service exited before becoming ready: $url" >&2
+      return 1
+    fi
     if curl -fsS "$url" >/dev/null 2>&1; then
       return 0
     fi
@@ -126,6 +131,36 @@ assert_trace_persisted() {
   fi
 }
 
+assert_trace_api() {
+  login_for_restart_check
+  curl -fsS -b "$session_cookie" \
+    'http://127.0.0.1:19080/api/v1/audit/traces?task_id=release-task&status=succeeded&has_error=false&limit=10' |
+    jq -e '
+      .data.total == 1 and
+      (.data.items | length) == 1 and
+      .data.items[0].traceId == "11111111111111111111111111111111" and
+      ([.. | objects | select(has("attributes") or has("resource") or has("events") or has("payloads"))] | length) == 0
+    ' >/dev/null
+  curl -fsS -b "$session_cookie" \
+    'http://127.0.0.1:19080/api/v1/audit/traces/11111111111111111111111111111111' |
+    jq -e '
+      .data.summary.taskId == "release-task" and
+      .data.rootSpan.spanId == "2222222222222222" and
+      (.data.spans | length) == 1 and
+      .data.totalSpans == 1 and
+      ([.. | objects | select(has("attributes") or has("resource") or has("events") or has("payloads"))] | length) == 0
+    ' >/dev/null
+  curl -fsS -b "$session_cookie" \
+    'http://127.0.0.1:19080/api/v1/audit/traces/11111111111111111111111111111111/spans/2222222222222222' |
+    jq -e '
+      .data.span.taskId == "release-task" and
+      .data.attributes["agentshark.task.root"] == true and
+      .data.resource["service.name"] == "agentshark-release-e2e" and
+      (.data.events | type) == "array" and
+      (.data.payloads | length) == 0
+    ' >/dev/null
+}
+
 login_for_restart_check() {
   rm -f "$session_cookie"
   curl -fsS -o /dev/null -c "$session_cookie" \
@@ -162,12 +197,13 @@ collector_pid=""
 start_collector
 wait_for "http://127.0.0.1:19418/readyz"
 assert_trace_persisted "after Collector restart"
+assert_trace_api
 
 VITE_ENABLE_MOCKS=false npm --prefix "$root_dir/apps/web" run build >/dev/null
 VITE_ENABLE_MOCKS=false VITE_BFF_PROXY_TARGET=http://127.0.0.1:19080 \
-  npm --prefix "$root_dir/apps/web" run dev -- --host 0.0.0.0 >"$work_dir/preview.log" 2>&1 &
+  npm --prefix "$root_dir/apps/web" run dev -- --host 0.0.0.0 --port 5173 --strictPort >"$work_dir/preview.log" 2>&1 &
 preview_pid=$!
-wait_for "http://127.0.0.1:5173/"
+wait_for "http://127.0.0.1:5173/" "$preview_pid"
 
 chrome_paths="$(compgen -G "$root_dir/apps/web/.cache/ms-playwright/chromium-*/chrome-linux*/chrome" || true)"
 chrome_path="${chrome_paths%%$'\n'*}"

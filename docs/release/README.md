@@ -1,6 +1,6 @@
 # Preview release evidence
 
-Phase 14 release artifacts:
+Phase 15 release artifacts:
 
 - `sbom.spdx.json`: SPDX 2.3 npm build/runtime inventory, reviewed BFF/Collector
   Go module graph, pinned local Python SDK runtime resolution, purls, dependency
@@ -21,6 +21,7 @@ AgentGuard, and PostgreSQL images.
 migration-only entry point, and starts the real BFF and Collector against the
 same isolated PostgreSQL instance with BFF auto-migration disabled. It sends an
 authenticated OTLP/HTTP protobuf Trace, verifies its Span and summary rows
-before and after a Collector restart, then restarts the BFF, verifies persisted
-Gateway and Guard Audit rows, and resumes SSE from the pre-restart
-`Last-Event-ID` without a reset.
+before and after a Collector restart, exercises the authenticated Trace list,
+Trace Detail, and Span Detail contracts with their payload boundaries, then
+restarts the BFF, verifies persisted Gateway and Guard Audit rows, and resumes
+SSE from the pre-restart `Last-Event-ID` without a reset.

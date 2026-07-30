@@ -5,11 +5,18 @@ import (
 	"encoding/json"
 	"errors"
 	"sort"
+	"strings"
+	"time"
 
 	"github.com/Thespectier/AgentsharkX/apps/server/internal/storage"
 	"github.com/Thespectier/AgentsharkX/apps/server/internal/telemetry"
 	"github.com/Thespectier/AgentsharkX/apps/server/internal/telemetry/assembler"
 )
+
+type sequencedTraceSummary struct {
+	sequence int64
+	summary  telemetry.Summary
+}
 
 func (store *Store) WriteBatch(_ context.Context, batch telemetry.TraceBatch) (telemetry.WriteResult, error) {
 	now := store.options.Now().UTC()
@@ -127,9 +134,115 @@ func (store *Store) WriteBatch(_ context.Context, batch telemetry.TraceBatch) (t
 		if existing, exists := store.traceSummaries[traceID]; exists && summary.RiskLevel == "" {
 			summary.RiskLevel = existing.RiskLevel
 		}
+		if _, exists := store.traceSummarySequences[traceID]; !exists {
+			store.nextTraceSummarySequence++
+			store.traceSummarySequences[traceID] = store.nextTraceSummarySequence
+		}
 		store.traceSummaries[traceID] = summary
+		store.nextOutboxSequence++
+		expiresAt := now.Add(store.options.OutboxRetention)
+		outboxSummary := cloneTraceSummary(summary)
+		store.outbox = append(store.outbox, storage.OutboxMessage{
+			Sequence: store.nextOutboxSequence, Topic: "trace", EntityID: traceID, EventKind: "trace",
+			Trace: &outboxSummary, CreatedAt: now, ExpiresAt: &expiresAt,
+		})
 	}
 	return result, nil
+}
+
+func (store *Store) ListTraceSummaries(_ context.Context, filter storage.TraceFilter) (storage.Page[telemetry.Summary], error) {
+	filter = storage.NormalizeTraceFilter(filter)
+	limit := storage.NormalizeLimit(filter.Limit)
+	store.mu.RLock()
+	defer store.mu.RUnlock()
+
+	watermark := store.nextTraceSummarySequence
+	position := int64(0)
+	if filter.Cursor != "" {
+		var err error
+		watermark, position, err = storage.DecodeTraceCursor(filter.Cursor, filter)
+		if err != nil {
+			return storage.Page[telemetry.Summary]{}, err
+		}
+	}
+	if watermark == 0 {
+		return storage.Page[telemetry.Summary]{Items: []telemetry.Summary{}}, nil
+	}
+
+	items := make([]sequencedTraceSummary, 0, len(store.traceSummaries))
+	for traceID, summary := range store.traceSummaries {
+		sequence := store.traceSummarySequences[traceID]
+		if sequence < 1 || sequence > watermark || !traceSummaryMatches(summary, filter) {
+			continue
+		}
+		items = append(items, sequencedTraceSummary{sequence: sequence, summary: cloneTraceSummary(summary)})
+	}
+	sort.Slice(items, func(left, right int) bool { return items[left].sequence > items[right].sequence })
+	total := len(items)
+	if position > 0 {
+		remaining := items[:0]
+		for _, item := range items {
+			if item.sequence < position {
+				remaining = append(remaining, item)
+			}
+		}
+		items = remaining
+	}
+	hasMore := len(items) > limit
+	if hasMore {
+		items = items[:limit]
+	}
+	page := storage.Page[telemetry.Summary]{Items: make([]telemetry.Summary, 0, len(items)), Total: total}
+	for _, item := range items {
+		page.Items = append(page.Items, item.summary)
+	}
+	if hasMore {
+		next, err := storage.EncodeTraceCursor(watermark, items[len(items)-1].sequence, filter)
+		if err != nil {
+			return storage.Page[telemetry.Summary]{}, err
+		}
+		page.NextCursor = &next
+	}
+	return page, nil
+}
+
+func traceSummaryMatches(summary telemetry.Summary, filter storage.TraceFilter) bool {
+	if filter.Status != "" && summary.Status != filter.Status ||
+		filter.Completeness != "" && summary.Completeness != filter.Completeness ||
+		filter.AgentID != "" && summary.RootAgentID != filter.AgentID ||
+		filter.SessionID != "" && summary.SessionID != filter.SessionID ||
+		filter.TaskID != "" && summary.TaskID != filter.TaskID {
+		return false
+	}
+	if filter.HasError != nil && (summary.ErrorCount > 0) != *filter.HasError ||
+		filter.HasA2A != nil && (summary.A2ACalls > 0) != *filter.HasA2A {
+		return false
+	}
+	if filter.StartedAfter != nil && summary.StartedAt.Before(*filter.StartedAfter) ||
+		filter.StartedBefore != nil && !summary.StartedAt.Before(*filter.StartedBefore) {
+		return false
+	}
+	if filter.Query != "" {
+		query := strings.ToLower(filter.Query)
+		if !strings.Contains(strings.ToLower(summary.TraceID), query) &&
+			!strings.Contains(strings.ToLower(summary.TaskID), query) &&
+			!strings.Contains(strings.ToLower(summary.SessionID), query) {
+			return false
+		}
+	}
+	return true
+}
+
+func cloneTraceSummary(summary telemetry.Summary) telemetry.Summary {
+	if summary.EndedAt != nil {
+		endedAt := *summary.EndedAt
+		summary.EndedAt = &endedAt
+	}
+	if summary.DurationMS != nil {
+		duration := *summary.DurationMS
+		summary.DurationMS = &duration
+	}
+	return summary
 }
 
 func (store *Store) GetTraceSpans(_ context.Context, traceID string) ([]telemetry.Span, error) {
@@ -151,6 +264,23 @@ func (store *Store) GetTraceSpans(_ context.Context, traceID string) ([]telemetr
 		result = append(result, cloned)
 	}
 	return result, nil
+}
+
+func (store *Store) GetTraceSpan(_ context.Context, traceID, spanID string) (telemetry.Span, error) {
+	if !telemetry.ValidTraceID(traceID) || !telemetry.ValidSpanID(spanID) {
+		return telemetry.Span{}, storage.ErrTraceNotFound
+	}
+	store.mu.RLock()
+	defer store.mu.RUnlock()
+	return store.traceSpanLocked(traceID, spanID)
+}
+
+func (store *Store) traceSpanLocked(traceID, spanID string) (telemetry.Span, error) {
+	span, exists := store.traceSpans[traceSpanKey(traceID, spanID)]
+	if !exists {
+		return telemetry.Span{}, storage.ErrTraceNotFound
+	}
+	return cloneTraceSpan(span)
 }
 
 func (store *Store) traceSpansLocked(traceID string) []telemetry.Span {
@@ -197,12 +327,105 @@ func (store *Store) GetTraceLinks(_ context.Context, traceID string) ([]telemetr
 	return links, nil
 }
 
+func (store *Store) GetTraceGraph(_ context.Context, traceID string, limits storage.TraceGraphLimits) (storage.TraceGraph, error) {
+	if !telemetry.ValidTraceID(traceID) {
+		return storage.TraceGraph{}, storage.ErrTraceNotFound
+	}
+	limits = storage.NormalizeTraceGraphLimits(limits)
+	store.mu.RLock()
+	defer store.mu.RUnlock()
+	return store.traceGraphLocked(traceID, limits)
+}
+
+func (store *Store) traceGraphLocked(traceID string, limits storage.TraceGraphLimits) (storage.TraceGraph, error) {
+	if _, exists := store.traceSummaries[traceID]; !exists {
+		return storage.TraceGraph{}, storage.ErrTraceNotFound
+	}
+
+	allSpans := store.traceSpansLocked(traceID)
+	graph := storage.TraceGraph{TotalSpans: len(allSpans), Spans: []telemetry.Span{}, Links: []telemetry.Link{}}
+	if len(allSpans) > limits.SpanLimit {
+		graph.SpansTruncated = true
+		allSpans = allSpans[:limits.SpanLimit]
+	}
+	selectedSpans := make(map[string]struct{}, len(allSpans))
+	for _, span := range allSpans {
+		cloned, err := cloneTraceSpan(span)
+		if err != nil {
+			return storage.TraceGraph{}, err
+		}
+		graph.Spans = append(graph.Spans, cloned)
+		selectedSpans[span.SpanID] = struct{}{}
+	}
+	allLinks := make([]telemetry.Link, 0)
+	for _, link := range store.traceLinks {
+		if link.TraceID != traceID {
+			continue
+		}
+		graph.TotalLinks++
+		if _, selected := selectedSpans[link.SpanID]; selected {
+			allLinks = append(allLinks, link)
+		}
+	}
+	sort.Slice(allLinks, func(left, right int) bool {
+		if allLinks[left].SpanID != allLinks[right].SpanID {
+			return allLinks[left].SpanID < allLinks[right].SpanID
+		}
+		if allLinks[left].LinkedTraceID != allLinks[right].LinkedTraceID {
+			return allLinks[left].LinkedTraceID < allLinks[right].LinkedTraceID
+		}
+		return allLinks[left].LinkedSpanID < allLinks[right].LinkedSpanID
+	})
+	if len(allLinks) > limits.LinkLimit {
+		allLinks = allLinks[:limits.LinkLimit]
+	}
+	graph.LinksTruncated = len(allLinks) < graph.TotalLinks
+	for _, link := range allLinks {
+		cloned, err := cloneTraceLink(link)
+		if err != nil {
+			return storage.TraceGraph{}, err
+		}
+		graph.Links = append(graph.Links, cloned)
+	}
+	return graph, nil
+}
+
+func (store *Store) GetTraceDetail(_ context.Context, traceID string, limits storage.TraceGraphLimits) (storage.TraceDetail, error) {
+	if !telemetry.ValidTraceID(traceID) {
+		return storage.TraceDetail{}, storage.ErrTraceNotFound
+	}
+	limits = storage.NormalizeTraceGraphLimits(limits)
+	store.mu.RLock()
+	defer store.mu.RUnlock()
+	summary, err := store.traceSummaryLocked(traceID)
+	if err != nil {
+		return storage.TraceDetail{}, err
+	}
+	graph, err := store.traceGraphLocked(traceID, limits)
+	if err != nil {
+		return storage.TraceDetail{}, err
+	}
+	detail := storage.TraceDetail{Summary: summary, Graph: graph}
+	if summary.RootSpanID != "" {
+		root, err := store.traceSpanLocked(traceID, summary.RootSpanID)
+		if err != nil {
+			return storage.TraceDetail{}, err
+		}
+		detail.RootSpan = &root
+	}
+	return detail, nil
+}
+
 func (store *Store) GetTraceSummary(_ context.Context, traceID string) (telemetry.Summary, error) {
 	if !telemetry.ValidTraceID(traceID) {
 		return telemetry.Summary{}, storage.ErrTraceNotFound
 	}
 	store.mu.RLock()
 	defer store.mu.RUnlock()
+	return store.traceSummaryLocked(traceID)
+}
+
+func (store *Store) traceSummaryLocked(traceID string) (telemetry.Summary, error) {
 	summary, exists := store.traceSummaries[traceID]
 	if !exists {
 		return telemetry.Summary{}, storage.ErrTraceNotFound
@@ -236,6 +459,56 @@ func (store *Store) GetTracePayload(_ context.Context, traceID, spanID, kind str
 		payload.ExpiresAt = &expiresAt
 	}
 	return payload, nil
+}
+
+func (store *Store) GetTracePayloads(_ context.Context, traceID, spanID string) ([]telemetry.Payload, error) {
+	if !telemetry.ValidTraceID(traceID) || !telemetry.ValidSpanID(spanID) {
+		return nil, storage.ErrTraceNotFound
+	}
+	store.mu.RLock()
+	defer store.mu.RUnlock()
+	return store.tracePayloadsLocked(traceID, spanID, store.options.Now().UTC())
+}
+
+func (store *Store) tracePayloadsLocked(traceID, spanID string, now time.Time) ([]telemetry.Payload, error) {
+	if _, exists := store.traceSpans[traceSpanKey(traceID, spanID)]; !exists {
+		return nil, storage.ErrTraceNotFound
+	}
+	payloads := []telemetry.Payload{}
+	for _, payload := range store.tracePayloads {
+		if payload.TraceID != traceID || payload.SpanID != spanID ||
+			payload.RedactionState == telemetry.ContentStateExpired ||
+			payload.ExpiresAt != nil && !payload.ExpiresAt.After(now) {
+			continue
+		}
+		payload.PayloadBytes = append([]byte(nil), payload.PayloadBytes...)
+		payload.PayloadJSON = append(json.RawMessage(nil), payload.PayloadJSON...)
+		if payload.ExpiresAt != nil {
+			expiresAt := *payload.ExpiresAt
+			payload.ExpiresAt = &expiresAt
+		}
+		payloads = append(payloads, payload)
+	}
+	sort.Slice(payloads, func(left, right int) bool { return payloads[left].Kind < payloads[right].Kind })
+	return payloads, nil
+}
+
+func (store *Store) GetTraceSpanDetail(_ context.Context, traceID, spanID string) (storage.TraceSpanDetail, error) {
+	if !telemetry.ValidTraceID(traceID) || !telemetry.ValidSpanID(spanID) {
+		return storage.TraceSpanDetail{}, storage.ErrTraceNotFound
+	}
+	store.mu.RLock()
+	defer store.mu.RUnlock()
+	now := store.options.Now().UTC()
+	span, err := store.traceSpanLocked(traceID, spanID)
+	if err != nil {
+		return storage.TraceSpanDetail{}, err
+	}
+	payloads, err := store.tracePayloadsLocked(traceID, spanID, now)
+	if err != nil {
+		return storage.TraceSpanDetail{}, err
+	}
+	return storage.TraceSpanDetail{Span: span, Payloads: payloads}, nil
 }
 
 func cloneTraceSpan(span telemetry.Span) (telemetry.Span, error) {

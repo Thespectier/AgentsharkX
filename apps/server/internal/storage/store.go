@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/Thespectier/AgentsharkX/apps/server/internal/model"
+	"github.com/Thespectier/AgentsharkX/apps/server/internal/telemetry"
 )
 
 var (
@@ -66,6 +67,7 @@ type OutboxMessage struct {
 	EntityID  string
 	EventKind string
 	Event     model.UnifiedEvent
+	Trace     *telemetry.Summary
 	CreatedAt time.Time
 	ExpiresAt *time.Time
 }

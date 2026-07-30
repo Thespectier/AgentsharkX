@@ -10,6 +10,8 @@ const pages = [
   "/protect/policies",
   "/protect/guardrails",
   "/audit/analytics",
+  "/audit/traces",
+  "/audit/traces/11111111111111111111111111111111",
 ];
 
 test.use({ reducedMotion: "reduce" });

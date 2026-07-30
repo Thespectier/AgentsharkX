@@ -166,7 +166,7 @@ SELECT public_id, upstream_id FROM audit_events WHERE source = $1 AND public_id 
 		t.Fatalf("restart checkpoint = %#v, %v", storedCheckpoint, err)
 	}
 	replay, err := restarted.ReplayAfter(t.Context(), 1, 10)
-	if err != nil || replay.Oldest != 1 || replay.Latest != 6 || len(replay.Messages) != 5 {
+	if err != nil || replay.Oldest != 1 || replay.Latest != 10 || len(replay.Messages) != 8 {
 		t.Fatalf("restart replay = %#v, %v", replay, err)
 	}
 	for _, message := range replay.Messages {
@@ -204,8 +204,8 @@ SELECT public_id, upstream_id FROM audit_events WHERE source = $1 AND public_id 
 	if changed != 1 {
 		t.Fatalf("concurrent event changes = %d, results=%#v", changed, concurrentResults)
 	}
-	replay, err = restarted.ReplayAfter(t.Context(), 6, 10)
-	if err != nil || replay.Latest != 8 || len(replay.Messages) != 1 || replay.Messages[0].Sequence != 8 {
+	replay, err = restarted.ReplayAfter(t.Context(), 10, 10)
+	if err != nil || replay.Latest != 11 || len(replay.Messages) != 1 || replay.Messages[0].Sequence != 11 {
 		t.Fatalf("concurrent replay = %#v, %v", replay, err)
 	}
 
@@ -233,7 +233,7 @@ SELECT public_id, upstream_id FROM audit_events WHERE source = $1 AND public_id 
 	}()
 	select {
 	case sequence := <-slowReachedState:
-		if sequence != 9 {
+		if sequence != 12 {
 			t.Fatalf("slow outbox sequence = %d", sequence)
 		}
 	case <-time.After(2 * time.Second):
@@ -255,14 +255,15 @@ SELECT public_id, upstream_id FROM audit_events WHERE source = $1 AND public_id 
 	slow := <-slowOutcome
 	fast := <-fastOutcome
 	if slow.err != nil || fast.err != nil || len(slow.results) != 1 || len(fast.results) != 1 ||
-		slow.results[0].OutboxSequence != 9 || fast.results[0].OutboxSequence != 10 {
+		slow.results[0].OutboxSequence != 12 || fast.results[0].OutboxSequence != 13 {
 		t.Fatalf("serialized outbox writers = slow %#v/%v fast %#v/%v", slow.results, slow.err, fast.results, fast.err)
 	}
-	replay, err = restarted.ReplayAfter(t.Context(), 8, 10)
-	if err != nil || replay.Latest != 10 || len(replay.Messages) != 2 ||
-		replay.Messages[0].Sequence != 9 || replay.Messages[1].Sequence != 10 {
+	replay, err = restarted.ReplayAfter(t.Context(), 11, 10)
+	if err != nil || replay.Latest != 13 || len(replay.Messages) != 2 ||
+		replay.Messages[0].Sequence != 12 || replay.Messages[1].Sequence != 13 {
 		t.Fatalf("commit-ordered replay = %#v, %v", replay, err)
 	}
+	exercisePostgresTraceQueries(t, restarted, traceFixture, now)
 
 	tightenedOptions := options
 	tightenedOptions.PayloadRetention = 0
@@ -332,7 +333,7 @@ WHERE trace_id = $1 AND span_id = $2 AND payload_kind = 'task.goal'
 		t.Fatalf("trace payload tombstone = %q/%v/%v/%d, %v", tombstoneState, payloadBytesNull, payloadJSONNull, tombstoneSize, err)
 	}
 	replay, err = tightened.ReplayAfter(t.Context(), 0, 10)
-	if err != nil || replay.Oldest != 0 || replay.Latest != 10 || len(replay.Messages) != 0 {
+	if err != nil || replay.Oldest != 0 || replay.Latest != 22 || len(replay.Messages) != 0 {
 		t.Fatalf("pruned replay = %#v, %v", replay, err)
 	}
 
@@ -360,7 +361,7 @@ WHERE trace_id = $1 AND span_id = $2 AND payload_kind = 'task.goal'
 		t.Fatalf("expired event was resurrected: %v", err)
 	}
 	replay, err = restarted.ReplayAfter(t.Context(), 0, 10)
-	if err != nil || replay.Oldest != 0 || replay.Latest != 10 || len(replay.Messages) != 0 {
+	if err != nil || replay.Oldest != 0 || replay.Latest != 22 || len(replay.Messages) != 0 {
 		t.Fatalf("expired replay advanced outbox = %#v, %v", replay, err)
 	}
 	storedCheckpoint, err = restarted.GetCheckpoint(t.Context(), checkpoint.Source)
@@ -380,6 +381,205 @@ WHERE trace_id = $1 AND span_id = $2 AND payload_kind = 'task.goal'
 
 type postgresTraceFixture struct {
 	traceID, rootSpanID string
+}
+
+func exercisePostgresTraceQueries(t *testing.T, store *Store, fixture postgresTraceFixture, now time.Time) {
+	t.Helper()
+	writePostgresSummaryTrace(t, store, "22222222222222222222222222222222", "8888888888888888", "agent-b", "session-b", "task-b", now.Add(time.Minute))
+	writePostgresSummaryTrace(t, store, "33333333333333333333333333333333", "9999999999999999", "agent-c", "session-c", "task-c", now.Add(2*time.Minute))
+	first, err := store.ListTraceSummaries(t.Context(), storage.TraceFilter{Limit: 2})
+	if err != nil || len(first.Items) != 2 || first.Items[0].TraceID != "33333333333333333333333333333333" ||
+		first.Items[1].TraceID != "22222222222222222222222222222222" || first.Total != 3 || first.NextCursor == nil {
+		t.Fatalf("first PostgreSQL Trace page = %#v, %v", first, err)
+	}
+	writePostgresSummaryTrace(t, store, "44444444444444444444444444444444", "aaaaaaaaaaaaaaaa", "agent-d", "session-d", "task-d", now.Add(3*time.Minute))
+	next, err := store.ListTraceSummaries(t.Context(), storage.TraceFilter{Cursor: *first.NextCursor, Limit: 2})
+	if err != nil || len(next.Items) != 1 || next.Items[0].TraceID != fixture.traceID || next.Total != 3 {
+		t.Fatalf("stable PostgreSQL Trace page = %#v, %v", next, err)
+	}
+	if _, err := store.ListTraceSummaries(t.Context(), storage.TraceFilter{
+		Cursor: *first.NextCursor, Limit: 2, Status: "succeeded",
+	}); !errors.Is(err, storage.ErrInvalidTraceCursor) {
+		t.Fatalf("PostgreSQL Trace cursor reused with changed filter: %v", err)
+	}
+	hasA2A := true
+	filtered, err := store.ListTraceSummaries(t.Context(), storage.TraceFilter{
+		Limit: 10, AgentID: "agent", HasA2A: &hasA2A, Query: "TASK",
+	})
+	if err != nil || len(filtered.Items) != 1 || filtered.Items[0].TraceID != fixture.traceID {
+		t.Fatalf("filtered PostgreSQL Trace page = %#v, %v", filtered, err)
+	}
+	graph, err := store.GetTraceGraph(t.Context(), fixture.traceID, storage.TraceGraphLimits{SpanLimit: 2, LinkLimit: 1})
+	if err != nil || graph.TotalSpans != 5 || len(graph.Spans) != 2 || !graph.SpansTruncated ||
+		graph.TotalLinks != 1 || len(graph.Links) != 0 || !graph.LinksTruncated {
+		t.Fatalf("bounded PostgreSQL Trace graph = %#v, %v", graph, err)
+	}
+	span, err := store.GetTraceSpan(t.Context(), fixture.traceID, fixture.rootSpanID)
+	if err != nil || span.TaskID != "task" {
+		t.Fatalf("PostgreSQL Trace Span = %#v, %v", span, err)
+	}
+	payloads, err := store.GetTracePayloads(t.Context(), fixture.traceID, fixture.rootSpanID)
+	if err != nil || len(payloads) != 1 || payloads[0].Kind != "task.goal" {
+		t.Fatalf("PostgreSQL Trace Span payloads = %#v, %v", payloads, err)
+	}
+	empty, err := store.GetTracePayloads(t.Context(), fixture.traceID, "2222222222222222")
+	if err != nil || len(empty) != 0 {
+		t.Fatalf("empty PostgreSQL Trace Span payloads = %#v, %v", empty, err)
+	}
+	if _, err := store.GetTracePayloads(t.Context(), fixture.traceID, "ffffffffffffffff"); !errors.Is(err, storage.ErrTraceNotFound) {
+		t.Fatalf("missing PostgreSQL Trace Span payload error = %v", err)
+	}
+	exercisePostgresTraceListSnapshot(t, store, now)
+	exercisePostgresTraceDetailSnapshot(t, store, now)
+	exercisePostgresSpanDetailSnapshot(t, store, now)
+}
+
+func exercisePostgresTraceListSnapshot(t *testing.T, store *Store, now time.Time) {
+	t.Helper()
+	const traceID = "55555555555555555555555555555555"
+	const spanID = "5555555555555555"
+	writePostgresSummaryTrace(t, store, traceID, spanID, "snapshot-agent", "snapshot-session", "snapshot-list", now.Add(4*time.Minute))
+
+	reached := make(chan struct{})
+	release := make(chan struct{})
+	store.afterTraceListCount = func() {
+		close(reached)
+		<-release
+	}
+	pageResult := make(chan storage.Page[telemetry.Summary], 1)
+	pageError := make(chan error, 1)
+	go func() {
+		page, err := store.ListTraceSummaries(t.Context(), storage.TraceFilter{
+			Limit: 10, Status: "succeeded", TaskID: "snapshot-list",
+		})
+		pageResult <- page
+		pageError <- err
+	}()
+	waitForTraceReadHook(t, reached, release)
+
+	root, err := store.GetTraceSpan(t.Context(), traceID, spanID)
+	if err == nil {
+		root.StatusCode = telemetry.StatusError
+		_, err = store.WriteBatch(t.Context(), telemetry.TraceBatch{Spans: []telemetry.Span{root}})
+	}
+	close(release)
+	page, listErr := <-pageResult, <-pageError
+	store.afterTraceListCount = nil
+	if err != nil {
+		t.Fatal(err)
+	}
+	if listErr != nil || page.Total != 1 || len(page.Items) != 1 || page.Items[0].Status != "succeeded" {
+		t.Fatalf("repeatable-read Trace list = %#v, %v", page, listErr)
+	}
+}
+
+func exercisePostgresTraceDetailSnapshot(t *testing.T, store *Store, now time.Time) {
+	t.Helper()
+	const traceID = "66666666666666666666666666666666"
+	const rootSpanID = "6666666666666666"
+	writePostgresSummaryTrace(t, store, traceID, rootSpanID, "snapshot-agent", "snapshot-session", "snapshot-detail", now.Add(5*time.Minute))
+
+	reached := make(chan struct{})
+	release := make(chan struct{})
+	store.afterTraceDetailSummary = func() {
+		close(reached)
+		<-release
+	}
+	detailResult := make(chan storage.TraceDetail, 1)
+	detailError := make(chan error, 1)
+	go func() {
+		detail, err := store.GetTraceDetail(t.Context(), traceID, storage.TraceGraphLimits{})
+		detailResult <- detail
+		detailError <- err
+	}()
+	waitForTraceReadHook(t, reached, release)
+
+	child := postgresTraceSpan(traceID, "6767676767676767", "LLM", true, now.Add(5*time.Minute+time.Millisecond), now.Add(5*time.Minute+time.Second))
+	_, writeErr := store.WriteBatch(t.Context(), telemetry.TraceBatch{Spans: []telemetry.Span{child}})
+	close(release)
+	detail, detailErr := <-detailResult, <-detailError
+	store.afterTraceDetailSummary = nil
+	if writeErr != nil {
+		t.Fatal(writeErr)
+	}
+	if detailErr != nil || detail.Summary.SpanCount != 1 || detail.Graph.TotalSpans != 1 ||
+		len(detail.Graph.Spans) != 1 || detail.RootSpan == nil || detail.RootSpan.SpanID != rootSpanID {
+		t.Fatalf("repeatable-read Trace detail = %#v, %v", detail, detailErr)
+	}
+}
+
+func exercisePostgresSpanDetailSnapshot(t *testing.T, store *Store, now time.Time) {
+	t.Helper()
+	const traceID = "77777777777777777777777777777777"
+	const spanID = "7777777777777777"
+	span := postgresTraceSpan(traceID, spanID, "AGENT", false, now.Add(6*time.Minute), now.Add(6*time.Minute+time.Second))
+	span.StatusCode = telemetry.StatusOK
+	span.ContentState = telemetry.ContentStateCaptured
+	span.Attributes[telemetry.AttributeTaskRoot] = true
+	expiresAt := now.Add(time.Hour)
+	oldDocument := json.RawMessage(`{"goal":"snapshot-old"}`)
+	payload := telemetry.Payload{
+		TraceID: traceID, SpanID: spanID, Kind: "task.goal", PayloadJSON: oldDocument,
+		RedactionState: telemetry.ContentStateCaptured, SizeBytes: int64(len(oldDocument)), ExpiresAt: &expiresAt,
+	}
+	if _, err := store.WriteBatch(t.Context(), telemetry.TraceBatch{
+		Spans: []telemetry.Span{span}, Payloads: []telemetry.Payload{payload},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	reached := make(chan struct{})
+	release := make(chan struct{})
+	store.afterTraceSpanDetailSpanRead = func() {
+		close(reached)
+		<-release
+	}
+	detailResult := make(chan storage.TraceSpanDetail, 1)
+	detailError := make(chan error, 1)
+	go func() {
+		detail, err := store.GetTraceSpanDetail(t.Context(), traceID, spanID)
+		detailResult <- detail
+		detailError <- err
+	}()
+	waitForTraceReadHook(t, reached, release)
+
+	span.StatusCode = telemetry.StatusError
+	newDocument := json.RawMessage(`{"goal":"snapshot-new"}`)
+	payload.PayloadJSON = newDocument
+	payload.SizeBytes = int64(len(newDocument))
+	_, writeErr := store.WriteBatch(t.Context(), telemetry.TraceBatch{
+		Spans: []telemetry.Span{span}, Payloads: []telemetry.Payload{payload},
+	})
+	close(release)
+	detail, detailErr := <-detailResult, <-detailError
+	store.afterTraceSpanDetailSpanRead = nil
+	if writeErr != nil {
+		t.Fatal(writeErr)
+	}
+	if detailErr != nil || detail.Span.StatusCode != telemetry.StatusOK || len(detail.Payloads) != 1 ||
+		!sameJSON(detail.Payloads[0].PayloadJSON, oldDocument) {
+		t.Fatalf("repeatable-read Span detail = %#v, %v", detail, detailErr)
+	}
+}
+
+func waitForTraceReadHook(t *testing.T, reached <-chan struct{}, release chan<- struct{}) {
+	t.Helper()
+	select {
+	case <-reached:
+	case <-time.After(2 * time.Second):
+		close(release)
+		t.Fatal("Trace read did not reach the snapshot barrier")
+	}
+}
+
+func writePostgresSummaryTrace(t *testing.T, store *Store, traceID, spanID, agentID, sessionID, taskID string, startedAt time.Time) {
+	t.Helper()
+	root := postgresTraceSpan(traceID, spanID, "AGENT", false, startedAt, startedAt.Add(time.Second))
+	root.AgentID, root.SessionID, root.TaskID = agentID, sessionID, taskID
+	root.Attributes[telemetry.AttributeTaskRoot] = true
+	if _, err := store.WriteBatch(t.Context(), telemetry.TraceBatch{Spans: []telemetry.Span{root}}); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func exercisePostgresTraceWrites(t *testing.T, store *Store, now time.Time) postgresTraceFixture {
@@ -470,6 +670,17 @@ func exercisePostgresTraceWrites(t *testing.T, store *Store, now time.Time) post
 	payload, _ = store.GetTracePayload(t.Context(), traceID, root.SpanID, "task.goal")
 	if !sameJSON(payload.PayloadJSON, payloadDocument) {
 		t.Fatalf("stale payload replaced terminal payload: %s", payload.PayloadJSON)
+	}
+	replay, err := store.ReplayAfter(t.Context(), 6, 10)
+	if err != nil || replay.Latest != 10 || len(replay.Messages) != 3 {
+		t.Fatalf("PostgreSQL Trace outbox replay = %#v, %v", replay, err)
+	}
+	for _, message := range replay.Messages {
+		document, marshalErr := json.Marshal(message)
+		if message.Topic != "trace" || message.EventKind != "trace" || message.Trace == nil ||
+			message.Trace.TraceID != traceID || message.Event.Raw != nil || marshalErr != nil || strings.Contains(string(document), "private") {
+			t.Fatalf("unsafe PostgreSQL Trace outbox message = %#v, %s, %v", message, document, marshalErr)
+		}
 	}
 	return postgresTraceFixture{traceID: traceID, rootSpanID: root.SpanID}
 }

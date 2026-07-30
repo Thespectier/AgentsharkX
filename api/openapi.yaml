@@ -16,9 +16,10 @@ info:
     gateway traffic and AgentGuard audit/session projections, source-scoped
     analytics, confirmed approval-resolution evidence, authenticated complete
     upstream detail, stable cursor pagination, and resumable normalized SSE
-    backed by a durable outbox. Phase 14 Trace ingest is a separate OTLP/HTTP
-    protobuf Collector and is intentionally not a BFF route. Trace query and UI
-    contracts remain deferred to Phase 15.
+    backed by a durable outbox. Trace ingest remains a separate OTLP/HTTP
+    protobuf Collector. Phase 15 adds authenticated, payload-safe Trace list and
+    graph detail reads plus an explicit single-Span detail read for retained
+    attributes, events, and content.
 servers:
   - url: /
 security:
@@ -185,15 +186,19 @@ paths:
     get:
       tags: [System]
       operationId: streamEvents
-      summary: Subscribe to persistent normalized health, gateway traffic, and AgentGuard audit events
+      summary: Subscribe to persistent normalized Audit events and Trace summary changes
       description: |
         Every SSE id is the decimal stream_outbox sequence. A reconnecting client
         supplies that value as Last-Event-ID; the server replays retained rows
         before waiting for commit notifications. If the supplied sequence is
         ahead of the database or older than the retained outbox window, the
-        server emits one reset event with a StreamReset JSON body. Event data is
-        summary-only and never includes UnifiedEvent.raw or a retained payload.
-      x-implementation-phase: 13
+        server emits one reset event with a StreamReset JSON body. Audit event
+        names carry a payload-safe UnifiedEvent with raw omitted; the trace
+        event name carries only TraceSummary and never includes Span
+        attributes, events, links, or a retained payload. Persistent replay is
+        polled independently of in-process notifications so Collector-process
+        commits become visible promptly.
+      x-implementation-phase: 15
       x-implementation-status: implemented
       parameters:
         - $ref: '#/components/parameters/LastEventId'
@@ -1774,6 +1779,90 @@ paths:
         '503':
           $ref: '#/components/responses/UpstreamUnavailable'
 
+  /api/v1/audit/traces:
+    get:
+      tags: [Audit]
+      operationId: listAuditTraces
+      summary: List persisted Agent task Traces without retained payload content
+      description: Uses an opaque stable cursor bound to the first page's immutable database watermark and every active filter except limit. New Trace inserts do not shift subsequent pages. Query is a case-insensitive literal substring match over Trace, Task, and Session IDs. The returned total is exact within that pinned watermark and filter set.
+      x-implementation-phase: 15
+      x-implementation-status: implemented
+      parameters:
+        - $ref: '#/components/parameters/TraceCursor'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/TraceStatusFilter'
+        - $ref: '#/components/parameters/TraceCompletenessFilter'
+        - $ref: '#/components/parameters/TraceAgentIdFilter'
+        - $ref: '#/components/parameters/TraceSessionIdFilter'
+        - $ref: '#/components/parameters/TraceTaskIdFilter'
+        - $ref: '#/components/parameters/TraceHasErrorFilter'
+        - $ref: '#/components/parameters/TraceHasA2AFilter'
+        - $ref: '#/components/parameters/TraceStartedAfterFilter'
+        - $ref: '#/components/parameters/TraceStartedBeforeFilter'
+        - $ref: '#/components/parameters/TraceQueryFilter'
+      responses:
+        '200':
+          description: Stable, payload-free Trace summary page
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TraceListEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+
+  /api/v1/audit/traces/{traceId}:
+    get:
+      tags: [Audit]
+      operationId: getAuditTrace
+      summary: Return one payload-free Trace summary and its deterministic Span graph inputs
+      description: Returns stable time-ordered Span nodes and explicit OTel links for client-side graph construction. No retained prompt, completion, tool argument, raw Span attribute, resource, or event body is returned by this endpoint. Large graphs are bounded and report exact totals and truncation flags; there is no separate graph API.
+      x-implementation-phase: 15
+      x-implementation-status: implemented
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+      responses:
+        '200':
+          description: Trace graph inputs without payload content
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TraceDetailEnvelope'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+
+  /api/v1/audit/traces/{traceId}/spans/{spanId}:
+    get:
+      tags: [Audit]
+      operationId: getAuditTraceSpan
+      summary: Return complete retained detail for one explicitly selected Span
+      description: This authenticated detail endpoint is the only Trace BFF operation that returns raw Span attributes, resource fields, events, and unexpired Collector-retained payloads. Collector credential redaction and content truncation states remain authoritative.
+      x-implementation-phase: 15
+      x-implementation-status: implemented
+      parameters:
+        - $ref: '#/components/parameters/TraceId'
+        - $ref: '#/components/parameters/SpanId'
+      responses:
+        '200':
+          description: Complete permitted single-Span detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TraceSpanDetailEnvelope'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+
   /api/v1/audit/analytics:
     get:
       tags: [Audit]
@@ -1928,6 +2017,97 @@ components:
       required: true
       schema:
         type: string
+    TraceId:
+      name: traceId
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: '^[0-9A-Fa-f]{32}$'
+    SpanId:
+      name: spanId
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: '^[0-9A-Fa-f]{16}$'
+    TraceCursor:
+      name: cursor
+      in: query
+      required: false
+      description: Opaque keyset cursor pinned to the first page's immutable Trace-list watermark and active filters.
+      schema:
+        type: string
+        maxLength: 512
+    TraceStatusFilter:
+      name: status
+      in: query
+      required: false
+      schema:
+        $ref: '#/components/schemas/TraceStatus'
+    TraceCompletenessFilter:
+      name: completeness
+      in: query
+      required: false
+      schema:
+        $ref: '#/components/schemas/TraceCompleteness'
+    TraceAgentIdFilter:
+      name: agent_id
+      in: query
+      required: false
+      schema:
+        type: string
+        maxLength: 256
+    TraceSessionIdFilter:
+      name: session_id
+      in: query
+      required: false
+      schema:
+        type: string
+        maxLength: 256
+    TraceTaskIdFilter:
+      name: task_id
+      in: query
+      required: false
+      schema:
+        type: string
+        maxLength: 256
+    TraceHasErrorFilter:
+      name: has_error
+      in: query
+      required: false
+      schema:
+        type: boolean
+    TraceHasA2AFilter:
+      name: has_a2a
+      in: query
+      required: false
+      schema:
+        type: boolean
+    TraceStartedAfterFilter:
+      name: started_after
+      in: query
+      required: false
+      description: Inclusive RFC 3339 lower bound for Trace start time.
+      schema:
+        type: string
+        format: date-time
+    TraceStartedBeforeFilter:
+      name: started_before
+      in: query
+      required: false
+      description: Exclusive RFC 3339 upper bound for Trace start time.
+      schema:
+        type: string
+        format: date-time
+    TraceQueryFilter:
+      name: query
+      in: query
+      required: false
+      description: Case-insensitive literal substring matched against Trace, Task, and Session IDs.
+      schema:
+        type: string
+        maxLength: 200
     SourcePath:
       name: source
       in: path
@@ -2030,7 +2210,7 @@ components:
           schema:
             $ref: '#/components/schemas/ErrorEnvelope'
     NotFound:
-      description: Upstream object was not found
+      description: The requested management object or persisted Trace record was not found
       content:
         application/json:
           schema:
@@ -4159,6 +4339,250 @@ components:
               minimum: 0
         meta:
           $ref: '#/components/schemas/Meta'
+    TraceStatus:
+      type: string
+      enum: [running, succeeded, failed, unknown]
+    TraceCompleteness:
+      type: string
+      enum: [verified, partial]
+    TraceContentState:
+      type: string
+      enum: [captured, redacted, truncated, not_collected, expired]
+    TraceSummary:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          traceId,
+          status,
+          completeness,
+          startedAt,
+          llmCalls,
+          toolCalls,
+          mcpCalls,
+          localToolCalls,
+          a2aCalls,
+          retrieverCalls,
+          inputTokens,
+          outputTokens,
+          totalTokens,
+          errorCount,
+          spanCount,
+          lastSpanAt,
+          updatedAt,
+        ]
+      properties:
+        traceId: { type: string, pattern: '^[0-9a-f]{32}$' }
+        taskId: { type: string }
+        sessionId: { type: string }
+        rootAgentId: { type: string }
+        rootSpanId: { type: string, pattern: '^[0-9a-f]{16}$' }
+        status: { $ref: '#/components/schemas/TraceStatus' }
+        completeness: { $ref: '#/components/schemas/TraceCompleteness' }
+        startedAt: { type: string, format: date-time }
+        endedAt: { type: string, format: date-time }
+        durationMs: { type: integer, format: int64, minimum: 0 }
+        llmCalls: { type: integer, minimum: 0 }
+        toolCalls: { type: integer, minimum: 0 }
+        mcpCalls: { type: integer, minimum: 0 }
+        localToolCalls: { type: integer, minimum: 0 }
+        a2aCalls: { type: integer, minimum: 0 }
+        retrieverCalls: { type: integer, minimum: 0 }
+        inputTokens: { type: integer, format: int64, minimum: 0 }
+        outputTokens: { type: integer, format: int64, minimum: 0 }
+        totalTokens: { type: integer, format: int64, minimum: 0 }
+        errorCount: { type: integer, minimum: 0 }
+        riskLevel: { type: string }
+        spanCount: { type: integer, minimum: 0 }
+        lastSpanAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    TraceSpan:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          traceId,
+          spanId,
+          name,
+          otelSpanKind,
+          startedAt,
+          endedAt,
+          durationMs,
+          statusCode,
+          inputTokens,
+          outputTokens,
+          totalTokens,
+          countable,
+          contentState,
+          receivedAt,
+          updatedAt,
+        ]
+      properties:
+        traceId: { type: string, pattern: '^[0-9a-f]{32}$' }
+        spanId: { type: string, pattern: '^[0-9a-f]{16}$' }
+        parentSpanId: { type: string, pattern: '^[0-9a-f]{16}$' }
+        traceState: { type: string }
+        name: { type: string }
+        openInferenceKind: { type: string }
+        otelSpanKind: { type: integer, format: int32 }
+        startedAt: { type: string, format: date-time }
+        endedAt: { type: [string, 'null'], format: date-time }
+        durationMs: { type: [integer, 'null'], format: int64, minimum: 0 }
+        statusCode: { type: string, enum: [unset, ok, error] }
+        agentId: { type: string }
+        sessionId: { type: string }
+        taskId: { type: string }
+        provider: { type: string }
+        model: { type: string }
+        toolName: { type: string }
+        toolKind: { type: string }
+        mcpServer: { type: string }
+        peerAgentId: { type: string }
+        inputTokens: { type: [integer, 'null'], format: int64, minimum: 0 }
+        outputTokens: { type: [integer, 'null'], format: int64, minimum: 0 }
+        totalTokens: { type: [integer, 'null'], format: int64, minimum: 0 }
+        countable: { type: boolean }
+        contentState: { $ref: '#/components/schemas/TraceContentState' }
+        instrumentationScope: { type: string }
+        instrumentationVersion: { type: string }
+        semanticConventionVersion: { type: string }
+        receivedAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    TraceLink:
+      type: object
+      additionalProperties: false
+      required: [traceId, spanId, linkedTraceId, linkedSpanId]
+      properties:
+        traceId: { type: string, pattern: '^[0-9a-f]{32}$' }
+        spanId: { type: string, pattern: '^[0-9a-f]{16}$' }
+        linkedTraceId: { type: string, pattern: '^[0-9a-f]{32}$' }
+        linkedSpanId: { type: string, pattern: '^[0-9a-f]{16}$' }
+    TraceCoverage:
+      type: object
+      additionalProperties: false
+      required:
+        [source, agentIds, peerAgentIds, providers, models, mcpServers, spanKinds, instrumentationScopes, contentStates]
+      properties:
+        source: { type: string, enum: [agentshark-collector] }
+        agentIds: { type: array, items: { type: string } }
+        peerAgentIds: { type: array, items: { type: string } }
+        providers: { type: array, items: { type: string } }
+        models: { type: array, items: { type: string } }
+        mcpServers: { type: array, items: { type: string } }
+        spanKinds: { type: array, items: { type: string } }
+        instrumentationScopes: { type: array, items: { type: string } }
+        contentStates:
+          type: array
+          items: { $ref: '#/components/schemas/TraceContentState' }
+    TraceListEnvelope:
+      type: object
+      additionalProperties: false
+      required: [data, meta]
+      properties:
+        data:
+          type: object
+          additionalProperties: false
+          required: [items, nextCursor, total]
+          properties:
+            items:
+              type: array
+              items: { $ref: '#/components/schemas/TraceSummary' }
+            nextCursor:
+              type: [string, 'null']
+              description: Opaque cursor pinned to the first page's immutable watermark and filters.
+            total:
+              type: integer
+              minimum: 0
+              description: Exact matching count within the pinned first-page watermark.
+        meta: { $ref: '#/components/schemas/Meta' }
+    TraceDetail:
+      type: object
+      additionalProperties: false
+      required:
+        [summary, spans, links, coverage, totalSpans, totalLinks, spansTruncated, linksTruncated]
+      properties:
+        summary: { $ref: '#/components/schemas/TraceSummary' }
+        rootSpan: { $ref: '#/components/schemas/TraceSpan' }
+        spans:
+          type: array
+          description: Stable ascending order by start time and Span ID.
+          items: { $ref: '#/components/schemas/TraceSpan' }
+        links:
+          type: array
+          description: Explicit OTel Span links only; temporal proximity never creates an edge.
+          items: { $ref: '#/components/schemas/TraceLink' }
+        coverage: { $ref: '#/components/schemas/TraceCoverage' }
+        totalSpans: { type: integer, minimum: 0 }
+        totalLinks: { type: integer, minimum: 0 }
+        spansTruncated: { type: boolean }
+        linksTruncated: { type: boolean }
+    TraceDetailEnvelope:
+      type: object
+      additionalProperties: false
+      required: [data, meta]
+      properties:
+        data: { $ref: '#/components/schemas/TraceDetail' }
+        meta: { $ref: '#/components/schemas/Meta' }
+    TraceEvent:
+      type: object
+      additionalProperties: false
+      required: [name, time, attributes, droppedAttributesCount]
+      properties:
+        name: { type: string }
+        time: { type: string, format: date-time }
+        attributes:
+          type: object
+          additionalProperties: true
+        droppedAttributesCount: { type: integer, minimum: 0, maximum: 4294967295 }
+    TracePayload:
+      type: object
+      additionalProperties: false
+      required: [kind, contentType, encoding, redactionState, sizeBytes, expiresAt, createdAt]
+      properties:
+        kind: { type: string }
+        contentType: { type: string }
+        encoding: { type: string }
+        payloadBytes:
+          type: string
+          format: byte
+          description: Base64-encoded retained bytes, used when bounded content is not complete valid JSON.
+        payloadJson:
+          description: Complete retained JSON value. Exactly one of payloadJson and payloadBytes is present.
+        redactionState:
+          type: string
+          enum: [captured, redacted, truncated]
+        sizeBytes: { type: integer, format: int64, minimum: 0 }
+        expiresAt: { type: [string, 'null'], format: date-time }
+        createdAt: { type: string, format: date-time }
+    TraceSpanDetail:
+      type: object
+      additionalProperties: false
+      required: [span, attributes, resource, events, payloads]
+      properties:
+        span: { $ref: '#/components/schemas/TraceSpan' }
+        statusMessage: { type: string }
+        attributes:
+          type: object
+          description: Raw non-content Span attributes after Collector credential and payload separation.
+          additionalProperties: true
+        resource:
+          type: object
+          description: Raw non-credential OTLP Resource attributes retained for the Span.
+          additionalProperties: true
+        events:
+          type: array
+          items: { $ref: '#/components/schemas/TraceEvent' }
+        payloads:
+          type: array
+          description: Unexpired retained content. An empty array is paired with the Span contentState and never represented as a fabricated empty payload.
+          items: { $ref: '#/components/schemas/TracePayload' }
+    TraceSpanDetailEnvelope:
+      type: object
+      additionalProperties: false
+      required: [data, meta]
+      properties:
+        data: { $ref: '#/components/schemas/TraceSpanDetail' }
+        meta: { $ref: '#/components/schemas/Meta' }
     ErrorEnvelope:
       type: object
       required: [error]

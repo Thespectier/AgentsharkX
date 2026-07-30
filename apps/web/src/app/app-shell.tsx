@@ -19,7 +19,11 @@ import {
 import { useEffect, useState } from "react";
 
 import { isMockMode, requestOperation } from "../lib/api";
-import { synchronizeLiveEvent, synchronizeStreamReset } from "../lib/query-sync";
+import {
+  synchronizeLiveEvent,
+  synchronizeStreamReset,
+  synchronizeTraceUpdate,
+} from "../lib/query-sync";
 import { useI18n } from "../lib/i18n";
 import { LiveEventsContext, useLiveEvents } from "../lib/use-live-events";
 import type { Scenario } from "../types";
@@ -71,9 +75,10 @@ const navItems = [
     label: "Audit",
     area: "audit",
     route: "/audit/$section",
-    section: "analytics",
+    section: "traces",
     icon: Activity,
     sections: [
+      { id: "traces", label: "Traces" },
       { id: "analytics", label: "Analytics" },
       { id: "traffic", label: "Traffic" },
       { id: "security-events", label: "Security events" },
@@ -125,6 +130,10 @@ export function AppShell() {
     const event = live.events[0];
     if (event) void synchronizeLiveEvent(queryClient, event);
   }, [live.revision, queryClient]);
+  useEffect(() => {
+    const summary = live.traceUpdates[0];
+    if (summary) void synchronizeTraceUpdate(queryClient, summary);
+  }, [live.traceRevision, queryClient]);
   useEffect(() => {
     if (live.resetRevision > 0) void synchronizeStreamReset(queryClient);
   }, [live.resetRevision, queryClient]);
@@ -183,6 +192,7 @@ export function AppShell() {
           </Link>
           {navItems.map((item) => {
             const Icon = item.icon;
+            const landingRoute = item.area === "audit" ? "/audit/traces" : item.route;
             const active =
               location.pathname === `/${item.area}` ||
               location.pathname.startsWith(`/${item.area}/`);
@@ -192,10 +202,10 @@ export function AppShell() {
                 <Link
                   aria-label={collapsed ? t(item.label) : undefined}
                   className={cn("nav-item", active && "nav-item--active")}
-                  params={{ section: item.section }}
+                  params={item.area === "audit" ? undefined : { section: item.section }}
                   search={{ scenario: scenario === "normal" ? undefined : scenario }}
                   title={collapsed ? t(item.label) : undefined}
-                  to={item.route}
+                  to={landingRoute}
                 >
                   <Icon aria-hidden="true" size={18} />
                   <span>{t(item.label)}</span>
@@ -207,24 +217,27 @@ export function AppShell() {
                     className="nav-subnav"
                     role="group"
                   >
-                    {item.sections.map((section) => (
-                      <Link
-                        aria-current={currentSection === section.id ? "page" : undefined}
-                        className={cn(
-                          "nav-subitem",
-                          currentSection === section.id && "nav-subitem--active",
-                        )}
-                        key={section.id}
-                        params={{ section: section.id }}
-                        search={{ scenario: scenario === "normal" ? undefined : scenario }}
-                        to={item.route}
-                      >
-                        <span>{t(section.label)}</span>
-                        {item.area === "protect" && section.id === "approvals" && pending > 0 ? (
-                          <em>{pending}</em>
-                        ) : null}
-                      </Link>
-                    ))}
+                    {item.sections.map((section) => {
+                      const traceRoute = item.area === "audit" && section.id === "traces";
+                      return (
+                        <Link
+                          aria-current={currentSection === section.id ? "page" : undefined}
+                          className={cn(
+                            "nav-subitem",
+                            currentSection === section.id && "nav-subitem--active",
+                          )}
+                          key={section.id}
+                          params={traceRoute ? undefined : { section: section.id }}
+                          search={{ scenario: scenario === "normal" ? undefined : scenario }}
+                          to={traceRoute ? "/audit/traces" : item.route}
+                        >
+                          <span>{t(section.label)}</span>
+                          {item.area === "protect" && section.id === "approvals" && pending > 0 ? (
+                            <em>{pending}</em>
+                          ) : null}
+                        </Link>
+                      );
+                    })}
                   </div>
                 ) : null}
               </div>

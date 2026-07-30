@@ -480,8 +480,10 @@ Agent 进程设置 `AGENTSHARK_TRACE_ENDPOINT`、`AGENTSHARK_TRACE_INGEST_TOKEN`
 
 同一个 Guard/Agent 实例只允许一个活动 Task；并发复用会明确抛错。MCP 必须显式标记
 `tools/call`，A2A 必须显式提供 `invoke_agent + peer_agent_id`，异步关系使用真实 Span
-Link，禁止按名称或时间推断。Phase 14 只有采集和持久化；Trace 查询 API 和页面属于
-Phase 15，当前不会在 Audit 页面显示 Trace 列表。
+Link，禁止按名称或时间推断。Phase 15 已在 **Audit / Traces** 提供 Trace 列表、详情和
+Span 详情：Trace 详情只返回构图投影，不含 Payload 正文；点击节点或 Span 行后，才通过
+已认证的 Span Detail 按需读取完整 Attributes、Resource、Events 和仍在保留期内的
+Payload。未采集或已过期内容会明确标注，不会显示为空字符串。
 
 ### 5.4 验证接入结果
 
@@ -491,7 +493,8 @@ Phase 15，当前不会在 Audit 页面显示 Trace 列表。
 2. **Trust** 中出现 AgentGuard 明确上报的身份和资源；
 3. **Audit → Security events** 中出现来源、阶段、动作和完整上游详情；
 4. 通过默认请求日志数据库确认 **Audit → Traffic** 出现网关记录；
-5. 只有共享标识完全一致时，跨来源事件才显示为已关联。
+5. **Audit → Traces** 中定位 Task，打开 Trace 并点击一个 Span 查看详情；
+6. 只有共享标识完全一致时，跨来源事件才显示为已关联。
 
 ### 5.5 正确理解 Home 和 Audit 趋势图
 

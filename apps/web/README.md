@@ -3,7 +3,7 @@
 The console supports two explicit modes. Mock mode is enabled by default for
 deterministic visual review. Setting `VITE_ENABLE_MOCKS=false` uses the Phase 7
 Go BFF, including the one-time admin-token exchange, live health/capability
-responses, Connect/Trust/Protect workflows, and live Audit REST/SSE data.
+responses, Connect/Trust/Protect workflows, and live Audit/Trace REST/SSE data.
 Neither mode gives the browser an upstream credential.
 
 ## Commands
@@ -41,10 +41,16 @@ scenario makes the first approval mutation time out so the explicit manual
 retry path can be reviewed. The expired demo ticket exercises upstream 404
 recovery. Successful writes display the BFF request ID receipt.
 
-The mock SSE emits within two seconds. Home and Audit merge each arrival by
-event ID, refresh server-derived metrics, and keep at most 1000 events. Hidden
+The mock SSE emits within two seconds. Home and Audit merge each Audit arrival
+by event ID, while payload-free Trace summary arrivals refresh Trace queries
+without moving a user's current list position or selected Span. Hidden
 documents retain data synchronization while LiveFlow reports `paused` and emits
 no particles; native EventSource reconnection resumes from its last SSE ID.
+
+**Audit / Traces** provides stable filtered pagination, deterministic
+parent/Link lanes, bounded large-Trace rendering, and an on-demand Span drawer.
+The list and Trace Detail never receive payload bodies; the drawer uses the
+separate authenticated Span Detail operation.
 
 The demo-state selector in the top bar exposes live mock, empty, loading,
 partial-failure, and total-failure states. `?scenario=...` keeps each state

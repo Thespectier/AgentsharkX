@@ -1,7 +1,8 @@
 # Upstream compatibility
 
-Last upstream verification: 2026-07-28. Phase 14 Collector/SDK notes updated
-2026-07-29 without adding a management-plane field or route.
+Last upstream verification: 2026-07-28. Phase 15 Trace query/UI notes updated
+2026-07-30 without adding or changing an upstream management-plane field or
+route.
 
 Phase 13 still prevents direct browser contact with either upstream. The
 agentgateway adapter reads request-log summary, complete detail, and Analytics
@@ -14,6 +15,8 @@ write retries. The pinned agentgateway admin token setting is not transmitted
 because the selected upstream exposes no verified native admin-auth header.
 The OTLP Collector uses the official OpenTelemetry protobuf contract and never
 reads agentgateway or AgentGuard management fields.
+Phase 15 reads only AgentsharkX-owned Trace tables through its OpenAPI contract;
+it does not change either upstream adapter or claim a new compatibility fact.
 
 ## Pinned baseline
 

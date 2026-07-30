@@ -2,10 +2,12 @@ import { QueryClient } from "@tanstack/react-query";
 import { describe, expect, it } from "vitest";
 
 import type { UnifiedEvent } from "../types";
+import type { TraceSummary } from "../generated/api-client";
 import {
   synchronizeAgentGuardData,
   synchronizeLiveEvent,
   synchronizeStreamReset,
+  synchronizeTraceUpdate,
 } from "./query-sync";
 
 function event(source: UnifiedEvent["source"], kind: UnifiedEvent["kind"]): UnifiedEvent {
@@ -30,6 +32,7 @@ function seededClient() {
     "protect-approvals",
     "system-health",
     "admin-session",
+    "audit-traces",
   ]) {
     client.setQueryData([key], { value: key });
   }
@@ -48,6 +51,25 @@ describe("query synchronization", () => {
     expect(client.getQueryState(["protect-approvals"])?.isInvalidated).toBe(true);
     expect(client.getQueryState(["connect-summary"])?.isInvalidated).toBe(false);
     expect(client.getQueryState(["system-health"])?.isInvalidated).toBe(false);
+  });
+
+  it("invalidates only Trace consumers for a summary-only Trace delivery", async () => {
+    const client = seededClient();
+    const summary = {
+      traceId: "11111111111111111111111111111111",
+    } as TraceSummary;
+    client.setQueryData(["audit-trace", summary.traceId], { value: "detail" });
+    client.setQueryData(["audit-trace-span", summary.traceId, "span"], { value: "span" });
+
+    await synchronizeTraceUpdate(client, summary);
+
+    expect(client.getQueryState(["audit-traces"])?.isInvalidated).toBe(true);
+    expect(client.getQueryState(["audit-trace", summary.traceId])?.isInvalidated).toBe(true);
+    expect(client.getQueryState(["audit-trace-span", summary.traceId, "span"])?.isInvalidated).toBe(
+      true,
+    );
+    expect(client.getQueryState(["overview"])?.isInvalidated).toBe(false);
+    expect(client.getQueryState(["audit"])?.isInvalidated).toBe(false);
   });
 
   it("invalidates all AgentGuard consumers after a mutation", async () => {

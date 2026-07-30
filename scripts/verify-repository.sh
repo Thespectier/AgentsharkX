@@ -10,6 +10,7 @@ required_files=(
   apps/server/migrations/embed.go
   apps/server/migrations/000001_persistent_audit.sql
   apps/server/migrations/000002_trace_ingest.sql
+  apps/server/migrations/000003_trace_query.sql
   apps/server/cmd/agentshark-collector/main.go
   apps/server/cmd/e2e-trace/main.go
   apps/server/internal/telemetry/normalize/normalize.go
@@ -130,8 +131,10 @@ if ! grep -qx 'AGENTSHARK_COLLECTOR_BIND=127.0.0.1' deploy/example.env ||
 fi
 
 if ! grep -Fqx '      AGENTSHARK_COLLECTOR_LISTEN_ADDR: 0.0.0.0:4318' deploy/compose.yaml ||
+  ! grep -Fqx '      AGENTSHARK_TRACE_RETENTION: ${AGENTSHARK_TRACE_RETENTION}' deploy/compose.yaml ||
+  ! grep -Fqx '      AGENTSHARK_OUTBOX_RETENTION: ${AGENTSHARK_OUTBOX_RETENTION}' deploy/compose.yaml ||
   ! grep -Fqx 'EXPOSE 8080 4318' deploy/Dockerfile; then
-  echo "the Collector container listener and published image port must remain fixed at 4318" >&2
+  echo "the Collector listener, retention settings, and published image port are incomplete" >&2
   exit 1
 fi
 

@@ -1,6 +1,6 @@
 # Database operations
 
-Phase 14 requires PostgreSQL for production Audit and Trace storage. The
+Phase 15 requires PostgreSQL for production Audit and Trace storage/query. The
 database owns normalized Audit events, OTLP Span/Link/Summary records, optional
 detail payloads, per-source ingest checkpoints, and the SSE outbox. It does not
 store agentgateway configuration, provider credentials, AgentGuard
@@ -48,6 +48,13 @@ are one transaction protected by a stable Trace-ID advisory lock, so child-first
 arrival, idempotent resend, terminal updates, and multiple Collector instances
 cannot lose counts. The BFF prunes only Audit/outbox records; the Collector
 prunes Trace metadata and independently retained Trace payloads.
+Migration `000003_trace_query.sql` adds the immutable Trace-list sequence and
+its query indexes. Stable cursors combine that sequence watermark with a
+fingerprint of every active filter; they do not use mutable timestamps as the
+page boundary. PostgreSQL evaluates each list watermark, exact total, and page
+inside one read-only repeatable-read snapshot. Trace Detail and Span Detail use
+the same snapshot boundary so a concurrent Collector commit cannot mix record
+versions inside one response.
 
 ## Startup and migrations
 
@@ -75,7 +82,7 @@ The minimum production responsibility split is:
 | --- | --- |
 | Migration owner | DDL plus read/write access to `agentshark_schema_migrations`; run only during deployment. |
 | BFF | Read/write/delete Audit, checkpoint, and outbox tables; read Trace tables and migration ledger. |
-| Collector | Read/write/delete Trace tables for idempotent merge, summary rebuild, and retention; read migration ledger for readiness. |
+| Collector | `SELECT`/`INSERT`/`UPDATE`/`DELETE` on Trace tables; `USAGE`/`SELECT` on the sequences owned by `trace_summaries.list_sequence` and `stream_outbox.sequence`; `INSERT` on `stream_outbox`; `SELECT`/`UPDATE` on the singleton `stream_outbox_state`; read the migration ledger for readiness. These grants cover idempotent merge, summary rebuild, retention, and payload-free Trace summary delivery only. |
 
 Use the probes independently:
 

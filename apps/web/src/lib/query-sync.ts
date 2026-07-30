@@ -1,6 +1,7 @@
 import type { QueryClient } from "@tanstack/react-query";
 
 import type { UnifiedEvent } from "../types";
+import type { TraceSummary } from "../generated/api-client";
 
 const overviewQueries = [["overview"]] as const;
 const systemQueries = [["system-health"], ["system-capabilities"], ["system-diagnostics"]] as const;
@@ -40,6 +41,14 @@ export async function synchronizeLiveEvent(queryClient: QueryClient, event: Unif
     ...auditQueries,
     ...sourceQueries,
     ...(event.kind === "health" ? systemQueries : []),
+  ]);
+}
+
+export async function synchronizeTraceUpdate(queryClient: QueryClient, summary: TraceSummary) {
+  await invalidate(queryClient, [
+    ["audit-traces"],
+    ["audit-trace", summary.traceId],
+    ["audit-trace-span", summary.traceId],
   ]);
 }
 

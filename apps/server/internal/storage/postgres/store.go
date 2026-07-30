@@ -6,11 +6,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
 	"github.com/Thespectier/AgentsharkX/apps/server/internal/model"
 	"github.com/Thespectier/AgentsharkX/apps/server/internal/storage"
+	"github.com/Thespectier/AgentsharkX/apps/server/internal/telemetry"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -28,9 +30,12 @@ type Options struct {
 }
 
 type Store struct {
-	pool                    *pgxpool.Pool
-	options                 Options
-	beforeOutboxStateUpdate func(int64)
+	pool                         *pgxpool.Pool
+	options                      Options
+	beforeOutboxStateUpdate      func(int64)
+	afterTraceListCount          func()
+	afterTraceDetailSummary      func()
+	afterTraceSpanDetailSpanRead func()
 }
 
 func Open(ctx context.Context, databaseURL string, options Options) (*Store, error) {
@@ -521,8 +526,19 @@ FROM stream_outbox WHERE sequence > $1 ORDER BY sequence ASC LIMIT $2
 			&document, &message.CreatedAt, &message.ExpiresAt); err != nil {
 			return storage.ReplayBatch{}, err
 		}
-		if err := decodeJSON(document, &message.Event); err != nil {
-			return storage.ReplayBatch{}, err
+		switch message.Topic {
+		case "audit":
+			if err := decodeJSON(document, &message.Event); err != nil {
+				return storage.ReplayBatch{}, err
+			}
+		case "trace":
+			var summary telemetry.Summary
+			if err := decodeJSON(document, &summary); err != nil {
+				return storage.ReplayBatch{}, err
+			}
+			message.Trace = &summary
+		default:
+			return storage.ReplayBatch{}, fmt.Errorf("unsupported outbox topic %q", message.Topic)
 		}
 		batch.Messages = append(batch.Messages, message)
 	}

@@ -40,7 +40,7 @@ func runCollector(ctx context.Context, config collectorConfig, logger *slog.Logg
 	databaseStore, err := storagepostgres.Open(ctx, config.databaseURL, storagepostgres.Options{
 		MaxConnections: int32(config.databaseMaxConns), MinConnections: int32(config.databaseMinConns),
 		ConnectTimeout: config.databaseConnect, PayloadRetention: config.payloadRetention,
-		TraceRetention: config.traceRetention,
+		TraceRetention: config.traceRetention, OutboxRetention: config.outboxRetention,
 	})
 	if err != nil {
 		return errors.New("open collector database")

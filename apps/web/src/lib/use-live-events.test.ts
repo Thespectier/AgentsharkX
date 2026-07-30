@@ -2,7 +2,8 @@ import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { UnifiedEvent } from "../types";
-import { mergeLiveEvents, useLiveEvents } from "./use-live-events";
+import type { TraceSummary } from "../generated/api-client";
+import { mergeLiveEvents, mergeTraceUpdates, useLiveEvents } from "./use-live-events";
 
 function event(id: number, source: UnifiedEvent["source"] = "agentgateway"): UnifiedEvent {
   return {
@@ -13,6 +14,28 @@ function event(id: number, source: UnifiedEvent["source"] = "agentgateway"): Uni
     severity: "info",
     summary: `request ${id}`,
     rawRef: { source, id: String(id) },
+  };
+}
+
+function trace(traceId = "11111111111111111111111111111111"): TraceSummary {
+  return {
+    traceId,
+    status: "running",
+    completeness: "partial",
+    startedAt: "2026-07-30T08:00:00Z",
+    llmCalls: 1,
+    toolCalls: 0,
+    mcpCalls: 0,
+    localToolCalls: 0,
+    a2aCalls: 0,
+    retrieverCalls: 0,
+    inputTokens: 10,
+    outputTokens: 0,
+    totalTokens: 10,
+    errorCount: 0,
+    spanCount: 2,
+    lastSpanAt: "2026-07-30T08:00:01Z",
+    updatedAt: "2026-07-30T08:00:01Z",
   };
 }
 
@@ -80,6 +103,14 @@ describe("mergeLiveEvents", () => {
   });
 });
 
+describe("mergeTraceUpdates", () => {
+  it("upserts summary-only updates by explicit Trace ID", () => {
+    const original = trace();
+    const updated = { ...original, spanCount: 3, updatedAt: "2026-07-30T08:00:02Z" };
+    expect(mergeTraceUpdates([updated], [original])).toEqual([updated]);
+  });
+});
+
 describe("useLiveEvents", () => {
   it("deduplicates deliveries by SSE ID and accepts updates to one business event", () => {
     const { result } = renderHook(() => useLiveEvents());
@@ -121,5 +152,20 @@ describe("useLiveEvents", () => {
     act(() => source.emit("traffic", event(2), "21"));
     expect(result.current.events).toEqual([event(2)]);
     expect(result.current.revision).toBe(2);
+  });
+
+  it("keeps Trace summary deliveries separate from Audit events", () => {
+    const { result } = renderHook(() => useLiveEvents());
+    const source = FakeEventSource.current!;
+    const summary = trace();
+
+    act(() => source.emit("trace", summary, "trace-10"));
+    expect(result.current.traceRevision).toBe(1);
+    expect(result.current.traceUpdates).toEqual([summary]);
+    expect(result.current.events).toEqual([]);
+
+    act(() => source.emit("trace", { ...summary, spanCount: 99 }, "trace-10"));
+    expect(result.current.traceRevision).toBe(1);
+    expect(result.current.traceUpdates).toEqual([summary]);
   });
 });

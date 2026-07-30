@@ -966,6 +966,140 @@ export type EventsEnvelope = {
   meta: Meta;
 };
 
+export type TraceStatus = "running" | "succeeded" | "failed" | "unknown";
+
+export type TraceCompleteness = "verified" | "partial";
+
+export type TraceContentState = "captured" | "redacted" | "truncated" | "not_collected" | "expired";
+
+export type TraceSummary = {
+  traceId: string;
+  taskId?: string;
+  sessionId?: string;
+  rootAgentId?: string;
+  rootSpanId?: string;
+  status: TraceStatus;
+  completeness: TraceCompleteness;
+  startedAt: string;
+  endedAt?: string;
+  durationMs?: number;
+  llmCalls: number;
+  toolCalls: number;
+  mcpCalls: number;
+  localToolCalls: number;
+  a2aCalls: number;
+  retrieverCalls: number;
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  errorCount: number;
+  riskLevel?: string;
+  spanCount: number;
+  lastSpanAt: string;
+  updatedAt: string;
+};
+
+export type TraceSpan = {
+  traceId: string;
+  spanId: string;
+  parentSpanId?: string;
+  traceState?: string;
+  name: string;
+  openInferenceKind?: string;
+  otelSpanKind: number;
+  startedAt: string;
+  endedAt: string | null;
+  durationMs: number | null;
+  statusCode: "unset" | "ok" | "error";
+  agentId?: string;
+  sessionId?: string;
+  taskId?: string;
+  provider?: string;
+  model?: string;
+  toolName?: string;
+  toolKind?: string;
+  mcpServer?: string;
+  peerAgentId?: string;
+  inputTokens: number | null;
+  outputTokens: number | null;
+  totalTokens: number | null;
+  countable: boolean;
+  contentState: TraceContentState;
+  instrumentationScope?: string;
+  instrumentationVersion?: string;
+  semanticConventionVersion?: string;
+  receivedAt: string;
+  updatedAt: string;
+};
+
+export type TraceLink = {
+  traceId: string;
+  spanId: string;
+  linkedTraceId: string;
+  linkedSpanId: string;
+};
+
+export type TraceCoverage = {
+  source: "agentshark-collector";
+  agentIds: Array<string>;
+  peerAgentIds: Array<string>;
+  providers: Array<string>;
+  models: Array<string>;
+  mcpServers: Array<string>;
+  spanKinds: Array<string>;
+  instrumentationScopes: Array<string>;
+  contentStates: Array<TraceContentState>;
+};
+
+export type TraceListEnvelope = {
+  data: { items: Array<TraceSummary>; nextCursor: string | null; total: number };
+  meta: Meta;
+};
+
+export type TraceDetail = {
+  summary: TraceSummary;
+  rootSpan?: TraceSpan;
+  spans: Array<TraceSpan>;
+  links: Array<TraceLink>;
+  coverage: TraceCoverage;
+  totalSpans: number;
+  totalLinks: number;
+  spansTruncated: boolean;
+  linksTruncated: boolean;
+};
+
+export type TraceDetailEnvelope = { data: TraceDetail; meta: Meta };
+
+export type TraceEvent = {
+  name: string;
+  time: string;
+  attributes: { [key: string]: unknown };
+  droppedAttributesCount: number;
+};
+
+export type TracePayload = {
+  kind: string;
+  contentType: string;
+  encoding: string;
+  payloadBytes?: string;
+  payloadJson?: unknown;
+  redactionState: "captured" | "redacted" | "truncated";
+  sizeBytes: number;
+  expiresAt: string | null;
+  createdAt: string;
+};
+
+export type TraceSpanDetail = {
+  span: TraceSpan;
+  statusMessage?: string;
+  attributes: { [key: string]: unknown };
+  resource: { [key: string]: unknown };
+  events: Array<TraceEvent>;
+  payloads: Array<TracePayload>;
+};
+
+export type TraceSpanDetailEnvelope = { data: TraceSpanDetail; meta: Meta };
+
 export type ErrorEnvelope = {
   error: { code: string; message: string; source?: Source; requestId: string; retryable: boolean };
 };
@@ -1001,6 +1135,8 @@ export const implementedOperations = {
   getAgent: { method: "GET", path: "/api/v1/trust/agents/{agentId}" },
   getAuditAnalytics: { method: "GET", path: "/api/v1/audit/analytics" },
   getAuditEvent: { method: "GET", path: "/api/v1/audit/events/{source}/{eventId}" },
+  getAuditTrace: { method: "GET", path: "/api/v1/audit/traces/{traceId}" },
+  getAuditTraceSpan: { method: "GET", path: "/api/v1/audit/traces/{traceId}/spans/{spanId}" },
   getCapabilities: { method: "GET", path: "/api/v1/system/capabilities" },
   getConnectAnalytics: { method: "GET", path: "/api/v1/connect/analytics" },
   getConnectSummary: { method: "GET", path: "/api/v1/connect/summary" },
@@ -1025,6 +1161,7 @@ export const implementedOperations = {
   listApprovals: { method: "GET", path: "/api/v1/protect/approvals" },
   listAuditEvents: { method: "GET", path: "/api/v1/audit/events" },
   listAuditSessions: { method: "GET", path: "/api/v1/audit/sessions" },
+  listAuditTraces: { method: "GET", path: "/api/v1/audit/traces" },
   listGatewayMcpServers: { method: "GET", path: "/api/v1/connect/mcp/servers" },
   listModels: { method: "GET", path: "/api/v1/connect/llm/models" },
   listPolicies: { method: "GET", path: "/api/v1/protect/policies" },
@@ -1074,6 +1211,8 @@ export interface OperationResponses {
   getAgent: TrustAgentWorkspaceEnvelope;
   getAuditAnalytics: AuditEnvelope;
   getAuditEvent: EventEnvelope;
+  getAuditTrace: TraceDetailEnvelope;
+  getAuditTraceSpan: TraceSpanDetailEnvelope;
   getCapabilities: CapabilitiesEnvelope;
   getConnectAnalytics: AnalyticsEnvelope;
   getConnectSummary: ConnectSummaryEnvelope;
@@ -1095,6 +1234,7 @@ export interface OperationResponses {
   listApprovals: ApprovalPageEnvelope;
   listAuditEvents: EventsEnvelope;
   listAuditSessions: AuditSessionsEnvelope;
+  listAuditTraces: TraceListEnvelope;
   listGatewayMcpServers: MCPPageEnvelope;
   listModels: ModelPageEnvelope;
   listPolicies: ProtectSnapshotEnvelope;

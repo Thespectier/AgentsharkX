@@ -1,6 +1,7 @@
 package memory
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"testing"
@@ -30,6 +31,7 @@ func TestTraceStoreHandlesOutOfOrderIdempotentAndTerminalUpdates(t *testing.T) {
 	root := memoryTraceSpan("1111111111111111", "AGENT", false, now, time.Time{})
 	root.AgentID, root.SessionID, root.TaskID = "agent", "session", "task"
 	root.Attributes[telemetry.AttributeTaskRoot] = true
+	root.Attributes["private.attribute"] = "attribute-secret"
 	now = now.Add(3 * time.Second)
 	running, err := store.WriteBatch(t.Context(), telemetry.TraceBatch{Spans: []telemetry.Span{root}})
 	if err != nil || running.Inserted != 1 {
@@ -164,6 +166,147 @@ func TestTraceStorePrunesMetadataByConfiguredRetention(t *testing.T) {
 		t.Fatalf("expired spans error = %v", err)
 	}
 }
+
+func TestTraceStoreListsFilteredStableCursorPages(t *testing.T) {
+	now := time.Date(2026, 7, 30, 8, 0, 0, 0, time.UTC)
+	store := New(Options{Now: func() time.Time { return now }})
+	writeSummaryTrace(t, store, "11111111111111111111111111111111", "1111111111111111", "agent-a", "session-a", "task-a", now.Add(-3*time.Minute), false, false)
+	writeSummaryTrace(t, store, "22222222222222222222222222222222", "2222222222222222", "agent-b", "session-b", "task-b", now.Add(-2*time.Minute), true, false)
+	writeSummaryTrace(t, store, "33333333333333333333333333333333", "3333333333333333", "agent-c", "session-c", "task-c", now.Add(-time.Minute), false, true)
+
+	first, err := store.ListTraceSummaries(t.Context(), storage.TraceFilter{Limit: 2})
+	if err != nil || len(first.Items) != 2 || first.Items[0].TraceID != "33333333333333333333333333333333" ||
+		first.Items[1].TraceID != "22222222222222222222222222222222" || first.Total != 3 || first.NextCursor == nil {
+		t.Fatalf("first Trace page = %#v, %v", first, err)
+	}
+	writeSummaryTrace(t, store, "44444444444444444444444444444444", "4444444444444444", "agent-d", "session-d", "task-d", now, false, false)
+	next, err := store.ListTraceSummaries(t.Context(), storage.TraceFilter{Cursor: *first.NextCursor, Limit: 2})
+	if err != nil || len(next.Items) != 1 || next.Items[0].TraceID != "11111111111111111111111111111111" || next.Total != 3 {
+		t.Fatalf("stable next Trace page = %#v, %v", next, err)
+	}
+	if _, err := store.ListTraceSummaries(t.Context(), storage.TraceFilter{Cursor: *first.NextCursor, Limit: 2, Status: "succeeded"}); !errors.Is(err, storage.ErrInvalidTraceCursor) {
+		t.Fatalf("cursor reused with changed filter: %v", err)
+	}
+
+	hasA2A := true
+	filtered, err := store.ListTraceSummaries(t.Context(), storage.TraceFilter{
+		Limit: 10, AgentID: "agent-b", HasA2A: &hasA2A, Query: "SESSION-B",
+		StartedAfter: timePointer(now.Add(-3 * time.Minute)), StartedBefore: timePointer(now),
+	})
+	if err != nil || len(filtered.Items) != 1 || filtered.Items[0].TaskID != "task-b" || filtered.Total != 1 {
+		t.Fatalf("filtered Trace page = %#v, %v", filtered, err)
+	}
+	hasError := true
+	failed, err := store.ListTraceSummaries(t.Context(), storage.TraceFilter{Limit: 10, Status: "failed", HasError: &hasError})
+	if err != nil || len(failed.Items) != 1 || failed.Items[0].TaskID != "task-c" {
+		t.Fatalf("error Trace filter = %#v, %v", failed, err)
+	}
+}
+
+func TestTraceStoreReturnsBoundedGraphAndAllUnexpiredSpanPayloads(t *testing.T) {
+	now := time.Date(2026, 7, 30, 8, 0, 0, 0, time.UTC)
+	store := New(Options{Now: func() time.Time { return now }})
+	root := memoryTraceSpan("1111111111111111", "AGENT", false, now, now.Add(3*time.Second))
+	root.AgentID, root.SessionID, root.TaskID = "agent", "session", "task"
+	root.Attributes[telemetry.AttributeTaskRoot] = true
+	root.Attributes["private.attribute"] = "attribute-secret"
+	first := memoryTraceSpan("2222222222222222", "LLM", true, now.Add(time.Second), now.Add(2*time.Second))
+	second := memoryTraceSpan("3333333333333333", "TOOL", true, now.Add(2*time.Second), now.Add(3*time.Second))
+	expiresAt := now.Add(time.Hour)
+	payloadA := json.RawMessage(`{"prompt":"one"}`)
+	payloadZ := json.RawMessage(`{"completion":"two"}`)
+	links := []telemetry.Link{}
+	for index, span := range []telemetry.Span{root, first, second} {
+		links = append(links, telemetry.Link{
+			TraceID: memoryTraceID, SpanID: span.SpanID,
+			LinkedTraceID: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", LinkedSpanID: []string{"aaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbb", "cccccccccccccccc"}[index],
+			Attributes: map[string]any{"index": index},
+		})
+	}
+	batch := telemetry.TraceBatch{
+		Spans: []telemetry.Span{second, root, first}, Links: links,
+		Payloads: []telemetry.Payload{
+			{TraceID: memoryTraceID, SpanID: root.SpanID, Kind: "completion", PayloadJSON: payloadZ, RedactionState: telemetry.ContentStateCaptured, SizeBytes: int64(len(payloadZ)), ExpiresAt: &expiresAt},
+			{TraceID: memoryTraceID, SpanID: root.SpanID, Kind: "prompt", PayloadJSON: payloadA, RedactionState: telemetry.ContentStateCaptured, SizeBytes: int64(len(payloadA)), ExpiresAt: &expiresAt},
+		},
+	}
+	_, err := store.WriteBatch(t.Context(), batch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	replay, err := store.ReplayAfter(t.Context(), 0, 10)
+	if err != nil || replay.Latest != 1 || len(replay.Messages) != 1 || replay.Messages[0].Topic != "trace" ||
+		replay.Messages[0].EventKind != "trace" || replay.Messages[0].Trace == nil || replay.Messages[0].Trace.TraceID != memoryTraceID {
+		t.Fatalf("Trace outbox replay = %#v, %v", replay, err)
+	}
+	document, err := json.Marshal(replay.Messages[0])
+	if err != nil || bytes.Contains(document, []byte("attribute-secret")) || bytes.Contains(document, []byte(`"prompt"`)) {
+		t.Fatalf("Trace outbox leaked detail: %s, %v", document, err)
+	}
+	if _, err := store.WriteBatch(t.Context(), batch); err != nil {
+		t.Fatal(err)
+	}
+	duplicateReplay, err := store.ReplayAfter(t.Context(), 1, 10)
+	if err != nil || duplicateReplay.Latest != 1 || len(duplicateReplay.Messages) != 0 {
+		t.Fatalf("duplicate Trace emitted outbox = %#v, %v", duplicateReplay, err)
+	}
+	graph, err := store.GetTraceGraph(t.Context(), memoryTraceID, storage.TraceGraphLimits{SpanLimit: 2, LinkLimit: 1})
+	if err != nil || graph.TotalSpans != 3 || len(graph.Spans) != 2 || !graph.SpansTruncated ||
+		graph.TotalLinks != 3 || len(graph.Links) != 1 || !graph.LinksTruncated {
+		t.Fatalf("bounded Trace graph = %#v, %v", graph, err)
+	}
+	detail, err := store.GetTraceDetail(t.Context(), memoryTraceID, storage.TraceGraphLimits{SpanLimit: 2, LinkLimit: 1})
+	if err != nil || detail.Summary.SpanCount != detail.Graph.TotalSpans || detail.RootSpan == nil ||
+		detail.RootSpan.SpanID != root.SpanID || len(detail.Graph.Spans) != 2 {
+		t.Fatalf("atomic Trace detail = %#v, %v", detail, err)
+	}
+	span, err := store.GetTraceSpan(t.Context(), memoryTraceID, root.SpanID)
+	if err != nil || span.TaskID != "task" {
+		t.Fatalf("single Trace Span = %#v, %v", span, err)
+	}
+	payloads, err := store.GetTracePayloads(t.Context(), memoryTraceID, root.SpanID)
+	if err != nil || len(payloads) != 2 || payloads[0].Kind != "completion" || payloads[1].Kind != "prompt" {
+		t.Fatalf("Trace Span payloads = %#v, %v", payloads, err)
+	}
+	spanDetail, err := store.GetTraceSpanDetail(t.Context(), memoryTraceID, root.SpanID)
+	if err != nil || spanDetail.Span.SpanID != root.SpanID || len(spanDetail.Payloads) != 2 ||
+		spanDetail.Payloads[0].Kind != "completion" || spanDetail.Payloads[1].Kind != "prompt" {
+		t.Fatalf("atomic Trace Span detail = %#v, %v", spanDetail, err)
+	}
+	empty, err := store.GetTracePayloads(t.Context(), memoryTraceID, first.SpanID)
+	if err != nil || len(empty) != 0 {
+		t.Fatalf("empty Trace Span payloads = %#v, %v", empty, err)
+	}
+	if _, err := store.GetTracePayloads(t.Context(), memoryTraceID, "9999999999999999"); !errors.Is(err, storage.ErrTraceNotFound) {
+		t.Fatalf("missing Trace Span payload error = %v", err)
+	}
+}
+
+func writeSummaryTrace(t *testing.T, store *Store, traceID, spanID, agentID, sessionID, taskID string, startedAt time.Time, hasA2A, hasError bool) {
+	t.Helper()
+	root := memoryTraceSpan(spanID, "AGENT", false, startedAt, startedAt.Add(time.Second))
+	root.TraceID, root.AgentID, root.SessionID, root.TaskID = traceID, agentID, sessionID, taskID
+	root.Attributes[telemetry.AttributeTaskRoot] = true
+	spans := []telemetry.Span{root}
+	if hasA2A {
+		interaction := memoryTraceSpan("a"+spanID[1:], "AGENT", true, startedAt, startedAt.Add(time.Second))
+		interaction.TraceID, interaction.PeerAgentID = traceID, "peer"
+		interaction.Attributes["gen_ai.operation.name"] = "invoke_agent"
+		spans = append(spans, interaction)
+	}
+	if hasError {
+		root.StatusCode = telemetry.StatusError
+		spans[0] = root
+		interaction := memoryTraceSpan("b"+spanID[1:], "LLM", true, startedAt, startedAt.Add(time.Second))
+		interaction.TraceID, interaction.StatusCode = traceID, telemetry.StatusError
+		spans = append(spans, interaction)
+	}
+	if _, err := store.WriteBatch(t.Context(), telemetry.TraceBatch{Spans: spans}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func timePointer(value time.Time) *time.Time { return &value }
 
 func memoryTraceSpan(spanID, kind string, countable bool, startedAt, endedAt time.Time) telemetry.Span {
 	span := telemetry.Span{

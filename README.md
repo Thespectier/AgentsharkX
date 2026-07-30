@@ -7,7 +7,7 @@ information architecture for connection management, trusted runtime context,
 protection workflows, and audit views without entering the agent data plane or
 reimplementing either upstream.
 
-The repository is at the **0.9.0 Phase 14 preview** with the Phase 8 Connect LLM,
+The repository is at the **0.9.0 Phase 15 preview** with the Phase 8 Connect LLM,
 Phase 9 Connect MCP, Phase 10 Connect Traffic, Phase 11 Protect gateway-policy,
 and Phase 12 Protect guardrail management rounds applied. Connect reads explicit
 agentgateway providers, models, MCP targets, and routes, and manages verified
@@ -57,8 +57,12 @@ Phase 14 adds a separate authenticated OTLP/HTTP protobuf Collector, durable
 Trace spans/links/summaries/payloads, and a repository-local Python SDK. The SDK
 creates explicit Task roots, initializes OpenInference LangChain tracing once,
 wraps the pinned AgentGuard client, and provides explicit MCP and A2A APIs with
-W3C context propagation. Trace ingest is available now; Trace query APIs and UI
-remain Phase 15 work.
+W3C context propagation. Phase 15 adds authenticated Trace list, Trace detail,
+and Span detail APIs plus the **Audit / Traces** workflow. Stable filtered
+pagination and summary-only Trace updates locate a task without moving the
+current page; deterministic parent and Link edges use only explicit OTLP IDs.
+Trace detail contains graph projections but no payload body. Opening one Span
+loads its complete retained attributes, Resource, Events, and payloads on demand.
 The preview adds a reproducible non-root production image with the real Web
 bundle embedded in the Go BFF, source-specific System diagnostics, a full-path
 release E2E, supply-chain artifacts, and eight screenshot baselines.

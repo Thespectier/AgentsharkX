@@ -37,6 +37,7 @@ type collectorConfig struct {
 	payloadLimitBytes    int64
 	payloadRetention     time.Duration
 	traceRetention       time.Duration
+	outboxRetention      time.Duration
 }
 
 func loadCollectorConfig(lookup lookupFunc) (collectorConfig, error) {
@@ -44,7 +45,7 @@ func loadCollectorConfig(lookup lookupFunc) (collectorConfig, error) {
 	if databaseURL == "" {
 		// Local preview may share the BFF account. A dedicated variable takes
 		// precedence so production can grant the Collector only Trace-table
-		// read, write, and retention capabilities.
+		// read/write/retention and payload-free Trace-outbox capabilities.
 		databaseURL = valueOr(lookup, "AGENTSHARK_DATABASE_URL", "")
 	}
 	config := collectorConfig{
@@ -55,6 +56,7 @@ func loadCollectorConfig(lookup lookupFunc) (collectorConfig, error) {
 		maxSpansPerRequest: defaultMaxSpansPerRequest,
 		contentMode:        telemetry.ContentModeMetadata, payloadLimitBytes: defaultTracePayloadLimitBytes,
 		payloadRetention: 24 * time.Hour, traceRetention: 30 * 24 * time.Hour,
+		outboxRetention: 24 * time.Hour,
 	}
 	config.listenAddress = valueOr(lookup, "AGENTSHARK_COLLECTOR_LISTEN_ADDR", config.listenAddress)
 
@@ -87,6 +89,9 @@ func loadCollectorConfig(lookup lookupFunc) (collectorConfig, error) {
 		return collectorConfig{}, err
 	}
 	if config.traceRetention, err = durationValue(lookup, "AGENTSHARK_TRACE_RETENTION", config.traceRetention); err != nil {
+		return collectorConfig{}, err
+	}
+	if config.outboxRetention, err = durationValue(lookup, "AGENTSHARK_OUTBOX_RETENTION", config.outboxRetention); err != nil {
 		return collectorConfig{}, err
 	}
 	config.contentMode = telemetry.ContentMode(strings.ToLower(valueOr(lookup, "AGENTSHARK_TRACE_CONTENT_MODE", string(config.contentMode))))
@@ -142,6 +147,9 @@ func (config collectorConfig) validate() error {
 	}
 	if config.traceRetention < time.Hour {
 		validationErrors = append(validationErrors, errors.New("AGENTSHARK_TRACE_RETENTION must be at least 1h"))
+	}
+	if config.outboxRetention < time.Minute {
+		validationErrors = append(validationErrors, errors.New("AGENTSHARK_OUTBOX_RETENTION must be at least 1m"))
 	}
 	return errors.Join(validationErrors...)
 }

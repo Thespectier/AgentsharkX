@@ -39,6 +39,9 @@ required_paths=(
   /api/v1/protect/approvals
   '/api/v1/protect/approvals/{ticketId}/approve'
   '/api/v1/protect/approvals/{ticketId}/deny'
+  /api/v1/audit/traces
+  '/api/v1/audit/traces/{traceId}'
+  '/api/v1/audit/traces/{traceId}/spans/{spanId}'
   /api/v1/audit/analytics
   /api/v1/audit/events
   '/api/v1/audit/events/{source}/{eventId}'
