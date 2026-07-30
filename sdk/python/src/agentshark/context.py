@@ -13,6 +13,7 @@ class RuntimeContext:
     session_id: str
     task_id: str
     trace_id: str
+    root_span_id: str
     user_id: str | None
     environment: str
 

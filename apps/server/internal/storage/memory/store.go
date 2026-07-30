@@ -31,6 +31,11 @@ type storedEvent struct {
 	summary  []byte
 }
 
+type storedDemoRun struct {
+	sequence int64
+	run      model.DemoRun
+}
+
 type Store struct {
 	mu                       sync.RWMutex
 	options                  Options
@@ -46,6 +51,8 @@ type Store struct {
 	traceSummaries           map[string]telemetry.Summary
 	traceSummarySequences    map[string]int64
 	nextTraceSummarySequence int64
+	demoRuns                 map[string]storedDemoRun
+	nextDemoListSequence     int64
 }
 
 func New(options Options) *Store {
@@ -67,6 +74,7 @@ func New(options Options) *Store {
 		traceSpans: make(map[string]telemetry.Span), traceLinks: make(map[string]telemetry.Link),
 		tracePayloads: make(map[string]telemetry.Payload), traceSummaries: make(map[string]telemetry.Summary),
 		traceSummarySequences: make(map[string]int64),
+		demoRuns:              make(map[string]storedDemoRun),
 	}
 }
 
@@ -318,6 +326,15 @@ func (store *Store) ReplayAfter(_ context.Context, after int64, limit int) (stor
 		if message.Trace != nil {
 			trace := cloneTraceSummary(*message.Trace)
 			message.Trace = &trace
+		}
+		if message.Demo != nil {
+			demoEvent := *message.Demo
+			if demoEvent.Approval != nil {
+				approval := *demoEvent.Approval
+				approval.MatchedRules = append([]string(nil), approval.MatchedRules...)
+				demoEvent.Approval = &approval
+			}
+			message.Demo = &demoEvent
 		}
 		if message.ExpiresAt != nil {
 			expiresAt := *message.ExpiresAt

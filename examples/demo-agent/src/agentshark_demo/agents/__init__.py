@@ -1,0 +1,1 @@
+"""Deterministic peer-agent helpers."""

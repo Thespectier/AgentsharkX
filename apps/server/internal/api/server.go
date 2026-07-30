@@ -19,6 +19,7 @@ import (
 	"github.com/Thespectier/AgentsharkX/apps/server/internal/audit"
 	"github.com/Thespectier/AgentsharkX/apps/server/internal/auth"
 	"github.com/Thespectier/AgentsharkX/apps/server/internal/connect"
+	"github.com/Thespectier/AgentsharkX/apps/server/internal/demo"
 	"github.com/Thespectier/AgentsharkX/apps/server/internal/gateway"
 	"github.com/Thespectier/AgentsharkX/apps/server/internal/guard"
 	"github.com/Thespectier/AgentsharkX/apps/server/internal/model"
@@ -46,6 +47,7 @@ type ServerConfig struct {
 	Protect              *protect.Service
 	Audit                *audit.Service
 	Traces               *tracequery.Service
+	Demo                 *demo.Service
 	Stream               *stream.Hub
 	Outbox               storage.OutboxStore
 	Readiness            storage.Readiness
@@ -90,6 +92,13 @@ func (server *server) routes() {
 	server.mux.Handle("GET /api/v1/system/diagnostics", server.requireAuth(http.HandlerFunc(server.diagnostics)))
 	server.mux.Handle("GET /api/v1/overview", server.requireAuth(http.HandlerFunc(server.overview)))
 	server.mux.Handle("GET /api/v1/stream", server.requireAuth(http.HandlerFunc(server.eventStream)))
+	server.mux.Handle("GET /api/v1/demo/status", server.requireAuth(http.HandlerFunc(server.demoStatus)))
+	server.mux.Handle("GET /api/v1/demo/scenarios", server.requireAuth(http.HandlerFunc(server.demoScenarios)))
+	server.mux.Handle("GET /api/v1/demo/runs", server.requireAuth(http.HandlerFunc(server.demoRuns)))
+	server.mux.Handle("POST /api/v1/demo/runs", server.requireAuth(server.requireCSRF(http.HandlerFunc(server.createDemoRun))))
+	server.mux.Handle("GET /api/v1/demo/runs/{runId}", server.requireAuth(http.HandlerFunc(server.demoRun)))
+	server.mux.Handle("POST /api/v1/demo/runs/{runId}/cancel", server.requireAuth(server.requireCSRF(http.HandlerFunc(server.cancelDemoRun))))
+	server.mux.Handle("GET /api/v1/demo/runs/{runId}/events", server.requireAuth(http.HandlerFunc(server.demoRunEvents)))
 	server.mux.Handle("GET /api/v1/connect/summary", server.requireAuth(http.HandlerFunc(server.connectSummary)))
 	server.mux.Handle("GET /api/v1/connect/analytics", server.requireAuth(http.HandlerFunc(server.connectAnalytics)))
 	server.mux.Handle("GET /api/v1/connect/setup", server.requireAuth(http.HandlerFunc(server.connectSetup)))
@@ -1264,6 +1273,271 @@ func (server *server) decodeMutation(writer http.ResponseWriter, request *http.R
 
 func source(value model.Source) *model.Source { return &value }
 
+func (server *server) demoStatus(writer http.ResponseWriter, request *http.Request) {
+	if server.config.Demo == nil {
+		server.writeJSON(writer, http.StatusOK, model.DemoStatusEnvelope{
+			Data: model.DemoStatus{Enabled: false, Ready: false, MaxConcurrency: 1, Components: []model.DemoStatusComponent{}},
+			Meta: model.Meta{FetchedAt: time.Now().UTC()},
+		})
+		return
+	}
+	server.writeJSON(writer, http.StatusOK, server.config.Demo.Status(request.Context()))
+}
+
+func (server *server) demoScenarios(writer http.ResponseWriter, request *http.Request) {
+	if server.config.Demo == nil {
+		server.writeError(writer, request, http.StatusServiceUnavailable, "DEMO_UNAVAILABLE", "Demo Lab is unavailable", nil, true)
+		return
+	}
+	server.writeJSON(writer, http.StatusOK, server.config.Demo.Scenarios())
+}
+
+func (server *server) demoRuns(writer http.ResponseWriter, request *http.Request) {
+	if server.config.Demo == nil {
+		server.writeError(writer, request, http.StatusServiceUnavailable, "DEMO_UNAVAILABLE", "Demo Lab is unavailable", nil, true)
+		return
+	}
+	query, ok := server.resourceQuery(writer, request)
+	if !ok {
+		return
+	}
+	if query.search != "" {
+		server.writeError(writer, request, http.StatusBadRequest, "INVALID_REQUEST", "Demo run history does not support search", nil, false)
+		return
+	}
+	envelope, err := server.config.Demo.List(request.Context(), storage.DemoRunFilter{Cursor: query.cursor, Limit: query.limit})
+	if err != nil {
+		server.writeDemoError(writer, request, err)
+		return
+	}
+	server.writeJSON(writer, http.StatusOK, envelope)
+}
+
+func (server *server) createDemoRun(writer http.ResponseWriter, request *http.Request) {
+	if server.config.Demo == nil {
+		server.writeError(writer, request, http.StatusConflict, "DEMO_DISABLED", "Demo Lab is disabled", nil, false)
+		return
+	}
+	var input model.DemoCreateRunRequest
+	if !server.decodeMutation(writer, request, &input) {
+		return
+	}
+	envelope, err := server.config.Demo.Create(request.Context(), input, requestID(request.Context()), "admin")
+	if err != nil {
+		server.writeDemoError(writer, request, err)
+		return
+	}
+	server.writeJSON(writer, http.StatusAccepted, envelope)
+}
+
+func (server *server) demoRun(writer http.ResponseWriter, request *http.Request) {
+	if server.config.Demo == nil {
+		server.writeError(writer, request, http.StatusServiceUnavailable, "DEMO_UNAVAILABLE", "Demo Lab is unavailable", nil, true)
+		return
+	}
+	runID := request.PathValue("runId")
+	if !validDemoRunID(runID) {
+		server.writeError(writer, request, http.StatusNotFound, "NOT_FOUND", "Demo run was not found", nil, false)
+		return
+	}
+	envelope, err := server.config.Demo.Get(request.Context(), runID)
+	if err != nil {
+		server.writeDemoError(writer, request, err)
+		return
+	}
+	server.writeJSON(writer, http.StatusOK, envelope)
+}
+
+func (server *server) cancelDemoRun(writer http.ResponseWriter, request *http.Request) {
+	if server.config.Demo == nil {
+		server.writeError(writer, request, http.StatusConflict, "DEMO_DISABLED", "Demo Lab is disabled", nil, false)
+		return
+	}
+	runID := request.PathValue("runId")
+	if !validDemoRunID(runID) {
+		server.writeError(writer, request, http.StatusNotFound, "NOT_FOUND", "Demo run was not found", nil, false)
+		return
+	}
+	var input model.DemoCancelRunRequest
+	if !server.decodeMutation(writer, request, &input) {
+		return
+	}
+	envelope, err := server.config.Demo.Cancel(request.Context(), runID, input)
+	if err != nil {
+		server.writeDemoError(writer, request, err)
+		return
+	}
+	server.writeJSON(writer, http.StatusOK, envelope)
+}
+
+func (server *server) writeDemoError(writer http.ResponseWriter, request *http.Request, err error) {
+	var notReady *demo.NotReadyError
+	switch {
+	case errors.Is(err, demo.ErrDisabled):
+		server.writeError(writer, request, http.StatusConflict, "DEMO_DISABLED", "Demo Lab is disabled", nil, false)
+	case errors.Is(err, demo.ErrInvalid), errors.Is(err, storage.ErrInvalidDemoCursor):
+		server.writeError(writer, request, http.StatusBadRequest, "INVALID_REQUEST", "the Demo Lab request is invalid", nil, false)
+	case errors.As(err, &notReady):
+		server.writeJSON(writer, http.StatusConflict, model.ErrorEnvelope{Error: model.APIError{
+			Code: "DEMO_NOT_READY", Message: "required Demo Lab components are not ready",
+			RequestID: requestID(request.Context()), Retryable: true,
+			FailedChecks: append([]model.DemoStatusComponent(nil), notReady.FailedChecks...),
+		}})
+	case errors.Is(err, demo.ErrNotReady):
+		server.writeError(writer, request, http.StatusConflict, "DEMO_NOT_READY", "required Demo Lab components are not ready", nil, true)
+	case errors.Is(err, storage.ErrDemoRunBusy), errors.Is(err, demo.ErrRunnerBusy):
+		server.writeError(writer, request, http.StatusConflict, "DEMO_RUN_BUSY", "another Demo run is active", nil, false)
+	case errors.Is(err, storage.ErrDemoRunConflict), errors.Is(err, demo.ErrStateChanged), errors.Is(err, demo.ErrRunnerConflict):
+		server.writeError(writer, request, http.StatusConflict, "DEMO_RUN_STATE_CHANGED", "the Demo run changed; refresh before retrying", nil, false)
+	case errors.Is(err, storage.ErrDemoRunNotFound), errors.Is(err, demo.ErrRunnerNotFound):
+		server.writeError(writer, request, http.StatusNotFound, "NOT_FOUND", "Demo run was not found", nil, false)
+	case errors.Is(err, demo.ErrRunnerContract):
+		server.writeError(writer, request, http.StatusBadGateway, "DEMO_RUNNER_CONTRACT_MISMATCH", "Demo Runner returned an incompatible response", nil, false)
+	case errors.Is(err, demo.ErrRunnerUnavailable):
+		server.writeError(writer, request, http.StatusServiceUnavailable, "DEMO_RUNNER_UNAVAILABLE", "Demo Runner is unavailable", nil, true)
+	default:
+		server.writeError(writer, request, http.StatusServiceUnavailable, "DEMO_UNAVAILABLE", "Demo Lab persistence is unavailable", nil, true)
+	}
+}
+
+func (server *server) demoRunEvents(writer http.ResponseWriter, request *http.Request) {
+	if server.config.Demo == nil {
+		server.writeError(writer, request, http.StatusServiceUnavailable, "DEMO_UNAVAILABLE", "Demo Lab streaming is unavailable", nil, true)
+		return
+	}
+	runID := request.PathValue("runId")
+	if !validDemoRunID(runID) {
+		server.writeError(writer, request, http.StatusNotFound, "NOT_FOUND", "Demo run was not found", nil, false)
+		return
+	}
+	flusher, ok := writer.(http.Flusher)
+	if !ok {
+		server.writeError(writer, request, http.StatusInternalServerError, "STREAM_UNAVAILABLE", "event streaming is unavailable", nil, true)
+		return
+	}
+	rawLastSequence, hasLastSequence := request.Header["Last-Event-Id"]
+	lastSequence := int64(0)
+	if hasLastSequence {
+		raw := ""
+		if len(rawLastSequence) > 0 {
+			raw = strings.TrimSpace(rawLastSequence[0])
+		}
+		parsed, err := parseLastEventID(raw)
+		if err != nil {
+			server.writeError(writer, request, http.StatusBadRequest, "INVALID_LAST_EVENT_ID", "Last-Event-ID must be a non-negative 64-bit integer", nil, false)
+			return
+		}
+		lastSequence = parsed
+	}
+	notifications, unsubscribe := server.config.Stream.Subscribe()
+	defer unsubscribe()
+	writer.Header().Set("Content-Type", "text/event-stream")
+	writer.Header().Set("Cache-Control", "no-cache, no-store")
+	writer.Header().Set("Connection", "keep-alive")
+	writer.Header().Set("X-Accel-Buffering", "no")
+	const batchSize = 1000
+	if !hasLastSequence {
+		snapshot, err := server.config.Demo.StreamSnapshot(request.Context(), runID)
+		if err != nil {
+			server.writeDemoError(writer, request, err)
+			return
+		}
+		if err := writeDemoSnapshotSSE(writer, snapshot.LatestSequence, snapshot.Run); err != nil {
+			return
+		}
+		lastSequence = snapshot.LatestSequence
+	} else {
+		batch, err := server.config.Demo.ReplayAfter(request.Context(), runID, lastSequence, batchSize)
+		if err != nil {
+			server.writeDemoError(writer, request, err)
+			return
+		}
+		resetReason := ""
+		if batch.Latest == 0 && lastSequence > 0 {
+			resetReason = "outbox_retention"
+		} else if lastSequence > batch.Latest {
+			resetReason = "cursor_ahead"
+		} else if (batch.Oldest > 0 && lastSequence < batch.Oldest) || (batch.Oldest == 0 && batch.Latest > lastSequence) {
+			resetReason = "outbox_retention"
+		}
+		if resetReason != "" {
+			if err := writeSSEReset(writer, batch.Latest, resetReason, batch.Oldest); err != nil {
+				return
+			}
+			lastSequence = batch.Latest
+		} else {
+			for _, message := range batch.Messages {
+				if err := writeDemoSSE(writer, message); err != nil {
+					return
+				}
+				lastSequence = message.Sequence
+			}
+		}
+	}
+	flusher.Flush()
+	drain := func() error {
+		for {
+			batch, err := server.config.Demo.ReplayAfter(request.Context(), runID, lastSequence, batchSize)
+			if err != nil {
+				return err
+			}
+			for _, message := range batch.Messages {
+				if message.Sequence <= lastSequence {
+					continue
+				}
+				if err := writeDemoSSE(writer, message); err != nil {
+					return err
+				}
+				lastSequence = message.Sequence
+			}
+			if len(batch.Messages) < batchSize {
+				return nil
+			}
+		}
+	}
+	heartbeat := time.NewTicker(15 * time.Second)
+	defer heartbeat.Stop()
+	replay := time.NewTicker(server.config.StreamReplayInterval)
+	defer replay.Stop()
+	for {
+		select {
+		case <-request.Context().Done():
+			return
+		case _, open := <-notifications:
+			if !open || drain() != nil {
+				return
+			}
+			flusher.Flush()
+		case <-replay.C:
+			if drain() != nil {
+				return
+			}
+			flusher.Flush()
+		case now := <-heartbeat.C:
+			payload, _ := json.Marshal(map[string]time.Time{"at": now.UTC()})
+			if _, err := fmt.Fprintf(writer, "event: heartbeat\ndata: %s\n\n", payload); err != nil {
+				return
+			}
+			flusher.Flush()
+		}
+	}
+}
+
+func validDemoRunID(value string) bool {
+	if len(value) != 36 || value[8] != '-' || value[13] != '-' || value[18] != '-' || value[23] != '-' {
+		return false
+	}
+	for index, character := range value {
+		if index == 8 || index == 13 || index == 18 || index == 23 {
+			continue
+		}
+		if (character < '0' || character > '9') && (character < 'a' || character > 'f') && (character < 'A' || character > 'F') {
+			return false
+		}
+	}
+	return true
+}
+
 func (server *server) eventStream(writer http.ResponseWriter, request *http.Request) {
 	if server.config.Outbox == nil {
 		server.writeError(writer, request, http.StatusServiceUnavailable, "DATABASE_UNAVAILABLE", "persistent event streaming is unavailable", nil, true)
@@ -1450,7 +1724,10 @@ func (server *server) session(request *http.Request) (auth.Session, bool) {
 
 func (server *server) middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		requestID := newRequestID()
+		requestID := strings.TrimSpace(request.Header.Get("X-Request-ID"))
+		if !validRequestID(requestID) {
+			requestID = newRequestID()
+		}
 		request = request.WithContext(context.WithValue(request.Context(), requestIDKey, requestID))
 		writer.Header().Set("X-Request-ID", requestID)
 		writer.Header().Set("X-Content-Type-Options", "nosniff")
@@ -1502,6 +1779,11 @@ func writeSSE(writer http.ResponseWriter, message storage.OutboxMessage) error {
 			return errors.New("persistent Trace stream message is incomplete")
 		}
 		data = message.Trace
+	case "demo.run":
+		if message.Demo == nil {
+			return errors.New("persistent Demo stream message is incomplete")
+		}
+		data = message.Demo
 	default:
 		return errors.New("persistent stream topic is invalid")
 	}
@@ -1510,6 +1792,28 @@ func writeSSE(writer http.ResponseWriter, message storage.OutboxMessage) error {
 		return err
 	}
 	_, err = fmt.Fprintf(writer, "id: %d\nevent: %s\ndata: %s\n\n", message.Sequence, eventKind, payload)
+	return err
+}
+
+func writeDemoSSE(writer http.ResponseWriter, message storage.OutboxMessage) error {
+	if message.Topic != "demo.run" || message.Demo == nil || message.Sequence < 1 ||
+		strings.TrimSpace(message.EventKind) == "" || strings.ContainsAny(message.EventKind, "\r\n") {
+		return errors.New("persistent Demo stream message is invalid")
+	}
+	payload, err := json.Marshal(message.Demo)
+	if err != nil {
+		return err
+	}
+	_, err = fmt.Fprintf(writer, "id: %d\nevent: %s\ndata: %s\n\n", message.Sequence, message.EventKind, payload)
+	return err
+}
+
+func writeDemoSnapshotSSE(writer http.ResponseWriter, sequence int64, run model.DemoRun) error {
+	payload, err := json.Marshal(run)
+	if err != nil {
+		return err
+	}
+	_, err = fmt.Fprintf(writer, "id: %d\nevent: snapshot\ndata: %s\n\n", sequence, payload)
 	return err
 }
 
@@ -1534,6 +1838,19 @@ func newRequestID() string {
 		return fmt.Sprintf("fallback-%d", time.Now().UnixNano())
 	}
 	return hex.EncodeToString(buffer)
+}
+
+func validRequestID(value string) bool {
+	if value == "" || len(value) > 128 {
+		return false
+	}
+	for _, character := range value {
+		if (character < 'a' || character > 'z') && (character < 'A' || character > 'Z') &&
+			(character < '0' || character > '9') && character != '-' && character != '_' && character != '.' {
+			return false
+		}
+	}
+	return true
 }
 
 func requestID(ctx context.Context) string {

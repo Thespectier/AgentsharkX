@@ -1,15 +1,15 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useRouterState } from "@tanstack/react-router";
 import {
   ArrowRight,
   CheckCircle2,
   GitPullRequestArrow,
   LoaderCircle,
-  ShieldAlert,
   ShieldCheck,
   Sparkles,
   Trash2,
 } from "lucide-react";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { PageFrame, useWorkspaceSection } from "../../components/workspace";
 import {
@@ -37,17 +37,16 @@ import type {
   RuntimeRule,
   RuntimeRuleCheck,
 } from "../../generated/api-client";
-import {
-  ApiError,
-  formatError,
-  getScenario,
-  mutateOperation,
-  requestOperation,
-} from "../../lib/api";
+import { formatError, getScenario, mutateOperation, requestOperation } from "../../lib/api";
 import { formatTimeWithZone } from "../../lib/format";
 import { useI18n } from "../../lib/i18n";
 import { synchronizeAgentGuardData } from "../../lib/query-sync";
-import type { Severity } from "../../types";
+import {
+  ApprovalDecisionDialog,
+  approvalSeverity,
+  ProtectMutationError,
+  ProtectMutationReceiptNotice,
+} from "./approval-decision";
 import { GatewayGuardrailManager } from "./gateway-guardrail-manager";
 import { GatewayPolicyManager } from "./gateway-policy-manager";
 
@@ -92,6 +91,9 @@ const policyColumns: Column<PolicyRow>[] = [
 export function ProtectPage() {
   const section = useWorkspaceSection("protect", "policies");
   const scenario = getScenario();
+  const targetTicketId = useRouterState({
+    select: (state) => new URLSearchParams(state.location.searchStr).get("ticketId") ?? undefined,
+  });
   const query = useQuery({
     queryKey: ["protect", scenario],
     queryFn: ({ signal }) => requestOperation("listPolicies", signal),
@@ -145,6 +147,7 @@ export function ProtectPage() {
           envelope={approvals.data}
           error={approvals.error}
           loading={approvals.isLoading}
+          targetTicketId={targetTicketId}
         />
       ) : null}
     </PageFrame>
@@ -271,7 +274,7 @@ function RuntimeRulesView({ data }: { data: ProtectSnapshot }) {
           description="A successful AgentGuard syntax check creates a short-lived, source-bound, one-use publish token."
           title="Runtime rules"
         />
-        {receipt ? <MutationReceipt receipt={receipt} /> : null}
+        {receipt ? <ProtectMutationReceiptNotice receipt={receipt} /> : null}
         {rows.length ? (
           <DataTable columns={columns} data={rows} label="AgentGuard runtime rules" />
         ) : (
@@ -348,7 +351,7 @@ function RuntimeRulesView({ data }: { data: ProtectSnapshot }) {
               <span className="resource-note">{t("Check required before publish")}</span>
             )}
           </div>
-          {check.isError ? <MutationError error={check.error} /> : null}
+          {check.isError ? <ProtectMutationError error={check.error} /> : null}
           <label className="field">
             <span>{t("Operator note")}</span>
             <textarea
@@ -366,7 +369,7 @@ function RuntimeRulesView({ data }: { data: ProtectSnapshot }) {
             />
             {t("I confirm this checked rule should be published to the selected agent.")}
           </label>
-          {publish.isError ? <MutationError error={publish.error} /> : null}
+          {publish.isError ? <ProtectMutationError error={publish.error} /> : null}
           <footer>
             <Button disabled={publish.isPending} onClick={resetComposer} variant="ghost">
               Cancel
@@ -406,7 +409,7 @@ function RuntimeRulesView({ data }: { data: ProtectSnapshot }) {
             />
             {t("I confirm this runtime rule should be deleted.")}
           </label>
-          {remove.isError ? <MutationError error={remove.error} /> : null}
+          {remove.isError ? <ProtectMutationError error={remove.error} /> : null}
           <footer>
             <Button
               disabled={remove.isPending}
@@ -469,42 +472,34 @@ function PluginsView({ data }: { data: ProtectSnapshot }) {
   );
 }
 
-function ApprovalsView({
+export function ApprovalsView({
   envelope,
   error,
   loading,
+  targetTicketId,
 }: {
   envelope?: ApprovalPageEnvelope;
   error: Error | null;
   loading: boolean;
+  targetTicketId?: string;
 }) {
   const { t } = useI18n();
   const queryClient = useQueryClient();
   const [selected, setSelected] = useState<Approval>();
-  const [note, setNote] = useState("");
-  const [confirmed, setConfirmed] = useState(false);
-  const [decision, setDecision] = useState<"approve" | "deny">("approve");
   const [receipt, setReceipt] = useState<ProtectMutationReceipt>();
-  const mutation = useMutation({
-    mutationFn: ({ approval, action }: { approval: Approval; action: "approve" | "deny" }) =>
-      mutateOperation(
-        action === "approve" ? "approveTicket" : "denyTicket",
-        { note, confirmed },
-        { path: { ticketId: approval.id } },
-      ),
-    onSuccess: (response) => {
-      setReceipt(response.data);
-      setSelected(undefined);
-      setNote("");
-      setConfirmed(false);
-      void synchronizeAgentGuardData(queryClient);
-    },
-    onError: (mutationError) => {
-      if (mutationError instanceof ApiError && mutationError.status === 404) {
-        void synchronizeAgentGuardData(queryClient);
-      }
-    },
-  });
+  const autoOpenedTicket = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (!targetTicketId) {
+      autoOpenedTicket.current = undefined;
+      return;
+    }
+    if (autoOpenedTicket.current === targetTicketId) return;
+    const approval = approvalForTicketId(envelope?.data.items ?? [], targetTicketId);
+    if (!approval) return;
+    autoOpenedTicket.current = targetTicketId;
+    setReceipt(undefined);
+    setSelected(approval);
+  }, [envelope, targetTicketId]);
   if (loading) return <PageSkeleton label="Loading approval queue" />;
   if (error || !envelope)
     return (
@@ -517,7 +512,7 @@ function ApprovalsView({
   if (!approvals.length) {
     return (
       <>
-        {receipt ? <MutationReceipt receipt={receipt} /> : null}
+        {receipt ? <ProtectMutationReceiptNotice receipt={receipt} /> : null}
         <EmptyState
           description="No AgentGuard tickets need an operator decision."
           title="Approval queue is clear"
@@ -526,21 +521,12 @@ function ApprovalsView({
     );
   }
   const begin = (approval: Approval) => {
-    mutation.reset();
     setReceipt(undefined);
-    setNote("");
-    setConfirmed(false);
-    setDecision("approve");
     setSelected(approval);
-  };
-  const decide = (action: "approve" | "deny") => {
-    if (!selected) return;
-    setDecision(action);
-    mutation.mutate({ approval: selected, action });
   };
   return (
     <>
-      {receipt ? <MutationReceipt receipt={receipt} /> : null}
+      {receipt ? <ProtectMutationReceiptNotice receipt={receipt} /> : null}
       <div className="approval-layout">
         <Card className="approval-list">
           <CardHeader
@@ -548,7 +534,12 @@ function ApprovalsView({
             title="Pending review"
           />
           {approvals.map((approval) => (
-            <button className="approval-item" key={approval.id} onClick={() => begin(approval)}>
+            <button
+              aria-current={selected?.id === approval.id ? "true" : undefined}
+              className="approval-item"
+              key={approval.id}
+              onClick={() => begin(approval)}
+            >
               <span className="approval-item__risk">
                 <SeverityBadge severity={approvalSeverity(approval.riskScore)} />
               </span>
@@ -581,113 +572,21 @@ function ApprovalsView({
           </ul>
         </Card>
       </div>
-      <Dialog
-        description="Review sanitized AgentGuard context, write a note, and explicitly confirm one decision."
-        onClose={() => !mutation.isPending && setSelected(undefined)}
-        open={Boolean(selected)}
-        title={selected ? `Review ${selected.tool || selected.eventType}` : "Review approval"}
-      >
-        {selected ? (
-          <div className="dialog-form">
-            <div className="approval-dialog-summary">
-              <SeverityBadge severity={approvalSeverity(selected.riskScore)} />
-              <code>{selected.id}</code>
-              <p>{selected.reason || "No upstream reason was provided."}</p>
-              <SourceBadge source={selected.source} />
-              <p>
-                Phase: {selected.phase} · Matched rules:{" "}
-                {selected.matchedRules.join(", ") || "none reported"}
-              </p>
-            </div>
-            <label className="field">
-              <span>{t("Operator note")}</span>
-              <textarea
-                aria-label={t("Operator note")}
-                onChange={(event) => setNote(event.target.value)}
-                rows={3}
-                value={note}
-              />
-            </label>
-            <label className="confirm-field">
-              <input
-                checked={confirmed}
-                onChange={(event) => setConfirmed(event.target.checked)}
-                type="checkbox"
-              />
-              I confirm this operator decision for the selected pending ticket.
-            </label>
-            {mutation.isError ? <MutationError error={mutation.error} /> : null}
-            <footer>
-              <Button
-                disabled={mutation.isPending}
-                onClick={() => setSelected(undefined)}
-                variant="ghost"
-              >
-                Cancel
-              </Button>
-              <Button
-                disabled={!note.trim() || !confirmed || mutation.isPending}
-                onClick={() => decide("deny")}
-                variant="danger"
-              >
-                {mutation.isPending && decision === "deny" ? (
-                  <LoaderCircle className="spin" size={14} />
-                ) : null}
-                {mutation.isError && decision === "deny" ? "Retry deny" : "Deny"}
-              </Button>
-              <Button
-                disabled={!note.trim() || !confirmed || mutation.isPending}
-                onClick={() => decide("approve")}
-                variant="primary"
-              >
-                {mutation.isPending && decision === "approve" ? (
-                  <LoaderCircle className="spin" size={14} />
-                ) : null}
-                {mutation.isError && decision === "approve" ? "Retry approve" : "Approve"}
-              </Button>
-            </footer>
-          </div>
-        ) : null}
-      </Dialog>
+      {selected ? (
+        <ApprovalDecisionDialog
+          approval={selected}
+          onClose={() => setSelected(undefined)}
+          onReceipt={setReceipt}
+        />
+      ) : null}
     </>
   );
 }
 
-function approvalSeverity(score: number): Severity {
-  if (score >= 0.85) return "critical";
-  if (score >= 0.7) return "high";
-  if (score >= 0.45) return "medium";
-  return "low";
-}
-
-function MutationReceipt({ receipt }: { receipt: ProtectMutationReceipt }) {
-  return (
-    <div className="mutation-receipt" role="status">
-      <CheckCircle2 aria-hidden="true" size={16} />
-      <div>
-        <strong>{receipt.message}</strong>
-        <span>
-          Request ID <code>{receipt.requestId}</code>
-        </span>
-      </div>
-    </div>
-  );
-}
-
-function MutationError({ error }: { error: unknown }) {
-  const requestId = error instanceof ApiError ? error.failure?.requestId : undefined;
-  return (
-    <div className="protect-error" role="alert">
-      <ShieldAlert aria-hidden="true" size={15} />
-      <span>
-        {formatError(error)}
-        {requestId ? (
-          <>
-            {" "}
-            · Request ID <code>{requestId}</code>
-          </>
-        ) : null}
-      </span>
-    </div>
-  );
+export function approvalForTicketId(
+  approvals: Approval[],
+  ticketId?: string,
+): Approval | undefined {
+  if (!ticketId) return undefined;
+  return approvals.find((approval) => approval.id === ticketId);
 }

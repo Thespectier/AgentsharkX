@@ -1,6 +1,6 @@
 # Server package map
 
-Phase 15 package responsibilities:
+Phase 16 package responsibilities:
 
 - `api`: OpenAPI-owned handlers, request IDs, structured access logs, standard
   errors, authentication enforcement, persistent Audit APIs, `/healthz`
@@ -25,10 +25,12 @@ Phase 15 package responsibilities:
   checkpoints, and persistence orchestration.
 - `trace`: payload-safe list/detail projections, stable filters and cursors,
   explicit relationship coverage, and authenticated Span-detail reads.
+- `demo`: disabled-by-default fixed-scenario orchestration, private Runner
+  protocol, exact-ID Trace/approval evidence, readiness, timeout, and recovery.
 - `storage`: small interfaces plus the PostgreSQL production store, append-only
   embedded migrations, stable event cursors, payload retention, outbox replay,
-  Trace batch upserts/summaries, pruning, and an explicit memory adapter for
-  tests/Mock only.
+  Trace batch upserts/summaries, Demo control state/events, pruning, and an
+  explicit memory adapter for tests/Mock only.
 - `telemetry`: Collector-owned OTLP normalization, exact summary assembly, and
   the bounded authenticated HTTP receiver. Query routes remain BFF-owned.
 - `stream`: coalesced post-commit notifications. It owns no event IDs or replay
@@ -36,7 +38,8 @@ Phase 15 package responsibilities:
 - `model`: the shared source-preserving response model.
 
 PostgreSQL is required in production and there is no automatic memory fallback.
-Normalized Audit and Trace metadata default to 30-day retention, outbox
+Normalized Audit, Trace, and bounded Demo run control data are persistent. Audit
+and Trace metadata default to 30-day retention, outbox
 delivery rows to 24 hours, and payload storage to disabled. Positive payload
 retention opts complete source-owned records into separate payload tables;
 Audit list, overview, Trace list/detail, and SSE responses remain payload-free.

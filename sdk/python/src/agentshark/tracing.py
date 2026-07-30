@@ -114,6 +114,7 @@ class TraceIdentity:
     agent_id: str
     session_id: str
     task_id: str
+    task_attributes: Mapping[str, AttributeValue]
 
 
 @dataclass(slots=True)
@@ -209,7 +210,7 @@ class _ContextEnricher(SpanProcessor):
 
     def on_start(self, span: Span, parent_context: Context | None = None) -> None:
         span_attributes = span.attributes or {}
-        values = {
+        values: dict[str, AttributeValue] = {
             key: str(span_attributes[key])
             for key in _BAGGAGE_KEYS
             if span_attributes.get(key) is not None
@@ -229,9 +230,9 @@ class _ContextEnricher(SpanProcessor):
         span_context = span.get_span_context()
         with self._lock:
             identities = self._trace_identities.get(span_context.trace_id, {})
-            runtime_id = values.get(RUNTIME_ID)
-            if runtime_id is not None:
-                identity = identities.get(runtime_id)
+            runtime_id_value = values.get(RUNTIME_ID)
+            if runtime_id_value is not None:
+                identity = identities.get(str(runtime_id_value))
             elif len(identities) == 1:
                 identity = next(iter(identities.values()))
             else:
@@ -241,6 +242,9 @@ class _ContextEnricher(SpanProcessor):
             values.setdefault(AGENT_ID, identity.agent_id)
             values.setdefault(SESSION_ID, identity.session_id)
             values.setdefault(TASK_ID, identity.task_id)
+            for key, value in identity.task_attributes.items():
+                if key not in span_attributes:
+                    values.setdefault(key, value)
         if values:
             span.set_attributes(values)
 

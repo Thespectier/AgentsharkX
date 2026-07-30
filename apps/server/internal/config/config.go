@@ -37,6 +37,22 @@ type Database struct {
 	OutboxRetention  time.Duration
 }
 
+type Demo struct {
+	Enabled           bool
+	RunnerURL         string
+	RunnerToken       Secret
+	MaxConcurrency    int
+	DefaultDelayMS    int
+	RunTimeout        time.Duration
+	MonitorInterval   time.Duration
+	CollectorURL      string
+	LLMBaseURL        string
+	LLMModel          string
+	MCPURL            string
+	GatewayAdminURL   string
+	GatewayConsoleURL string
+}
+
 type Config struct {
 	ListenAddr       string
 	Environment      string
@@ -47,6 +63,7 @@ type Config struct {
 	Guard            Upstream
 	GuardRelease     string
 	Database         Database
+	Demo             Demo
 	UpstreamTimeout  time.Duration
 	ScanTimeout      time.Duration
 	UpstreamRetryMax int
@@ -76,6 +93,16 @@ func Load(lookup LookupFunc) (Config, error) {
 			EventRetention: 30 * 24 * time.Hour, TraceRetention: 30 * 24 * time.Hour,
 			PayloadRetention: 0, OutboxRetention: 24 * time.Hour,
 		},
+		Demo: Demo{
+			RunnerURL: "http://demo-runner:39100", MaxConcurrency: 1,
+			DefaultDelayMS: 700, RunTimeout: 10 * time.Minute, MonitorInterval: 750 * time.Millisecond,
+			CollectorURL:      "http://agentshark-collector:4318/readyz",
+			LLMBaseURL:        "http://agentshark-demo-gateway:39000/v1",
+			LLMModel:          "agentshark-demo-model-v1",
+			MCPURL:            "http://demo-fixtures:39200/mcp",
+			GatewayAdminURL:   "http://agentshark-demo-gateway:15000",
+			GatewayConsoleURL: "",
+		},
 		UpstreamTimeout:  3 * time.Second,
 		ScanTimeout:      90 * time.Second,
 		UpstreamRetryMax: 1,
@@ -83,6 +110,29 @@ func Load(lookup LookupFunc) (Config, error) {
 	}
 
 	var err error
+	if cfg.Demo.Enabled, err = boolValue(lookup, "AGENTSHARK_DEMO_ENABLED", false); err != nil {
+		return Config{}, err
+	}
+	cfg.Demo.RunnerURL = valueOr(lookup, "AGENTSHARK_DEMO_RUNNER_URL", cfg.Demo.RunnerURL)
+	cfg.Demo.RunnerToken = NewSecret(valueOr(lookup, "AGENTSHARK_DEMO_RUNNER_TOKEN", ""))
+	cfg.Demo.CollectorURL = valueOr(lookup, "AGENTSHARK_DEMO_COLLECTOR_READY_URL", cfg.Demo.CollectorURL)
+	cfg.Demo.LLMBaseURL = valueOr(lookup, "AGENTSHARK_DEMO_LLM_BASE_URL", cfg.Demo.LLMBaseURL)
+	cfg.Demo.LLMModel = valueOr(lookup, "AGENTSHARK_DEMO_LLM_MODEL", cfg.Demo.LLMModel)
+	cfg.Demo.MCPURL = valueOr(lookup, "AGENTSHARK_DEMO_MCP_URL", cfg.Demo.MCPURL)
+	cfg.Demo.GatewayAdminURL = valueOr(lookup, "AGENTSHARK_DEMO_GATEWAY_ADMIN_URL", cfg.Demo.GatewayAdminURL)
+	cfg.Demo.GatewayConsoleURL = valueOr(lookup, "AGENTSHARK_DEMO_GATEWAY_CONSOLE_URL", cfg.Demo.GatewayConsoleURL)
+	if cfg.Demo.MaxConcurrency, err = intValue(lookup, "AGENTSHARK_DEMO_MAX_CONCURRENCY", cfg.Demo.MaxConcurrency); err != nil {
+		return Config{}, err
+	}
+	if cfg.Demo.DefaultDelayMS, err = intValue(lookup, "AGENTSHARK_DEMO_DEFAULT_DELAY_MS", cfg.Demo.DefaultDelayMS); err != nil {
+		return Config{}, err
+	}
+	if cfg.Demo.RunTimeout, err = durationValue(lookup, "AGENTSHARK_DEMO_RUN_TIMEOUT", cfg.Demo.RunTimeout); err != nil {
+		return Config{}, err
+	}
+	if cfg.Demo.MonitorInterval, err = durationValue(lookup, "AGENTSHARK_DEMO_MONITOR_INTERVAL", cfg.Demo.MonitorInterval); err != nil {
+		return Config{}, err
+	}
 	if cfg.Database.AutoMigrate, err = boolValue(lookup, "AGENTSHARK_DATABASE_AUTO_MIGRATE", cfg.Database.AutoMigrate); err != nil {
 		return Config{}, err
 	}
@@ -161,12 +211,42 @@ func (cfg Config) Validate() error {
 			validationErrors = append(validationErrors, fmt.Errorf("%s is invalid: %w", name, err))
 		}
 	}
+	for name, rawURL := range map[string]string{
+		"AGENTSHARK_DEMO_RUNNER_URL":          cfg.Demo.RunnerURL,
+		"AGENTSHARK_DEMO_COLLECTOR_READY_URL": cfg.Demo.CollectorURL,
+		"AGENTSHARK_DEMO_LLM_BASE_URL":        cfg.Demo.LLMBaseURL,
+		"AGENTSHARK_DEMO_MCP_URL":             cfg.Demo.MCPURL,
+		"AGENTSHARK_DEMO_GATEWAY_ADMIN_URL":   cfg.Demo.GatewayAdminURL,
+	} {
+		if err := validateURL(rawURL); err != nil {
+			validationErrors = append(validationErrors, fmt.Errorf("%s is invalid: %w", name, err))
+		}
+	}
+	if cfg.Demo.Enabled && (len([]byte(cfg.Demo.RunnerToken.Value())) < 32 || !validSecret(cfg.Demo.RunnerToken.Value())) {
+		validationErrors = append(validationErrors, errors.New("AGENTSHARK_DEMO_RUNNER_TOKEN must be a non-placeholder value of at least 32 bytes when Demo Lab is enabled"))
+	}
+	if cfg.Demo.MaxConcurrency != 1 {
+		validationErrors = append(validationErrors, errors.New("AGENTSHARK_DEMO_MAX_CONCURRENCY must be 1"))
+	}
+	if cfg.Demo.DefaultDelayMS < 0 || cfg.Demo.DefaultDelayMS > 2000 {
+		validationErrors = append(validationErrors, errors.New("AGENTSHARK_DEMO_DEFAULT_DELAY_MS must be between 0 and 2000"))
+	}
+	if strings.TrimSpace(cfg.Demo.LLMModel) == "" || len(cfg.Demo.LLMModel) > 128 {
+		validationErrors = append(validationErrors, errors.New("AGENTSHARK_DEMO_LLM_MODEL must contain between 1 and 128 characters"))
+	}
+	if cfg.Demo.RunTimeout < time.Minute || cfg.Demo.RunTimeout > time.Hour {
+		validationErrors = append(validationErrors, errors.New("AGENTSHARK_DEMO_RUN_TIMEOUT must be between 1m and 1h"))
+	}
+	if cfg.Demo.MonitorInterval < 500*time.Millisecond || cfg.Demo.MonitorInterval > time.Second {
+		validationErrors = append(validationErrors, errors.New("AGENTSHARK_DEMO_MONITOR_INTERVAL must be between 500ms and 1s"))
+	}
 	if err := validateDatabaseURL(cfg.Database.URL.Value()); err != nil {
 		validationErrors = append(validationErrors, fmt.Errorf("AGENTSHARK_DATABASE_URL is invalid: %w", err))
 	}
 	for name, rawURL := range map[string]string{
-		"AGENTGATEWAY_CONSOLE_URL": cfg.Gateway.ConsoleURL,
-		"AGENTGUARD_CONSOLE_URL":   cfg.Guard.ConsoleURL,
+		"AGENTGATEWAY_CONSOLE_URL":            cfg.Gateway.ConsoleURL,
+		"AGENTGUARD_CONSOLE_URL":              cfg.Guard.ConsoleURL,
+		"AGENTSHARK_DEMO_GATEWAY_CONSOLE_URL": cfg.Demo.GatewayConsoleURL,
 	} {
 		if rawURL != "" {
 			if err := validateURL(rawURL); err != nil {
@@ -211,10 +291,11 @@ func (cfg Config) Validate() error {
 }
 
 func (cfg Config) SafeSummary() string {
-	return fmt.Sprintf("listen=%s environment=%s auth_disabled=%t cookie_secure=%t gateway=%s guard=%s database=%s database_auto_migrate=%t timeout=%s scan_timeout=%s retries=%d poll=%s",
+	return fmt.Sprintf("listen=%s environment=%s auth_disabled=%t cookie_secure=%t gateway=%s guard=%s database=%s database_auto_migrate=%t timeout=%s scan_timeout=%s retries=%d poll=%s demo_enabled=%t demo_runner=%s demo_gateway_admin=%s demo_model=%s",
 		cfg.ListenAddr, cfg.Environment, cfg.AuthDisabled, cfg.CookieSecure, safeEndpoint(cfg.Gateway.BaseURL),
 		safeEndpoint(cfg.Guard.BaseURL), safeDatabaseEndpoint(cfg.Database.URL.Value()), cfg.Database.AutoMigrate,
-		cfg.UpstreamTimeout, cfg.ScanTimeout, cfg.UpstreamRetryMax, cfg.PollInterval)
+		cfg.UpstreamTimeout, cfg.ScanTimeout, cfg.UpstreamRetryMax, cfg.PollInterval,
+		cfg.Demo.Enabled, safeEndpoint(cfg.Demo.RunnerURL), safeEndpoint(cfg.Demo.GatewayAdminURL), cfg.Demo.LLMModel)
 }
 
 func safeEndpoint(raw string) string {

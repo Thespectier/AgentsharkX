@@ -33,6 +33,15 @@ export function formatDuration(value: number): string {
   return `${decimal.format(value)} ms`;
 }
 
+export function formatTraceDuration(value: number | null | undefined, status?: string): string {
+  if (value === null || value === undefined) {
+    return status === "running" || status === "unset" ? "Running" : "Not verified";
+  }
+  if (value < 1_000) return `${formatCount(value)} ms`;
+  if (value < 60_000) return `${(value / 1_000).toFixed(2)} s`;
+  return `${(value / 60_000).toFixed(1)} min`;
+}
+
 export function formatTrendTick(value: string): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;

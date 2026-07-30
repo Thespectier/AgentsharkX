@@ -4,6 +4,7 @@ import { AppShell } from "./app-shell";
 import { AuditPage } from "../features/audit/audit-page";
 import { TraceDetailPage, TraceListPage } from "../features/audit/trace-pages";
 import { ConnectPage } from "../features/connect/connect-page";
+import { DemoLabPage } from "../features/demo/demo-lab-page";
 import { HomePage } from "../features/home/home-page";
 import { ProtectPage } from "../features/protect/protect-page";
 import { SystemPage } from "../features/system-page";
@@ -11,15 +12,22 @@ import { TrustPage } from "../features/trust/trust-page";
 import { NotFoundPage } from "../features/not-found-page";
 import type { Scenario } from "../types";
 
-type RootSearch = { scenario?: Scenario; event?: string };
+export type RootSearch = {
+  scenario?: Scenario;
+  event?: string;
+  sessionId?: string;
+  ticketId?: string;
+};
 
-function parseSearch(search: Record<string, unknown>): RootSearch {
+export function parseSearch(search: Record<string, unknown>): RootSearch {
   const scenario = ["empty", "loading", "partial", "error"].includes(String(search.scenario))
     ? (search.scenario as Scenario)
     : undefined;
   return {
     scenario,
     event: typeof search.event === "string" ? search.event : undefined,
+    sessionId: typeof search.sessionId === "string" ? search.sessionId : undefined,
+    ticketId: typeof search.ticketId === "string" ? search.ticketId : undefined,
   };
 }
 
@@ -85,6 +93,11 @@ const systemRoute = createRoute({
   path: "system",
   component: SystemPage,
 });
+const demoRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "demo",
+  component: DemoLabPage,
+});
 
 const routeTree = rootRoute.addChildren([
   homeRoute,
@@ -98,6 +111,7 @@ const routeTree = rootRoute.addChildren([
   auditTracesRoute,
   auditTraceDetailRoute,
   auditSectionRoute,
+  demoRoute,
   systemRoute,
 ]);
 

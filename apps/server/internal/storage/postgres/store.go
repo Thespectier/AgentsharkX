@@ -537,6 +537,12 @@ FROM stream_outbox WHERE sequence > $1 ORDER BY sequence ASC LIMIT $2
 				return storage.ReplayBatch{}, err
 			}
 			message.Trace = &summary
+		case "demo.run":
+			var event model.DemoRunEvent
+			if err := decodeJSON(document, &event); err != nil {
+				return storage.ReplayBatch{}, err
+			}
+			message.Demo = &event
 		default:
 			return storage.ReplayBatch{}, fmt.Errorf("unsupported outbox topic %q", message.Topic)
 		}

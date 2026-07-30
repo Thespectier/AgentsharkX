@@ -31,6 +31,7 @@ tags:
   - name: Trust
   - name: Protect
   - name: Audit
+  - name: Demo
 
 paths:
   /healthz:
@@ -215,6 +216,155 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '503':
           $ref: '#/components/responses/ServiceUnavailable'
+
+  /api/v1/demo/status:
+    get:
+      tags: [Demo]
+      operationId: getDemoStatus
+      summary: Return Demo Lab enablement, readiness, and the active Run
+      description: This authenticated endpoint remains available when Demo Lab is disabled. Disabled Demo Lab never exposes a writable Runner control path.
+      x-implementation-phase: 16
+      x-implementation-status: implemented
+      responses:
+        '200':
+          description: Demo Lab status and independently reported component checks
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DemoStatusEnvelope' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /api/v1/demo/scenarios:
+    get:
+      tags: [Demo]
+      operationId: listDemoScenarios
+      summary: List the immutable deterministic Demo scenarios
+      x-implementation-phase: 16
+      x-implementation-status: implemented
+      responses:
+        '200':
+          description: Fixed scenarios and their expected capability counts
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DemoScenariosEnvelope' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /api/v1/demo/runs:
+    get:
+      tags: [Demo]
+      operationId: listDemoRuns
+      summary: List persisted Demo Run control records
+      x-implementation-phase: 16
+      x-implementation-status: implemented
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Stable Demo Run history restored from PostgreSQL
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DemoRunListEnvelope' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+    post:
+      tags: [Demo]
+      operationId: createDemoRun
+      summary: Start one fixed deterministic Demo scenario
+      description: X-Request-ID is the idempotency key. An identical retry returns the persisted Run and never starts a second Runner execution.
+      x-implementation-phase: 16
+      x-implementation-status: implemented
+      parameters:
+        - $ref: '#/components/parameters/CsrfToken'
+        - $ref: '#/components/parameters/RequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DemoCreateRunRequest' }
+      responses:
+        '202':
+          description: Run was persisted and accepted by the internal Runner
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DemoRunEnvelope' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '502': { $ref: '#/components/responses/BadGateway' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+
+  /api/v1/demo/runs/{runId}:
+    get:
+      tags: [Demo]
+      operationId: getDemoRun
+      summary: Return one persisted Demo Run with verified correlation evidence
+      x-implementation-phase: 16
+      x-implementation-status: implemented
+      parameters:
+        - $ref: '#/components/parameters/DemoRunId'
+      responses:
+        '200':
+          description: Current Run projection; observed metrics remain null until matching Trace evidence exists
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DemoRunEnvelope' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+
+  /api/v1/demo/runs/{runId}/cancel:
+    post:
+      tags: [Demo]
+      operationId: cancelDemoRun
+      summary: Cooperatively cancel one active Demo Run
+      description: A Run waiting on an exact-session approval is denied through the existing Protect service before Runner cancellation.
+      x-implementation-phase: 16
+      x-implementation-status: implemented
+      parameters:
+        - $ref: '#/components/parameters/DemoRunId'
+        - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DemoCancelRunRequest' }
+      responses:
+        '200':
+          description: Current Run state after the idempotent cancellation request
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DemoRunEnvelope' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '502': { $ref: '#/components/responses/BadGateway' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+
+  /api/v1/demo/runs/{runId}/events:
+    get:
+      tags: [Demo]
+      operationId: streamDemoRunEvents
+      summary: Stream one Run's durable public control events
+      description: The first fresh connection receives an atomic snapshot. Last-Event-ID resumes only demo.run rows scoped to this Run; retention gaps emit reset. No prompt, completion, tool argument, authorization value, or raw Trace field is present.
+      x-implementation-phase: 16
+      x-implementation-status: implemented
+      parameters:
+        - $ref: '#/components/parameters/DemoRunId'
+        - $ref: '#/components/parameters/LastEventId'
+      responses:
+        '200':
+          description: snapshot, run.status, run.step, run.trace_linked, run.approval_linked, run.finished, reset, and heartbeat events
+          content:
+            text/event-stream:
+              schema: { type: string }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
 
   /api/v1/connect/summary:
     get:
@@ -2150,6 +2300,13 @@ components:
       schema:
         type: string
         minLength: 1
+    DemoRunId:
+      name: runId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     LastEventId:
       name: Last-Event-ID
       in: header
@@ -2165,6 +2322,16 @@ components:
       required: true
       schema:
         type: string
+    RequestId:
+      name: X-Request-ID
+      in: header
+      required: false
+      description: Stable client-provided idempotency key. The BFF generates one when omitted.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
+        pattern: '^[A-Za-z0-9._-]+$'
 
   responses:
     DataResponse:
@@ -2262,6 +2429,293 @@ components:
           type: integer
           format: int64
           minimum: 0
+    HealthStatus:
+      type: string
+      enum: [healthy, degraded, down, unknown]
+    DemoScenario:
+      type: string
+      enum: [happy, approval, failure]
+    DemoRunStatus:
+      type: string
+      enum:
+        [
+          queued,
+          starting,
+          running,
+          waiting_approval,
+          succeeded,
+          failed,
+          cancelled,
+          interrupted,
+          expired,
+        ]
+    DemoRunOutcome:
+      type: string
+      enum: [none, normal, approved, denied, degraded, cancelled, failed]
+    DemoMetrics:
+      type: object
+      additionalProperties: false
+      required:
+        [llmCalls, mcpCalls, localToolCalls, a2aCalls, humanChecks, errorCount]
+      properties:
+        llmCalls: { type: integer, minimum: 0 }
+        mcpCalls: { type: integer, minimum: 0 }
+        localToolCalls: { type: integer, minimum: 0 }
+        a2aCalls: { type: integer, minimum: 0 }
+        humanChecks: { type: integer, minimum: 0 }
+        errorCount: { type: integer, minimum: 0 }
+    DemoObservedMetrics:
+      type: [object, 'null']
+      additionalProperties: false
+      required:
+        [llmCalls, mcpCalls, localToolCalls, a2aCalls, humanChecks, errorCount]
+      properties:
+        llmCalls: { type: integer, minimum: 0 }
+        mcpCalls: { type: integer, minimum: 0 }
+        localToolCalls: { type: integer, minimum: 0 }
+        a2aCalls: { type: integer, minimum: 0 }
+        humanChecks: { type: integer, minimum: 0 }
+        errorCount: { type: integer, minimum: 0 }
+    DemoApproval:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          ticketId,
+          upstreamId,
+          source,
+          fetchedAt,
+          rawRef,
+          sessionId,
+          eventType,
+          phase,
+          action,
+          riskScore,
+          matchedRules,
+          status,
+          createdAt,
+          correlationBasis,
+        ]
+      properties:
+        ticketId: { type: string }
+        upstreamId: { type: string }
+        source: { $ref: '#/components/schemas/GuardSource' }
+        fetchedAt: { type: string, format: date-time }
+        rawRef: { $ref: '#/components/schemas/RawRef' }
+        sessionId: { type: string }
+        agentId: { type: string }
+        agentUpstreamId: { type: string }
+        eventId: { type: string }
+        eventType: { type: string }
+        tool: { type: string }
+        phase: { type: string }
+        action: { type: string }
+        reason: { type: string }
+        riskScore: { type: number, format: double }
+        matchedRules:
+          type: array
+          items: { type: string }
+        status: { type: string }
+        createdAt: { type: string, format: date-time }
+        correlationBasis: { type: string, const: session_id }
+    DemoCorrelationEvidence:
+      type: object
+      additionalProperties: false
+      required: [status, basis]
+      properties:
+        status:
+          type: string
+          enum: [verified, pending, unavailable]
+        basis: { type: string }
+        value: { type: string }
+    DemoCorrelations:
+      type: object
+      additionalProperties: false
+      required: [runId, taskId, sessionId, trace, approval, gatewayLogs]
+      properties:
+        runId: { type: string, format: uuid }
+        taskId: { type: string }
+        sessionId: { type: string }
+        trace: { $ref: '#/components/schemas/DemoCorrelationEvidence' }
+        approval: { $ref: '#/components/schemas/DemoCorrelationEvidence' }
+        gatewayLogs: { $ref: '#/components/schemas/DemoCorrelationEvidence' }
+    DemoLinks:
+      type: object
+      additionalProperties: false
+      required: [audit]
+      properties:
+        trace: { type: string }
+        audit: { type: string }
+        approval: { type: string }
+        gatewayLogs: { type: string }
+    DemoRun:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          runId,
+          scenario,
+          status,
+          outcome,
+          requestedAt,
+          startedAt,
+          completedAt,
+          lastHeartbeatAt,
+          runVersion,
+          delayMs,
+          taskId,
+          sessionId,
+          rootAgentId,
+          completedSteps,
+          totalSteps,
+          fixtureVersion,
+          expectedMetrics,
+          observedMetrics,
+          correlations,
+          links,
+        ]
+      properties:
+        runId: { type: string, format: uuid }
+        scenario: { $ref: '#/components/schemas/DemoScenario' }
+        status: { $ref: '#/components/schemas/DemoRunStatus' }
+        outcome: { $ref: '#/components/schemas/DemoRunOutcome' }
+        statusReasonCode: { type: string }
+        requestedAt: { type: string, format: date-time }
+        startedAt: { type: [string, 'null'], format: date-time }
+        completedAt: { type: [string, 'null'], format: date-time }
+        lastHeartbeatAt: { type: [string, 'null'], format: date-time }
+        runVersion: { type: integer, format: int64, minimum: 0 }
+        delayMs: { type: integer, minimum: 0, maximum: 2000 }
+        taskId: { type: string }
+        sessionId: { type: string }
+        traceId: { type: string, pattern: '^[0-9a-f]{32}$' }
+        rootSpanId: { type: string, pattern: '^[0-9a-f]{16}$' }
+        rootAgentId: { type: string, const: demo-incident-investigator }
+        approval: { $ref: '#/components/schemas/DemoApproval' }
+        currentStep: { type: string }
+        completedSteps: { type: integer, minimum: 0 }
+        totalSteps: { type: integer, minimum: 0 }
+        fixtureVersion: { type: string }
+        errorCode: { type: string }
+        errorSummary: { type: string, maxLength: 500 }
+        expectedMetrics: { $ref: '#/components/schemas/DemoMetrics' }
+        observedMetrics: { $ref: '#/components/schemas/DemoObservedMetrics' }
+        correlations: { $ref: '#/components/schemas/DemoCorrelations' }
+        links: { $ref: '#/components/schemas/DemoLinks' }
+    DemoRunEnvelope:
+      type: object
+      additionalProperties: false
+      required: [data, meta]
+      properties:
+        data: { $ref: '#/components/schemas/DemoRun' }
+        meta: { $ref: '#/components/schemas/Meta' }
+    DemoRunListEnvelope:
+      type: object
+      additionalProperties: false
+      required: [data, meta]
+      properties:
+        data:
+          type: object
+          additionalProperties: false
+          required: [items, nextCursor, total]
+          properties:
+            items:
+              type: array
+              items: { $ref: '#/components/schemas/DemoRun' }
+            nextCursor: { type: [string, 'null'] }
+            total: { type: integer, minimum: 0 }
+        meta: { $ref: '#/components/schemas/Meta' }
+    DemoScenarioDefinition:
+      type: object
+      additionalProperties: false
+      required: [id, label, description, expectedMetrics]
+      properties:
+        id: { $ref: '#/components/schemas/DemoScenario' }
+        label: { type: string }
+        description: { type: string }
+        expectedMetrics: { $ref: '#/components/schemas/DemoMetrics' }
+    DemoScenariosEnvelope:
+      type: object
+      additionalProperties: false
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/DemoScenarioDefinition' }
+        meta: { $ref: '#/components/schemas/Meta' }
+    DemoStatusComponent:
+      type: object
+      additionalProperties: false
+      required: [id, label, status, required, checkedAt]
+      properties:
+        id: { type: string }
+        label: { type: string }
+        status: { $ref: '#/components/schemas/HealthStatus' }
+        required: { type: boolean }
+        checkedAt: { type: string, format: date-time }
+        message: { type: string }
+        remediation: { type: string }
+    DemoStatus:
+      type: object
+      additionalProperties: false
+      required: [enabled, ready, activeRunId, maxConcurrency, components]
+      properties:
+        enabled: { type: boolean }
+        ready: { type: boolean }
+        activeRunId: { type: [string, 'null'], format: uuid }
+        maxConcurrency: { type: integer, minimum: 1, maximum: 1 }
+        components:
+          type: array
+          items: { $ref: '#/components/schemas/DemoStatusComponent' }
+    DemoStatusEnvelope:
+      type: object
+      additionalProperties: false
+      required: [data, meta]
+      properties:
+        data: { $ref: '#/components/schemas/DemoStatus' }
+        meta: { $ref: '#/components/schemas/Meta' }
+    DemoCreateRunRequest:
+      type: object
+      additionalProperties: false
+      required: [scenario]
+      properties:
+        scenario: { $ref: '#/components/schemas/DemoScenario' }
+        delayMs: { type: integer, minimum: 0, maximum: 2000 }
+    DemoCancelRunRequest:
+      type: object
+      additionalProperties: false
+      required: [confirm, note]
+      properties:
+        confirm: { type: boolean, const: true }
+        note: { type: string, minLength: 1, maxLength: 500 }
+    DemoRunEvent:
+      type: object
+      additionalProperties: false
+      required: [runId, type, runVersion, occurredAt]
+      properties:
+        runId: { type: string, format: uuid }
+        type:
+          {
+            type: string,
+            enum:
+              [
+                run.status,
+                run.step,
+                run.trace_linked,
+                run.approval_linked,
+                run.finished,
+              ],
+          }
+        status: { $ref: '#/components/schemas/DemoRunStatus' }
+        outcome: { $ref: '#/components/schemas/DemoRunOutcome' }
+        runVersion: { type: integer, format: int64, minimum: 0 }
+        stepId: { type: string }
+        traceId: { type: string, pattern: '^[0-9a-f]{32}$' }
+        rootSpanId: { type: string, pattern: '^[0-9a-f]{16}$' }
+        approval: { $ref: '#/components/schemas/DemoApproval' }
+        completedSteps: { type: integer, minimum: 0 }
+        totalSteps: { type: integer, minimum: 0 }
+        occurredAt: { type: string, format: date-time }
     Source:
       type: string
       enum: [agentgateway, agentguard]
@@ -4601,3 +5055,7 @@ components:
               type: string
             retryable:
               type: boolean
+            failedChecks:
+              type: array
+              description: Required Demo Lab readiness checks that were not healthy when a create request returned DEMO_NOT_READY.
+              items: { $ref: '#/components/schemas/DemoStatusComponent' }

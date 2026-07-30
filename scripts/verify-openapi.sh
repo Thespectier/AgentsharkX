@@ -19,6 +19,12 @@ required_paths=(
   /api/v1/system/diagnostics
   /api/v1/overview
   /api/v1/stream
+  /api/v1/demo/status
+  /api/v1/demo/scenarios
+  /api/v1/demo/runs
+  '/api/v1/demo/runs/{runId}'
+  '/api/v1/demo/runs/{runId}/cancel'
+  '/api/v1/demo/runs/{runId}/events'
   /api/v1/connect/summary
   /api/v1/connect/analytics
   /api/v1/connect/setup

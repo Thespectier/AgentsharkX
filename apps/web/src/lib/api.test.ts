@@ -1,7 +1,10 @@
+import { http, HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
 
-import { getScenario, withScenario } from "./api";
+import { demoRuns } from "../mocks/data";
+import { server } from "../mocks/server";
 import type { ApiFailure, Envelope, OverviewData } from "../types";
+import { getScenario, mutateOperation, withScenario } from "./api";
 
 describe("scenario-aware mock API", () => {
   it("defaults to the normal demo and preserves explicit failure states", () => {
@@ -41,5 +44,29 @@ describe("scenario-aware mock API", () => {
       code: "UPSTREAM_UNAVAILABLE",
       retryable: true,
     });
+  });
+
+  it("forwards an explicit request ID on write operations", async () => {
+    let requestId = "";
+    server.use(
+      http.post("/api/v1/demo/runs", ({ request }) => {
+        requestId = request.headers.get("X-Request-ID") ?? "";
+        return HttpResponse.json(
+          {
+            data: demoRuns[0],
+            meta: { fetchedAt: "2026-07-30T08:00:00Z", stale: false },
+          },
+          { status: 202 },
+        );
+      }),
+    );
+
+    await mutateOperation(
+      "createDemoRun",
+      { scenario: "happy", delayMs: 0 },
+      { requestId: "demo-stable-request" },
+    );
+
+    expect(requestId).toBe("demo-stable-request");
   });
 });

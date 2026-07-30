@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import copy
 import logging
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any, Protocol
+from typing import Any, Protocol, cast
 
 from agentshark.config import GuardFailureMode, SDKConfig
 from agentshark.context import RuntimeContext
@@ -17,6 +19,15 @@ AGENTGUARD_REVISION = "4b755fb4a4a2763b7e817b3d0220fe5c22187b59"
 
 class GuardAdapter(Protocol):
     def attach_langchain(self, agent: Any) -> Any: ...
+
+    def guard_tool(
+        self,
+        call: Callable[..., Any],
+        *,
+        name: str,
+        description: str,
+        capabilities: Sequence[str],
+    ) -> Callable[..., Any]: ...
 
     def bind_task(self, context: RuntimeContext, goal_metadata: dict[str, Any]) -> Any: ...
 
@@ -76,6 +87,8 @@ class AgentGuardIntegration:
         guard_factory: Any | None = None,
         principal_factory: Any | None = None,
         allow_factory: Any | None = None,
+        plugin_config: Mapping[str, Any] | None = None,
+        guard_sandbox_profile: Any | None = None,
     ) -> None:
         self._config = config
         self._guard: Any | None = None
@@ -95,15 +108,21 @@ class AgentGuardIntegration:
                 principal_factory = principal_factory or Principal
                 allow_factory = allow_factory or GuardDecision.allow
 
+            guard_options = {
+                "remote_url": config.guard_server_url,
+                "api_key": config.guard_api_key,
+                "policy": config.guard_policy,
+                "environment": config.environment,
+                "mode": "enforce",
+                "fail_open": config.guard_failure_mode is GuardFailureMode.OPEN,
+                "remote_timeout_s": config.guard_remote_timeout_seconds,
+                "remote_retries": config.guard_remote_retries,
+                "plugin_config": copy.deepcopy(dict(plugin_config)) if plugin_config else None,
+            }
+            if guard_sandbox_profile is not None:
+                guard_options["sandbox_profile"] = guard_sandbox_profile
             guard = guard_factory(
-                remote_url=config.guard_server_url,
-                api_key=config.guard_api_key,
-                policy=config.guard_policy,
-                environment=config.environment,
-                mode="enforce",
-                fail_open=config.guard_failure_mode is GuardFailureMode.OPEN,
-                remote_timeout_s=config.guard_remote_timeout_seconds,
-                remote_retries=config.guard_remote_retries,
+                **guard_options,
             )
             principal = principal_factory(
                 agent_id=agent_id,
@@ -116,6 +135,7 @@ class AgentGuardIntegration:
                 },
             )
             guard.start(principal=principal)
+            self._sync_session_plugin_config(guard, plugin_config)
             self._install_failure_policy(guard, allow_factory)
             self._probe_remote(guard)
             self._guard = guard
@@ -154,6 +174,33 @@ class AgentGuardIntegration:
                 "continue unprotected"
             )
         return agent
+
+    def guard_tool(
+        self,
+        call: Callable[..., Any],
+        *,
+        name: str,
+        description: str,
+        capabilities: Sequence[str],
+    ) -> Callable[..., Any]:
+        if self._guard is None:
+            return call
+        try:
+            guarded = self._guard.wrap_tool(
+                call,
+                name=name,
+                description=description,
+                capabilities=list(capabilities),
+            )
+        except Exception as exc:
+            if self._config.guard_failure_mode is GuardFailureMode.CLOSED:
+                raise AgentGuardAttachError("AgentGuard could not wrap the tool") from exc
+            logger.warning(
+                "AgentGuard tool wrapping failed under explicit open failure mode; execution "
+                "will continue unprotected"
+            )
+            return call
+        return cast(Callable[..., Any], guarded)
 
     def bind_task(
         self, context: RuntimeContext, goal_metadata: dict[str, Any]
@@ -204,6 +251,28 @@ class AgentGuardIntegration:
         facade_guard._remote = remote
         native_enforcer.remote = remote
 
+    def _sync_session_plugin_config(
+        self,
+        guard: Any,
+        plugin_config: Mapping[str, Any] | None,
+    ) -> None:
+        if not plugin_config:
+            return
+        facade_guard = getattr(guard, "_guard", None)
+        native_context = getattr(facade_guard, "context", None)
+        metadata = getattr(native_context, "metadata", None)
+        sync_remote_session = getattr(facade_guard, "_sync_remote_session", None)
+        if not isinstance(metadata, dict) or not callable(sync_remote_session):
+            raise AgentGuardAttachError(
+                "AgentGuard session plugin configuration contract is unavailable"
+            )
+
+        remote_config = copy.deepcopy(dict(plugin_config))
+        client_config = _client_plugin_config(remote_config)
+        metadata["client_plugin_config"] = client_config
+        metadata["remote_plugin_config"] = remote_config
+        sync_remote_session()
+
     def _probe_remote(self, guard: Any) -> None:
         if self._config.guard_server_url is None:
             if self._config.guard_failure_mode is GuardFailureMode.CLOSED:
@@ -220,6 +289,17 @@ class NullGuardIntegration:
     def attach_langchain(self, agent: Any) -> Any:
         return agent
 
+    def guard_tool(
+        self,
+        call: Callable[..., Any],
+        *,
+        name: str,
+        description: str,
+        capabilities: Sequence[str],
+    ) -> Callable[..., Any]:
+        _ = (name, description, capabilities)
+        return call
+
     def bind_task(self, context: RuntimeContext, goal_metadata: dict[str, Any]) -> None:
         _ = (context, goal_metadata)
         return None
@@ -229,3 +309,18 @@ class NullGuardIntegration:
 
     def close(self) -> None:
         return None
+
+
+def _client_plugin_config(config: Mapping[str, Any]) -> dict[str, Any]:
+    document = copy.deepcopy(dict(config))
+    phases = document.get("phases")
+    if not isinstance(phases, dict):
+        return document
+    for phase in phases.values():
+        if not isinstance(phase, dict):
+            continue
+        if "server" in phase:
+            phase["server"] = []
+        if "remote" in phase:
+            phase["remote"] = []
+    return document

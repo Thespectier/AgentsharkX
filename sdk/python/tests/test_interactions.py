@@ -8,6 +8,7 @@ from helpers import config, runtime
 from openinference.instrumentation.mcp import MCPInstrumentor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
+from agentshark.integrations import mcp as mcp_integration
 from agentshark.tracing import TelemetryManager
 
 
@@ -64,6 +65,38 @@ def test_mark_mcp_tool_wraps_object_entrypoint_once() -> None:
     sdk.flush()
     calls = [span for span in spans(exporter) if span.attributes.get("agentshark.mcp.method")]
     assert len(calls) == 1
+    sdk.close()
+
+
+def test_mcp_call_does_not_reclassify_a_langchain_chain_span(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sdk, exporter, _ = runtime()
+
+    with sdk.task(task_id="task-a"):
+        with sdk._tracer.start_as_current_span(
+            "langgraph-node",
+            attributes={"openinference.span.kind": "CHAIN"},
+        ) as chain_span:
+            monkeypatch.setattr(
+                mcp_integration,
+                "_current_langchain_span",
+                lambda: chain_span,
+            )
+            with sdk.mcp_call(
+                server_name="research",
+                tool_name="asset_lookup",
+            ):
+                pass
+    sdk.flush()
+
+    finished = spans(exporter)
+    chain = next(span for span in finished if span.name == "langgraph-node")
+    mcp = next(span for span in finished if span.name == "asset_lookup")
+    assert chain.attributes["openinference.span.kind"] == "CHAIN"
+    assert "agentshark.mcp.method" not in chain.attributes
+    assert mcp.attributes["agentshark.mcp.method"] == "tools/call"
+    assert mcp.attributes["agentshark.countable"] is True
     sdk.close()
 
 

@@ -3,6 +3,7 @@ import {
   Activity,
   Cable,
   Command,
+  FlaskConical,
   Home,
   Search,
   Settings,
@@ -46,11 +47,23 @@ const commands = [
     icon: Sparkles,
   },
 ];
+const demoCommand = {
+  label: "Open Demo Lab",
+  hint: "Deterministic capability walkthrough",
+  path: "/demo",
+  icon: FlaskConical,
+};
+
+export function commandPaletteItems(demoEnabled: boolean) {
+  return demoEnabled ? [...commands, demoCommand] : commands;
+}
 
 export function CommandPalette({
+  demoEnabled,
   open,
   onOpenChange,
 }: {
+  demoEnabled: boolean;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
@@ -60,15 +73,16 @@ export function CommandPalette({
   const inputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
   const reduced = useReducedMotion();
+  const availableCommands = useMemo(() => commandPaletteItems(demoEnabled), [demoEnabled]);
   const filtered = useMemo(() => {
     const normalized = query.trim().toLowerCase();
-    if (!normalized) return commands;
-    return commands.filter((item) =>
+    if (!normalized) return availableCommands;
+    return availableCommands.filter((item) =>
       `${item.label} ${item.hint} ${t(item.label)} ${t(item.hint)}`
         .toLowerCase()
         .includes(normalized),
     );
-  }, [query, t]);
+  }, [availableCommands, query, t]);
 
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
@@ -93,6 +107,7 @@ export function CommandPalette({
     onOpenChange(false);
     const section = path.split("/")[2];
     if (path === "/") void navigate({ to: "/", search: true });
+    else if (path === "/demo") void navigate({ to: "/demo", search: true });
     else if (path === "/system") void navigate({ to: "/system", search: true });
     else if (path.startsWith("/connect/"))
       void navigate({ to: "/connect/$section", params: { section }, search: true });

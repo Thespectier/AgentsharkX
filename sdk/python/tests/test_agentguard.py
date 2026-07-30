@@ -38,13 +38,20 @@ class FakeRemote:
 
 class FakeFacade:
     def __init__(self, remote: FakeRemote) -> None:
+        self.context = SimpleNamespace(task_id=None, metadata={"existing": "value"})
+        self.sync_count = 0
         self._guard = SimpleNamespace(
             _remote=remote,
             _enforcer=SimpleNamespace(remote=remote),
+            context=self.context,
+            _sync_remote_session=self._sync_remote_session,
         )
-        self.context = SimpleNamespace(task_id=None, metadata={"existing": "value"})
         self.attached: list[Any] = []
         self.close_count = 0
+        self.wrapped: list[dict[str, Any]] = []
+
+    def _sync_remote_session(self) -> None:
+        self.sync_count += 1
 
     def start(self, *, principal: Any) -> FakeFacade:
         self.principal = principal
@@ -52,6 +59,10 @@ class FakeFacade:
 
     def attach_langchain(self, agent: Any) -> None:
         self.attached.append(agent)
+
+    def wrap_tool(self, call: Any, **metadata: Any) -> Any:
+        self.wrapped.append(dict(metadata))
+        return call
 
     def close(self) -> None:
         self.close_count += 1
@@ -139,6 +150,7 @@ def test_task_context_is_applied_and_restored() -> None:
         session_id="session-a",
         task_id="task-a",
         trace_id="1" * 32,
+        root_span_id="2" * 16,
         user_id="user-a",
         environment="test",
     )
@@ -152,3 +164,84 @@ def test_task_context_is_applied_and_restored() -> None:
     adapter.close()
     adapter.close()
     assert facade.close_count == 1
+
+
+def test_plugin_config_and_explicit_tool_metadata_are_forwarded() -> None:
+    facade = FakeFacade(FakeRemote())
+    guard_factory, principal_factory, allow_factory = factories(facade)
+    plugin_config = {
+        "phases": {
+            "tool_before": {
+                "client": [],
+                "server": [{"name": "demo_tripwire", "env": {}}],
+            }
+        }
+    }
+    adapter = AgentGuardIntegration(
+        sdk_config("closed"),
+        agent_id="agent-a",
+        session_id="session-a",
+        user_id="user-a",
+        guard_factory=guard_factory,
+        principal_factory=principal_factory,
+        allow_factory=allow_factory,
+        plugin_config=plugin_config,
+    )
+
+    plugin_config["phases"]["tool_before"]["server"].clear()
+
+    def send_http(url: str) -> str:
+        return url
+
+    assert (
+        adapter.guard_tool(
+            send_http,
+            name="send_http",
+            description="Simulated action",
+            capabilities=("network",),
+        )
+        is send_http
+    )
+    assert facade.guard_kwargs["plugin_config"]["phases"]["tool_before"]["server"] == [
+        {"name": "demo_tripwire", "env": {}}
+    ]
+    assert facade.context.metadata["client_plugin_config"]["phases"]["tool_before"] == {
+        "client": [],
+        "server": [],
+    }
+    assert facade.context.metadata["remote_plugin_config"]["phases"]["tool_before"] == {
+        "client": [],
+        "server": [{"name": "demo_tripwire", "env": {}}],
+    }
+    assert facade.sync_count == 1
+    assert facade.wrapped == [
+        {
+            "name": "send_http",
+            "description": "Simulated action",
+            "capabilities": ["network"],
+        }
+    ]
+    adapter.close()
+
+
+def test_sandbox_profile_is_opt_in_and_forwarded_unchanged() -> None:
+    default_adapter, default_facade = integration("closed", FakeRemote())
+    assert "sandbox_profile" not in default_facade.guard_kwargs
+    default_adapter.close()
+
+    facade = FakeFacade(FakeRemote())
+    guard_factory, principal_factory, allow_factory = factories(facade)
+    sandbox_profile = object()
+    adapter = AgentGuardIntegration(
+        sdk_config("closed"),
+        agent_id="agent-a",
+        session_id="session-a",
+        user_id="user-a",
+        guard_factory=guard_factory,
+        principal_factory=principal_factory,
+        allow_factory=allow_factory,
+        guard_sandbox_profile=sandbox_profile,
+    )
+
+    assert facade.guard_kwargs["sandbox_profile"] is sandbox_profile
+    adapter.close()

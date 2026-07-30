@@ -7,9 +7,9 @@ PYTHON_IMAGE := python:3.12.11-slim@sha256:47ae396f09c1303b8653019811a8498470603
 COMPOSE := docker compose --env-file deploy/versions.env --env-file deploy/example.env -f deploy/compose.yaml
 PREVIEW := ./scripts/preview.sh
 
-.PHONY: verify format-check test postgres-test race-test sdk-test sdk-bootstrap sdk-agentguard-contract web-check secret-boundary secret-scan repository-check openapi-validate compose-validate upstream-smoke gateway-config-write-smoke gateway-observability-smoke gateway-standalone-install gateway-standalone-up gateway-standalone-down gateway-standalone-status gateway-standalone-logs preview-bootstrap preview-up preview-container-up preview-down preview-status container-build release-e2e sbom security-scan release-gate
+.PHONY: verify format-check test postgres-test race-test sdk-test demo-agent-test sdk-bootstrap sdk-agentguard-contract web-check secret-boundary secret-scan repository-check openapi-validate compose-validate upstream-smoke gateway-config-write-smoke gateway-observability-smoke gateway-standalone-install gateway-standalone-up gateway-standalone-down gateway-standalone-status gateway-standalone-logs preview-bootstrap preview-up preview-container-up preview-down preview-status demo-up demo-status demo-down demo-smoke container-build release-e2e sbom security-scan release-gate
 
-verify: format-check test postgres-test race-test sdk-test web-check secret-boundary repository-check openapi-validate compose-validate
+verify: format-check test postgres-test race-test sdk-test demo-agent-test web-check secret-boundary repository-check openapi-validate compose-validate
 
 format-check:
 	@go_files="$$(rg --files apps/server -g '*.go' | sort)"; \
@@ -41,6 +41,10 @@ sdk-test:
 	@docker run --rm -v "$(CURDIR)/sdk/python:/source:ro" $(PYTHON_IMAGE) \
 		sh -c 'mkdir -p /work/src && cp -a /source/pyproject.toml /source/constraints.txt /source/README.md /work/ && cp -a /source/src/agentshark /work/src/ && cp -a /source/tests /work/ && cd /work && python -m pip install --disable-pip-version-check --quiet -c constraints.txt -e ".[dev]" && pytest -q -p no:cacheprovider && ruff check --no-cache src tests && mypy --cache-dir=/tmp/agentshark-mypy src'
 
+demo-agent-test:
+	@docker run --rm -v "$(CURDIR):/source:ro" $(PYTHON_IMAGE) \
+		sh -c 'export DEBIAN_FRONTEND=noninteractive UV_PROJECT_ENVIRONMENT=/tmp/agentshark-demo-venv UV_CACHE_DIR=/tmp/agentshark-demo-cache && apt-get update >/dev/null && apt-get install --yes --no-install-recommends git >/dev/null && python -m pip install --disable-pip-version-check --quiet uv==0.12.0 && mkdir -p /work/sdk /work/examples && cp -a /source/sdk/python /work/sdk/ && cp -a /source/examples/demo-agent /work/examples/ && cd /work && uv sync --project examples/demo-agent --frozen >/dev/null && uv run --project examples/demo-agent pytest -q -p no:cacheprovider examples/demo-agent/tests && uv run --project examples/demo-agent ruff check --no-cache --config examples/demo-agent/pyproject.toml examples/demo-agent && uv run --project examples/demo-agent mypy --config-file examples/demo-agent/pyproject.toml --cache-dir=/tmp/agentshark-demo-mypy'
+
 sdk-bootstrap:
 	@./scripts/bootstrap-sdk.sh
 
@@ -67,6 +71,9 @@ compose-validate:
 		config --quiet
 	@docker compose --env-file deploy/versions.env --env-file deploy/example.env \
 		-f deploy/compose.yaml -f deploy/compose.standalone-gateway.host-network.yaml \
+		config --quiet
+	@docker compose --env-file deploy/versions.env --env-file deploy/example.env \
+		-f deploy/compose.yaml -f deploy/compose.demo.yaml \
 		config --quiet
 
 upstream-smoke:
@@ -107,6 +114,18 @@ preview-down:
 
 preview-status:
 	@$(PREVIEW) status
+
+demo-up:
+	@./scripts/demo.sh up
+
+demo-status:
+	@./scripts/demo.sh status
+
+demo-down:
+	@./scripts/demo.sh down
+
+demo-smoke:
+	@./scripts/demo-smoke.sh
 
 container-build:
 	@docker build -f deploy/Dockerfile \

@@ -47,6 +47,23 @@ phase14_setting_keys=(
   AGENTSHARK_COLLECTOR_MAX_SPANS_PER_REQUEST
 )
 
+phase16_setting_keys=(
+  AGENTSHARK_DEMO_ENABLED
+  AGENTSHARK_DEMO_RUNNER_URL
+  AGENTSHARK_DEMO_MAX_CONCURRENCY
+  AGENTSHARK_DEMO_DEFAULT_DELAY_MS
+  AGENTSHARK_DEMO_RUN_TIMEOUT
+  AGENTSHARK_DEMO_MONITOR_INTERVAL
+  AGENTSHARK_DEMO_COLLECTOR_READY_URL
+  AGENTSHARK_DEMO_LLM_BASE_URL
+  AGENTSHARK_DEMO_LLM_MODEL
+  AGENTSHARK_DEMO_MCP_URL
+  AGENTSHARK_DEMO_GATEWAY_ADMIN_URL
+  AGENTSHARK_DEMO_GATEWAY_CONSOLE_URL
+  AGENTSHARK_DEMO_GATEWAY_ADMIN_BIND
+  AGENTSHARK_DEMO_GATEWAY_ADMIN_PORT
+)
+
 require_openssl() {
   if ! command -v openssl >/dev/null 2>&1; then
     echo "openssl is required to generate preview credentials" >&2
@@ -91,6 +108,7 @@ database_url_for_password() {
 upgrade_existing_env() {
   local password_count url_count database_password database_url
   local database_url_pattern url_password key count value trace_token_count trace_token
+  local demo_token_count demo_token
   local -a additions=()
 
   password_count="$(env_key_count "$target" AGENTSHARK_DATABASE_PASSWORD)"
@@ -171,15 +189,43 @@ upgrade_existing_env() {
     fi
   done
 
+  demo_token_count="$(env_key_count "$target" AGENTSHARK_DEMO_RUNNER_TOKEN)"
+  if ((demo_token_count > 1)); then
+    echo ".env has duplicate AGENTSHARK_DEMO_RUNNER_TOKEN assignments; resolve them before retrying" >&2
+    exit 1
+  fi
+  if ((demo_token_count == 0)); then
+    require_openssl
+    additions+=("AGENTSHARK_DEMO_RUNNER_TOKEN=$(openssl rand -hex 24)")
+  else
+    demo_token="$(env_value "$target" AGENTSHARK_DEMO_RUNNER_TOKEN)"
+    if [[ ${#demo_token} -lt 32 || "$demo_token" == change-me* || "$demo_token" == replace-me* ]]; then
+      echo ".env contains an invalid or placeholder Demo Runner token; set a non-placeholder value of at least 32 characters" >&2
+      exit 1
+    fi
+  fi
+
+  for key in "${phase16_setting_keys[@]}"; do
+    count="$(env_key_count "$target" "$key")"
+    if ((count > 1)); then
+      echo ".env has duplicate $key assignments; resolve them before retrying" >&2
+      exit 1
+    fi
+    if ((count == 0)); then
+      value="$(template_value "$key")"
+      additions+=("$key=$value")
+    fi
+  done
+
   if ((${#additions[@]} == 0)); then
-    echo ".env already contains the Phase 13 and Phase 14 settings; leaving existing values unchanged."
+    echo ".env already contains the Phase 13, Phase 14, and Phase 16 settings; leaving existing values unchanged."
     return
   fi
 
-  printf '\n# AgentsharkX durable storage and Phase 14 Trace ingest.\n' >>"$target"
+  printf '\n# AgentsharkX durable storage, Trace ingest, and optional Demo Lab.\n' >>"$target"
   printf '%s\n' "${additions[@]}" >>"$target"
   chmod 0600 "$target"
-  echo "Added missing Phase 13/14 settings to .env without changing existing values."
+  echo "Added missing Phase 13/14/16 settings to .env without changing existing values."
 }
 
 umask 077
@@ -199,6 +245,7 @@ admin_token="$(openssl rand -hex 24)"
 guard_token="$(openssl rand -hex 24)"
 database_password="$(openssl rand -hex 24)"
 trace_ingest_token="$(openssl rand -hex 24)"
+demo_runner_token="$(openssl rand -hex 24)"
 database_url="$(database_url_for_password "$database_password")"
 config_path="$root_dir/deploy/agentgateway/config.yaml"
 if stat -c '%u' "$config_path" >/dev/null 2>&1; then
@@ -215,6 +262,7 @@ awk \
   -v database_password="$database_password" \
   -v database_url="$database_url" \
   -v trace_ingest_token="$trace_ingest_token" \
+  -v demo_runner_token="$demo_runner_token" \
   -v gateway_uid="$gateway_uid" \
   -v gateway_gid="$gateway_gid" '
     /^AGENTSHARK_ADMIN_TOKEN=/ { print "AGENTSHARK_ADMIN_TOKEN=" admin_token; next }
@@ -222,6 +270,7 @@ awk \
     /^AGENTSHARK_DATABASE_URL=/ { print "AGENTSHARK_DATABASE_URL=" database_url; next }
     /^AGENTSHARK_DATABASE_PASSWORD=/ { print "AGENTSHARK_DATABASE_PASSWORD=" database_password; next }
     /^AGENTSHARK_TRACE_INGEST_TOKEN=/ { print "AGENTSHARK_TRACE_INGEST_TOKEN=" trace_ingest_token; next }
+    /^AGENTSHARK_DEMO_RUNNER_TOKEN=/ { print "AGENTSHARK_DEMO_RUNNER_TOKEN=" demo_runner_token; next }
     /^AGENTGATEWAY_RUNTIME_UID=/ { print "AGENTGATEWAY_RUNTIME_UID=" gateway_uid; next }
     /^AGENTGATEWAY_RUNTIME_GID=/ { print "AGENTGATEWAY_RUNTIME_GID=" gateway_gid; next }
     { print }

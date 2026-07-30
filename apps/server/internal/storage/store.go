@@ -68,6 +68,7 @@ type OutboxMessage struct {
 	EventKind string
 	Event     model.UnifiedEvent
 	Trace     *telemetry.Summary
+	Demo      *model.DemoRunEvent
 	CreatedAt time.Time
 	ExpiresAt *time.Time
 }

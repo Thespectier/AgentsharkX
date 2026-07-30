@@ -1,9 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate, useRouterState } from "@tanstack/react-router";
 import {
-  AlertTriangle,
   ArrowLeft,
-  Braces,
   ChevronLeft,
   ChevronRight,
   CircleDotDashed,
@@ -21,28 +19,25 @@ import {
   Card,
   CardHeader,
   DataTable,
-  DefinitionList,
-  DetailDrawer,
   EmptyState,
   ErrorState,
-  InlineLoading,
   PageHeader,
   PageSkeleton,
   StatusBadge,
   type Column,
 } from "../../components/ui";
 import { PageFrame } from "../../components/workspace";
+import { TraceFlow } from "../../components/trace-flow";
+import { TraceSpanDrawer } from "../../components/trace-span-drawer";
 import type {
   TraceDetail,
   TraceListEnvelope,
   TraceSpan,
-  TraceSpanDetail,
   TraceSummary,
 } from "../../generated/api-client";
 import { ApiError, formatError, getScenario, requestOperation } from "../../lib/api";
-import { formatCount, formatDateTimeWithZone } from "../../lib/format";
+import { formatCount, formatDateTimeWithZone, formatTraceDuration } from "../../lib/format";
 import { useI18n } from "../../lib/i18n";
-import { TraceFlow } from "./trace-flow";
 
 const pageSize = 25;
 const initialSpanRows = 100;
@@ -395,16 +390,6 @@ export function TraceDetailPage() {
         : false;
     },
   });
-  const spanQuery = useQuery({
-    queryKey: ["audit-trace-span", traceId, selectedSpanId, scenario],
-    queryFn: ({ signal }) =>
-      requestOperation("getAuditTraceSpan", {
-        signal,
-        path: { traceId, spanId: selectedSpanId! },
-      }),
-    enabled: Boolean(selectedSpanId),
-    retry: false,
-  });
   const setSelectedSpan = useCallback(
     (spanId?: string, trigger?: HTMLElement) => {
       if (trigger) triggerRef.current = trigger;
@@ -498,23 +483,13 @@ export function TraceDetailPage() {
         onMore={() => setSpanRowLimit((value) => value + initialSpanRows)}
         onSelect={(span, trigger) => setSelectedSpan(span.spanId, trigger)}
       />
-      <DetailDrawer
-        eyebrow={selectedSummary?.openInferenceKind || "Span detail"}
+      <TraceSpanDrawer
         onClose={() => setSelectedSpan()}
-        open={Boolean(selectedSpanId)}
         returnFocusRef={triggerRef}
-        title={selectedSummary?.name ?? "Span detail"}
-      >
-        {spanQuery.isLoading ? (
-          <div className="trace-span-loading">
-            <InlineLoading label="Loading complete Span detail" />
-          </div>
-        ) : null}
-        {spanQuery.isError ? (
-          <TraceSpanError error={spanQuery.error} onRetry={() => void spanQuery.refetch()} />
-        ) : null}
-        {spanQuery.data ? <TraceSpanDetailView detail={spanQuery.data.data} /> : null}
-      </DetailDrawer>
+        span={selectedSummary}
+        spanId={selectedSpanId}
+        traceId={traceId}
+      />
     </PageFrame>
   );
 }
@@ -662,104 +637,6 @@ function TraceSpanTable({
   );
 }
 
-function TraceSpanDetailView({ detail }: { detail: TraceSpanDetail }) {
-  const { t } = useI18n();
-  const span = detail.span;
-  return (
-    <div className="trace-span-detail">
-      <div className="event-detail__badges">
-        <StatusBadge status={span.statusCode} />
-        <StatusBadge status={span.contentState.replaceAll("_", " ")} />
-      </div>
-      <DefinitionList
-        items={[
-          { label: "Span ID", value: <code>{span.spanId}</code> },
-          {
-            label: "Parent Span",
-            value: span.parentSpanId ? <code>{span.parentSpanId}</code> : t("Root or unparented"),
-          },
-          {
-            label: "Started",
-            value: <time dateTime={span.startedAt}>{formatDateTimeWithZone(span.startedAt)}</time>,
-          },
-          {
-            label: "Ended",
-            value: span.endedAt ? (
-              <time dateTime={span.endedAt}>{formatDateTimeWithZone(span.endedAt)}</time>
-            ) : (
-              t("Still running")
-            ),
-          },
-          {
-            label: "Duration",
-            value: formatTraceDuration(span.durationMs, span.endedAt ? span.statusCode : "running"),
-          },
-          { label: "Agent", value: span.agentId || t("Not reported") },
-          { label: "Operation kind", value: span.openInferenceKind || t("Not reported") },
-          {
-            label: "Provider / model",
-            value: [span.provider, span.model].filter(Boolean).join(" / ") || t("Not reported"),
-          },
-          {
-            label: "Tool",
-            value: [span.mcpServer, span.toolName].filter(Boolean).join(" / ") || t("Not reported"),
-          },
-          { label: "Peer agent", value: span.peerAgentId || t("No A2A interaction observed") },
-          { label: "Status message", value: detail.statusMessage || t("Not reported") },
-        ]}
-      />
-      <ContentStateNotice state={span.contentState} hasPayload={detail.payloads.length > 0} />
-      {detail.payloads.map((payload, index) => (
-        <RawTraceJSON
-          key={`${payload.kind}:${index}`}
-          title={`${payload.kind} · ${t(payload.redactionState)}`}
-          value={payload.payloadJson ?? payload.payloadBytes ?? t("No retained body")}
-        />
-      ))}
-      <RawTraceJSON title="Attributes" value={detail.attributes} />
-      <RawTraceJSON title="Resource" value={detail.resource} />
-      <RawTraceJSON title="Span events" value={detail.events} />
-    </div>
-  );
-}
-
-function ContentStateNotice({ state, hasPayload }: { state: string; hasPayload: boolean }) {
-  const { t } = useI18n();
-  const messages: Record<string, string> = {
-    captured: hasPayload
-      ? "Captured content is available below."
-      : "Content is marked captured, but no retained payload is available.",
-    redacted: "Content was redacted at collection.",
-    truncated: "Captured content is truncated.",
-    not_collected: "Payload content was not collected.",
-    expired: "Payload retention has expired.",
-  };
-  return (
-    <div className={`trace-content-state trace-content-state--${state}`} role="status">
-      <AlertTriangle aria-hidden="true" size={16} />
-      <span>
-        <strong>{t("Content state")}</strong>
-        {t(messages[state] ?? "Content state: {state}", { state })}
-      </span>
-    </div>
-  );
-}
-
-function RawTraceJSON({ title, value }: { title: string; value: unknown }) {
-  const { t } = useI18n();
-  return (
-    <section className="raw-json trace-raw-json">
-      <header>
-        <Braces aria-hidden="true" size={15} />
-        <strong>{t(title)}</strong>
-      </header>
-      <pre>
-        <code>{typeof value === "string" ? value : JSON.stringify(value, null, 2)}</code>
-      </pre>
-    </section>
-  );
-}
-
 function TraceQueryError({
   error,
   onRetry,
@@ -793,23 +670,6 @@ function TraceQueryError({
         title={title}
       />
     </PageFrame>
-  );
-}
-
-function TraceSpanError({ error, onRetry }: { error: unknown; onRetry: () => void }) {
-  const status = error instanceof ApiError ? error.status : 0;
-  return (
-    <ErrorState
-      description={formatError(error)}
-      onRetry={status === 403 || status === 404 ? undefined : onRetry}
-      title={
-        status === 404
-          ? "Span detail not found"
-          : status === 403
-            ? "Span content access denied"
-            : "Span detail unavailable"
-      }
-    />
   );
 }
 
@@ -1051,13 +911,6 @@ function dateTimeQuery(value: string): string | undefined {
   if (!value) return undefined;
   const date = new Date(`${value.length === 16 ? `${value}:00` : value}+08:00`);
   return Number.isNaN(date.getTime()) ? undefined : date.toISOString();
-}
-function formatTraceDuration(value: number | null | undefined, status?: string): string {
-  if (value === null || value === undefined)
-    return status === "running" || status === "unset" ? "Running" : "Not verified";
-  if (value < 1_000) return `${formatCount(value)} ms`;
-  if (value < 60_000) return `${(value / 1_000).toFixed(2)} s`;
-  return `${(value / 60_000).toFixed(1)} min`;
 }
 function shortID(value: string): string {
   return value.length > 16 ? `${value.slice(0, 8)}…${value.slice(-6)}` : value;

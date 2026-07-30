@@ -9,6 +9,7 @@ import {
   CircleHelp,
   Clock3,
   Command,
+  FlaskConical,
   Home,
   Languages,
   Menu,
@@ -120,6 +121,12 @@ export function AppShell() {
     staleTime: 15_000,
     retry: false,
   });
+  const demoStatus = useQuery({
+    queryKey: ["demo-status", scenario],
+    queryFn: ({ signal }) => requestOperation("getDemoStatus", signal),
+    staleTime: 15_000,
+    retry: false,
+  });
   const live = useLiveEvents(overview.isSuccess && scenario !== "empty");
 
   useEffect(() => {
@@ -139,6 +146,7 @@ export function AppShell() {
   }, [live.resetRevision, queryClient]);
 
   const pending = approvals.data?.data.total ?? 0;
+  const demoEnabled = demoStatus.data?.data.enabled === true;
   const health = overview.data?.data.health ?? [];
 
   return (
@@ -245,6 +253,20 @@ export function AppShell() {
           })}
         </nav>
         <div className="sidebar__bottom">
+          <p className="nav-label">{t("Tools")}</p>
+          {demoEnabled ? (
+            <Link
+              aria-label={collapsed ? t("Demo Lab") : undefined}
+              aria-current={location.pathname === "/demo" ? "page" : undefined}
+              className={cn("nav-item", location.pathname === "/demo" && "nav-item--active")}
+              search={{ scenario: scenario === "normal" ? undefined : scenario }}
+              title={collapsed ? t("Demo Lab") : undefined}
+              to="/demo"
+            >
+              <FlaskConical aria-hidden="true" size={18} />
+              <span>{t("Demo Lab")}</span>
+            </Link>
+          ) : null}
           <Link
             aria-label={collapsed ? t("System") : undefined}
             className={cn("nav-item", location.pathname === "/system" && "nav-item--active")}
@@ -398,7 +420,7 @@ export function AppShell() {
           </LiveEventsContext.Provider>
         </main>
       </div>
-      <CommandPalette onOpenChange={setCommandOpen} open={commandOpen} />
+      <CommandPalette demoEnabled={demoEnabled} onOpenChange={setCommandOpen} open={commandOpen} />
     </div>
   );
 }

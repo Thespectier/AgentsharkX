@@ -53,12 +53,30 @@ class FakeGuard:
     close_count: int = 0
     deny_attach: bool = False
     restore_error: Exception | None = None
+    guarded_tools: list[dict[str, Any]] = field(default_factory=list)
 
     def attach_langchain(self, agent: Any) -> Any:
         self.attach_count += 1
         if self.deny_attach:
             raise PermissionError("denied")
         return agent
+
+    def guard_tool(
+        self,
+        call: Any,
+        *,
+        name: str,
+        description: str,
+        capabilities: Any,
+    ) -> Any:
+        self.guarded_tools.append(
+            {
+                "name": name,
+                "description": description,
+                "capabilities": tuple(capabilities),
+            }
+        )
+        return call
 
     def bind_task(self, context: RuntimeContext, goal_metadata: dict[str, Any]) -> object:
         self.contexts.append(context)

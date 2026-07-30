@@ -53,6 +53,9 @@ export function AuditPage() {
   const scenario = getScenario();
   const location = useRouterState({ select: (state) => state.location });
   const navigate = useNavigate();
+  const search = useMemo(() => new URLSearchParams(location.searchStr), [location.searchStr]);
+  const selectedId = search.get("event") ?? undefined;
+  const exactSessionId = search.get("sessionId") ?? undefined;
   const triggerRef = useRef<HTMLElement | null>(null);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [filters, setFilters] = useState<AuditFilters>(defaultFilters);
@@ -69,14 +72,16 @@ export function AuditPage() {
       events: mergeLiveEvents(live.events, query.data.data.events),
     };
   }, [live.events, query.data]);
-  const selectedId = new URLSearchParams(location.searchStr).get("event");
   const selected = useMemo(
     () => data?.events.find((event) => event.id === selectedId),
     [data, selectedId],
   );
   const filteredData = useMemo<AuditData | undefined>(
-    () => (data ? { ...data, events: filterAuditEvents(data.events, filters) } : undefined),
-    [data, filters],
+    () =>
+      data
+        ? { ...data, events: filterAuditEvents(data.events, filters, exactSessionId) }
+        : undefined,
+    [data, exactSessionId, filters],
   );
   const detailQuery = useQuery({
     queryKey: ["audit-event", selected?.source, selected?.id, scenario],
@@ -98,13 +103,27 @@ export function AuditPage() {
         search: {
           scenario: scenario === "normal" ? undefined : scenario,
           event: eventId,
+          sessionId: exactSessionId,
         },
         replace: !eventId,
       });
     },
-    [navigate, scenario, section],
+    [exactSessionId, navigate, scenario, section],
   );
   const closeEvent = useCallback(() => setEvent(), [setEvent]);
+  const resetFilters = useCallback(() => {
+    setFilters(defaultFilters);
+    if (!exactSessionId) return;
+    void navigate({
+      to: "/audit/$section",
+      params: { section },
+      search: {
+        scenario: scenario === "normal" ? undefined : scenario,
+        event: selectedId,
+      },
+      replace: true,
+    });
+  }, [exactSessionId, navigate, scenario, section, selectedId]);
   if (query.isLoading) return <PageSkeleton label="Loading audit data" />;
   if (query.isError || !query.data || !data || !filteredData)
     return (
@@ -129,7 +148,9 @@ export function AuditPage() {
             variant="secondary"
           >
             <Filter size={14} /> {t("Filter")}
-            {activeFilterCount(filters) ? ` (${activeFilterCount(filters)})` : ""}
+            {activeFilterCount(filters, exactSessionId)
+              ? ` (${activeFilterCount(filters, exactSessionId)})`
+              : ""}
           </Button>
         }
         description="Analyze gateway traffic and runtime security evidence without inventing task-level correlation."
@@ -137,7 +158,14 @@ export function AuditPage() {
         title="See every verified signal"
       />
       <PartialBanner meta={meta} />
-      {filtersOpen ? <AuditFilterPanel filters={filters} onChange={setFilters} /> : null}
+      {filtersOpen ? (
+        <AuditFilterPanel
+          exactSessionId={exactSessionId}
+          filters={filters}
+          onChange={setFilters}
+          onReset={resetFilters}
+        />
+      ) : null}
       {section === "analytics" ? (
         <AnalyticsView
           data={filteredData}
@@ -186,16 +214,23 @@ export function AuditPage() {
 }
 
 function AuditFilterPanel({
+  exactSessionId,
   filters,
   onChange,
+  onReset,
 }: {
+  exactSessionId?: string;
   filters: AuditFilters;
   onChange: (filters: AuditFilters) => void;
+  onReset: () => void;
 }) {
   const { t } = useI18n();
   return (
     <Card className="audit-filters">
-      <div id="audit-filters">
+      <div
+        className={exactSessionId ? "audit-filters__grid--session" : undefined}
+        id="audit-filters"
+      >
         <label>
           <span>{t("Search events")}</span>
           <input
@@ -204,6 +239,12 @@ function AuditFilterPanel({
             value={filters.query}
           />
         </label>
+        {exactSessionId ? (
+          <label>
+            <span>{t("Session ID")}</span>
+            <input readOnly value={exactSessionId} />
+          </label>
+        ) : null}
         <label>
           <span>{t("Source")}</span>
           <select
@@ -234,8 +275,8 @@ function AuditFilterPanel({
           </select>
         </label>
         <Button
-          disabled={!activeFilterCount(filters)}
-          onClick={() => onChange(defaultFilters)}
+          disabled={!activeFilterCount(filters, exactSessionId)}
+          onClick={onReset}
           size="sm"
           variant="ghost"
         >
@@ -246,11 +287,22 @@ function AuditFilterPanel({
   );
 }
 
-export function filterAuditEvents(events: UnifiedEvent[], filters: AuditFilters): UnifiedEvent[] {
+export function filterAuditEvents(
+  events: UnifiedEvent[],
+  filters: AuditFilters,
+  exactSessionId?: string,
+): UnifiedEvent[] {
   const query = filters.query.trim().toLowerCase();
   return events.filter((event) => {
     if (filters.source !== "all" && event.source !== filters.source) return false;
     if (filters.severity !== "all" && event.severity !== filters.severity) return false;
+    if (
+      exactSessionId &&
+      event.subject?.sessionId !== exactSessionId &&
+      event.correlation?.sessionId !== exactSessionId
+    ) {
+      return false;
+    }
     if (!query) return true;
     const searchable = [
       event.summary,
@@ -271,11 +323,12 @@ export function filterAuditEvents(events: UnifiedEvent[], filters: AuditFilters)
   });
 }
 
-function activeFilterCount(filters: AuditFilters): number {
+function activeFilterCount(filters: AuditFilters, exactSessionId?: string): number {
   return (
     Number(Boolean(filters.query.trim())) +
     Number(filters.source !== "all") +
-    Number(filters.severity !== "all")
+    Number(filters.severity !== "all") +
+    Number(Boolean(exactSessionId))
   );
 }
 

@@ -1,0 +1,22 @@
+# yaml-language-server: $schema=https://agentgateway.dev/schema/config
+# Isolated deterministic Demo Lab listener. This file is never merged into the
+# operator-owned deploy/agentgateway/config.yaml management-plane configuration.
+config:
+  database:
+    url: sqlite://request-logs.db
+llm:
+  port: 39000
+  providers:
+    - name: agentshark-demo-provider-v1
+      provider:
+        custom:
+          formats:
+            - type: completions
+      params:
+        baseUrl: http://demo-fixtures:39200
+  models:
+    - name: agentshark-demo-model-v1
+      provider:
+        reference: agentshark-demo-provider-v1
+      params:
+        model: agentshark-demo-model-v1

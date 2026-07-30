@@ -12,6 +12,10 @@ import type {
 } from "../types";
 import type {
   ConfirmedActionRequest,
+  DemoCreateRunRequest,
+  DemoRun,
+  DemoScenario,
+  DemoStatusComponent,
   DiagnosticsData,
   GatewayPolicyConfiguration,
   GatewayPolicyDeleteRequest,
@@ -56,6 +60,9 @@ import {
   auditData,
   baseEvents,
   connectData,
+  demoRuns,
+  demoScenarioDefinitions,
+  demoStatus,
   mockTraceDetails,
   mockTraceSpanDetails,
   mockTraceSummaries,
@@ -319,7 +326,104 @@ async function pageResponse<T>(request: Request, data: T[], source: Source) {
 let mockTrustResources = trustResources.map((resource) => structuredClone(resource));
 let mockProtectSnapshot = structuredClone(protectSnapshot);
 let mockProtectApprovals = structuredClone(protectApprovals);
+let mockDemoRuns = structuredClone(demoRuns);
+const mockDemoRequests = new Map<string, string>();
 let mockGatewayPolicyRevision = 1;
+
+const activeDemoStatuses = new Set(["queued", "starting", "running", "waiting_approval"]);
+
+function mockDemoActiveRun(): DemoRun | undefined {
+  return mockDemoRuns.find((run) => activeDemoStatuses.has(run.status));
+}
+
+function demoResponse(run: DemoRun, status = 200): Response {
+  return HttpResponse.json({ data: run, meta: meta() }, { status });
+}
+
+function demoFailure(
+  status: number,
+  code: string,
+  message: string,
+  retryable = false,
+  failedChecks?: Array<DemoStatusComponent>,
+): Response {
+  return HttpResponse.json(
+    {
+      error: {
+        code,
+        message,
+        requestId: `req_mock_demo_${status}`,
+        retryable,
+        ...(failedChecks?.length ? { failedChecks } : {}),
+      },
+    } satisfies ApiFailure,
+    { status },
+  );
+}
+
+function resetMockDemoRun(scenario: DemoScenario): DemoRun {
+  const template = structuredClone(demoRuns.find((run) => run.scenario === scenario)!);
+  const now = new Date();
+  template.requestedAt = now.toISOString();
+  template.startedAt = new Date(now.getTime() + 100).toISOString();
+  template.lastHeartbeatAt = new Date(now.getTime() + 500).toISOString();
+  template.runVersion += 1;
+  if (scenario === "approval") {
+    template.status = "waiting_approval";
+    template.outcome = "none";
+    template.completedAt = null;
+    template.currentStep = "guarded_action";
+    template.completedSteps = 7;
+    template.approval = {
+      ...template.approval!,
+      ticketId: "ticket-demo-active",
+      upstreamId: "ticket-upstream-demo-active",
+      fetchedAt: new Date(now.getTime() + 600).toISOString(),
+      rawRef: { source: "agentguard", id: "/v1/backend/approvals/0" },
+      status: "pending",
+      createdAt: new Date(now.getTime() + 500).toISOString(),
+    };
+    template.links.approval = "/protect/approvals?ticketId=ticket-demo-active";
+    if (!mockProtectApprovals.some((approval) => approval.id === template.approval!.ticketId)) {
+      mockProtectApprovals.unshift({
+        id: template.approval.ticketId,
+        upstreamId: template.approval.upstreamId,
+        source: "agentguard",
+        fetchedAt: template.approval.fetchedAt,
+        rawRef: template.approval.rawRef,
+        agentId: template.approval.agentId,
+        agentUpstreamId: template.approval.agentUpstreamId,
+        sessionId: template.approval.sessionId,
+        eventId: template.approval.eventId,
+        eventType: template.approval.eventType,
+        tool: template.approval.tool,
+        phase: template.approval.phase,
+        action: template.approval.action,
+        reason: template.approval.reason,
+        riskScore: template.approval.riskScore,
+        matchedRules: template.approval.matchedRules,
+        status: "pending",
+        createdAt: template.approval.createdAt,
+      });
+    }
+  }
+  mockDemoRuns = [template, ...mockDemoRuns.filter((run) => run.runId !== template.runId)];
+  return template;
+}
+
+function resolveMockDemoApproval(ticketId: string, decision: "approve" | "deny") {
+  const run = mockDemoRuns.find((item) => item.approval?.ticketId === ticketId);
+  if (!run?.approval) return;
+  const completedAt = new Date().toISOString();
+  run.approval.status = decision === "approve" ? "approved" : "denied";
+  run.status = "succeeded";
+  run.outcome = decision === "approve" ? "approved" : "denied";
+  run.currentStep = "finish";
+  run.completedSteps = run.totalSteps;
+  run.completedAt = completedAt;
+  run.lastHeartbeatAt = completedAt;
+  run.runVersion += 1;
+}
 
 type MockPolicyCatalogEntry = {
   key: string;
@@ -2244,6 +2348,145 @@ export const handlers = [
       return protectReceipt("delete-runtime-rule", ruleId, "Runtime rule deleted");
     },
   ),
+  http.get("/api/v1/demo/status", async ({ request }) => {
+    const scenario = scenarioFrom(request);
+    if (scenario === "loading") await delay(30_000);
+    if (scenario === "error") {
+      return demoFailure(503, "DEMO_UNAVAILABLE", "Demo Lab status is unavailable.", true);
+    }
+    const active = mockDemoActiveRun();
+    if (scenario === "empty") {
+      return HttpResponse.json({
+        data: {
+          ...structuredClone(demoStatus),
+          enabled: false,
+          ready: false,
+          activeRunId: null,
+          components: demoStatus.components.map((component) => ({
+            ...component,
+            status: "unknown" as const,
+            message: "Demo Lab is disabled",
+          })),
+        },
+        meta: meta(),
+      });
+    }
+    if (scenario === "partial") {
+      return HttpResponse.json({
+        data: {
+          ...structuredClone(demoStatus),
+          ready: false,
+          activeRunId: active?.runId ?? null,
+          components: demoStatus.components.map((component) =>
+            component.id === "demo-runner"
+              ? {
+                  ...component,
+                  status: "down" as const,
+                  message: "Demo Runner did not answer its readiness probe.",
+                }
+              : component,
+          ),
+        },
+        meta: meta(),
+      });
+    }
+    return HttpResponse.json({
+      data: { ...structuredClone(demoStatus), activeRunId: active?.runId ?? null },
+      meta: meta(),
+    });
+  }),
+  http.get("/api/v1/demo/scenarios", ({ request }) => {
+    if (scenarioFrom(request) === "error") {
+      return demoFailure(503, "DEMO_UNAVAILABLE", "Demo scenarios are unavailable.", true);
+    }
+    return HttpResponse.json({ data: demoScenarioDefinitions, meta: meta() });
+  }),
+  http.get("/api/v1/demo/runs", ({ request }) => {
+    if (scenarioFrom(request) === "error") {
+      return demoFailure(503, "DEMO_UNAVAILABLE", "Demo Run history is unavailable.", true);
+    }
+    const url = new URL(request.url);
+    const offset = Number(url.searchParams.get("cursor") ?? "0") || 0;
+    const limit = Math.min(100, Number(url.searchParams.get("limit") ?? "10") || 10);
+    const items = mockDemoRuns.slice(offset, offset + limit);
+    const nextCursor = offset + limit < mockDemoRuns.length ? String(offset + limit) : null;
+    return HttpResponse.json({
+      data: { items, nextCursor, total: mockDemoRuns.length },
+      meta: meta(),
+    });
+  }),
+  http.post("/api/v1/demo/runs", async ({ request }) => {
+    const state = scenarioFrom(request);
+    if (state === "partial") {
+      return demoFailure(
+        409,
+        "DEMO_NOT_READY",
+        "Required Demo Lab components are not ready.",
+        true,
+        demoStatus.components.filter(
+          (component) => component.required && component.status !== "healthy",
+        ),
+      );
+    }
+    const requestId = request.headers.get("X-Request-ID")?.trim();
+    if (!requestId) {
+      return demoFailure(400, "INVALID_REQUEST", "X-Request-ID is required.");
+    }
+    const existingRunId = mockDemoRequests.get(requestId);
+    if (existingRunId) {
+      const existing = mockDemoRuns.find((run) => run.runId === existingRunId);
+      if (existing) return demoResponse(existing, 202);
+    }
+    if (mockDemoActiveRun()) {
+      return demoFailure(409, "DEMO_RUN_BUSY", "Another Demo Run is active.");
+    }
+    const input = (await request.json()) as DemoCreateRunRequest;
+    if (
+      !demoScenarioDefinitions.some((definition) => definition.id === input.scenario) ||
+      (input.delayMs !== undefined && (input.delayMs < 0 || input.delayMs > 2_000))
+    ) {
+      return demoFailure(400, "INVALID_REQUEST", "The Demo Lab request is invalid.");
+    }
+    const run = resetMockDemoRun(input.scenario);
+    run.delayMs = input.delayMs ?? 700;
+    mockDemoRequests.set(requestId, run.runId);
+    return demoResponse(run, 202);
+  }),
+  http.get("/api/v1/demo/runs/:runId/events", ({ params }) => {
+    const run = mockDemoRuns.find((item) => item.runId === String(params.runId));
+    if (!run) return demoFailure(404, "NOT_FOUND", "Demo Run was not found.");
+    return new HttpResponse(
+      `id: ${run.runVersion}\nevent: snapshot\ndata: ${JSON.stringify(run)}\n\n`,
+      {
+        headers: {
+          "Content-Type": "text/event-stream",
+          "Cache-Control": "no-cache",
+        },
+      },
+    );
+  }),
+  http.get("/api/v1/demo/runs/:runId", ({ params }) => {
+    const run = mockDemoRuns.find((item) => item.runId === String(params.runId));
+    return run ? demoResponse(run) : demoFailure(404, "NOT_FOUND", "Demo Run was not found.");
+  }),
+  http.post("/api/v1/demo/runs/:runId/cancel", async ({ request, params }) => {
+    const input = (await request.json()) as { confirm: boolean; note: string };
+    if (!input.confirm || !input.note.trim()) {
+      return demoFailure(400, "INVALID_REQUEST", "Confirmation and an operator note are required.");
+    }
+    const run = mockDemoRuns.find((item) => item.runId === String(params.runId));
+    if (!run) return demoFailure(404, "NOT_FOUND", "Demo Run was not found.");
+    if (!activeDemoStatuses.has(run.status)) {
+      return demoFailure(409, "DEMO_RUN_STATE_CHANGED", "The Demo Run is already terminal.");
+    }
+    const completedAt = new Date().toISOString();
+    run.status = "cancelled";
+    run.outcome = "cancelled";
+    run.completedAt = completedAt;
+    run.lastHeartbeatAt = completedAt;
+    run.runVersion += 1;
+    return demoResponse(run);
+  }),
   http.get("/api/v1/protect/approvals", ({ request }) =>
     pageResponse(request, mockProtectApprovals, "agentguard"),
   ),
@@ -2282,6 +2525,7 @@ export const handlers = [
     const index = mockProtectApprovals.findIndex((item) => item.id === ticketId);
     if (index < 0) return protectFailure(404, "NOT_FOUND", "The ticket is no longer pending.");
     mockProtectApprovals.splice(index, 1);
+    resolveMockDemoApproval(ticketId, decision);
     return protectReceipt(
       `${decision}-approval`,
       ticketId,

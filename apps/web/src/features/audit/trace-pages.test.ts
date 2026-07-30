@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { requestOperation } from "../../lib/api";
-import { mainTraceId, mockTraceSummaries } from "../../mocks/data";
+import { demoTraceIds, mainTraceId, mockTraceSummaries } from "../../mocks/data";
 import { tracePageTestHelpers } from "./trace-pages";
 import type { TraceSummary } from "../../generated/api-client";
 
@@ -73,8 +73,11 @@ describe("Trace mock contract", () => {
     const a2a = await requestOperation("listAuditTraces", {
       query: { limit: 25, has_a2a: "true" },
     });
-    expect(a2a.data.items).toHaveLength(1);
-    expect(a2a.data.items[0]).toMatchObject({ traceId: mainTraceId, a2aCalls: 1 });
+    expect(a2a.data.items).toHaveLength(4);
+    expect(a2a.data.items.map((trace) => trace.traceId)).toEqual(
+      expect.arrayContaining([mainTraceId, ...Object.values(demoTraceIds)]),
+    );
+    expect(a2a.data.items.every((trace) => trace.a2aCalls === 1)).toBe(true);
 
     const first = await requestOperation("listAuditTraces", { query: { limit: 2 } });
     expect(first.data.items).toHaveLength(2);

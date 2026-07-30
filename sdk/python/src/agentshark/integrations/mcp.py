@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import functools
 import inspect
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from contextvars import Token
 from types import TracebackType
 from typing import Any, Literal, TypeVar, cast
@@ -47,13 +47,14 @@ class MCPCall:
 
     def __enter__(self) -> MCPCall:
         span = _current_langchain_span()
-        if span is None or not span.is_recording():
+        if not _is_recording_tool_span(span):
             span = self._tracer.start_span(
                 str(self._attributes.get("tool.name") or self._attributes["agentshark.mcp.method"]),
                 attributes=self._attributes,
             )
             self._owns_span = True
         else:
+            assert span is not None
             span.set_attributes(self._attributes)
         self._span = span
         self._context_token = otel_context.attach(trace.set_span_in_context(span))
@@ -205,3 +206,12 @@ def _current_langchain_span() -> Span | None:
         return get_current_span()
     except (ImportError, ModuleNotFoundError, RuntimeError):
         return None
+
+
+def _is_recording_tool_span(span: Span | None) -> bool:
+    if span is None or not span.is_recording():
+        return False
+    attributes = getattr(span, "attributes", None)
+    if not isinstance(attributes, Mapping):
+        return False
+    return str(attributes.get("openinference.span.kind") or "").upper() == "TOOL"

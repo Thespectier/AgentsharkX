@@ -2,8 +2,8 @@ import { useReducedMotion } from "motion/react";
 import { Boxes, Bot, BrainCircuit, Network, Wrench } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { cn } from "../../components/ui";
-import { useI18n } from "../../lib/i18n";
+import { useI18n } from "../lib/i18n";
+import { cn } from "./ui";
 
 export const TRACE_FLOW_NODE_LIMIT = 72;
 

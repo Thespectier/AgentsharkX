@@ -6,7 +6,7 @@ import {
   TRACE_FLOW_NODE_LIMIT,
   TraceFlow,
   type TraceFlowSpan,
-} from "./trace-flow";
+} from "../../components/trace-flow";
 
 const traceId = "11111111111111111111111111111111";
 

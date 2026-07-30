@@ -18,7 +18,7 @@ from typing import Any, Literal
 from opentelemetry import baggage, trace
 from opentelemetry import context as otel_context
 from opentelemetry.sdk.trace.export import SpanExporter
-from opentelemetry.trace import Link, Status, StatusCode, format_trace_id
+from opentelemetry.trace import Link, Status, StatusCode, format_span_id, format_trace_id
 from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
 
 from agentshark.config import ContentMode, SDKConfig, validate_identity
@@ -53,6 +53,18 @@ from agentshark.tracing import (
 _TRACE_PROPAGATOR = TraceContextTextMapPropagator()
 logger = logging.getLogger("agentshark")
 
+TaskAttributeValue = str | bool | int | float
+_DEMO_ATTRIBUTE_ROOT = "agentshark.demo"
+_FORBIDDEN_DEMO_ATTRIBUTE_FRAGMENTS = (
+    "api_key",
+    "authorization",
+    "cookie",
+    "credential",
+    "password",
+    "secret",
+    "token",
+)
+
 
 class AgentShark:
     """Own tracing, AgentGuard, task context, and framework instrumentation."""
@@ -67,6 +79,8 @@ class AgentShark:
         _exporter: SpanExporter | None = None,
         _guard_adapter: GuardAdapter | None = None,
         _telemetry_manager: TelemetryManager | None = None,
+        guard_plugin_config: Mapping[str, Any] | None = None,
+        guard_sandbox_profile: Any | None = None,
     ) -> None:
         self.config = config
         self.agent_id = validate_identity(agent_id, "agent_id")
@@ -89,6 +103,8 @@ class AgentShark:
                 agent_id=self.agent_id,
                 session_id=self.session_id,
                 user_id=self.user_id,
+                plugin_config=guard_plugin_config,
+                guard_sandbox_profile=guard_sandbox_profile,
             )
         except Exception:
             self._manager.unregister_runtime(self.runtime_id)
@@ -107,6 +123,8 @@ class AgentShark:
         _exporter: SpanExporter | None = None,
         _guard_adapter: GuardAdapter | None = None,
         _telemetry_manager: TelemetryManager | None = None,
+        guard_plugin_config: Mapping[str, Any] | None = None,
+        guard_sandbox_profile: Any | None = None,
     ) -> AgentShark:
         config = SDKConfig.from_env(os.environ if environ is None else environ)
         return cls(
@@ -117,6 +135,8 @@ class AgentShark:
             _exporter=_exporter,
             _guard_adapter=_guard_adapter,
             _telemetry_manager=_telemetry_manager,
+            guard_plugin_config=guard_plugin_config,
+            guard_sandbox_profile=guard_sandbox_profile,
         )
 
     def attach_langchain(self, agent: Any) -> Any:
@@ -124,14 +144,45 @@ class AgentShark:
         self._manager.ensure_langchain_instrumented(required=True)
         return attach_once(agent, self.runtime_id, self._guard.attach_langchain)
 
-    def task(self, *, task_id: str | None = None, goal: Any | None = None) -> _TaskScope:
+    def task(
+        self,
+        *,
+        task_id: str | None = None,
+        goal: Any | None = None,
+        attributes: Mapping[str, TaskAttributeValue] | None = None,
+    ) -> _TaskScope:
         self._require_open()
         resolved_task_id = (
             validate_identity(task_id, "task_id")
             if task_id is not None
             else f"task_{uuid.uuid4().hex}"
         )
-        return _TaskScope(self, resolved_task_id, goal)
+        return _TaskScope(self, resolved_task_id, goal, _demo_task_attributes(attributes))
+
+    def guard_tool(
+        self,
+        call: Callable[..., Any],
+        *,
+        name: str | None = None,
+        description: str = "",
+        capabilities: Sequence[str] = (),
+    ) -> Callable[..., Any]:
+        """Wrap one explicit local callable with this runtime's AgentGuard session."""
+
+        self._require_open()
+        resolved_name = validate_identity(name or getattr(call, "__name__", None), "tool_name")
+        resolved_description = description.strip()
+        if len(resolved_description) > 512:
+            raise ValueError("tool description must not exceed 512 characters")
+        resolved_capabilities = tuple(
+            validate_identity(capability, "capability") for capability in capabilities
+        )
+        return self._guard.guard_tool(
+            call,
+            name=resolved_name,
+            description=resolved_description,
+            capabilities=resolved_capabilities,
+        )
 
     def mcp_call(
         self,
@@ -381,10 +432,17 @@ class AgentShark:
 
 
 class _TaskScope:
-    def __init__(self, runtime: AgentShark, task_id: str, goal: Any | None) -> None:
+    def __init__(
+        self,
+        runtime: AgentShark,
+        task_id: str,
+        goal: Any | None,
+        attributes: Mapping[str, TaskAttributeValue],
+    ) -> None:
         self._runtime = runtime
         self._task_id = task_id
         self._goal = goal
+        self._attributes = dict(attributes)
         self._active_token: object | None = None
         self._span: Any | None = None
         self._otel_token: Token[otel_context.Context] | None = None
@@ -402,7 +460,7 @@ class _TaskScope:
                 self._runtime.config.content_mode,
                 self._runtime.config.payload_max_bytes,
             )
-            attributes: dict[str, str | bool | int] = {
+            attributes: dict[str, TaskAttributeValue] = {
                 "agentshark.task.root": True,
                 RUNTIME_ID: self._runtime.runtime_id,
                 AGENT_ID: self._runtime.agent_id,
@@ -410,6 +468,7 @@ class _TaskScope:
                 TASK_ID: self._task_id,
                 COUNTABLE: False,
                 CONTENT_MODE: self._runtime.config.content_mode.value,
+                **self._attributes,
                 **trace_attributes,
             }
             if self._runtime.user_id is not None:
@@ -421,12 +480,14 @@ class _TaskScope:
             span_context = self._span.get_span_context()
             self._trace_id = span_context.trace_id
             trace_id = format_trace_id(span_context.trace_id)
+            root_span_id = format_span_id(span_context.span_id)
             runtime_context = RuntimeContext(
                 runtime_id=self._runtime.runtime_id,
                 agent_id=self._runtime.agent_id,
                 session_id=self._runtime.session_id,
                 task_id=self._task_id,
                 trace_id=trace_id,
+                root_span_id=root_span_id,
                 user_id=self._runtime.user_id,
                 environment=self._runtime.config.environment,
             )
@@ -435,6 +496,7 @@ class _TaskScope:
                 agent_id=self._runtime.agent_id,
                 session_id=self._runtime.session_id,
                 task_id=self._task_id,
+                task_attributes=self._attributes,
             )
             self._runtime._manager.bind_trace(span_context.trace_id, identity)
 
@@ -549,6 +611,29 @@ def _goal_attributes(
         "goal": captured,
         "goal_capture_state": "truncated" if captured != serialized else "captured",
     }
+
+
+def _demo_task_attributes(
+    attributes: Mapping[str, TaskAttributeValue] | None,
+) -> dict[str, TaskAttributeValue]:
+    if attributes is None:
+        return {}
+    if len(attributes) > 16:
+        raise ValueError("task attributes must not contain more than 16 entries")
+    validated: dict[str, TaskAttributeValue] = {}
+    for raw_key, value in attributes.items():
+        key = str(raw_key).strip()
+        if key != _DEMO_ATTRIBUTE_ROOT and not key.startswith(f"{_DEMO_ATTRIBUTE_ROOT}."):
+            raise ValueError("task attributes must use the agentshark.demo namespace")
+        lowered = key.lower()
+        if any(fragment in lowered for fragment in _FORBIDDEN_DEMO_ATTRIBUTE_FRAGMENTS):
+            raise ValueError("task attributes must not contain credential-like fields")
+        if not isinstance(value, (str, bool, int, float)):
+            raise TypeError("task attribute values must be scalar strings, booleans, or numbers")
+        if isinstance(value, str) and len(value.encode("utf-8")) > 512:
+            raise ValueError("string task attributes must not exceed 512 bytes")
+        validated[key] = value
+    return validated
 
 
 def _serialize_goal(goal: Any) -> str:

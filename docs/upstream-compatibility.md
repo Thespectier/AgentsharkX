@@ -1,8 +1,7 @@
 # Upstream compatibility
 
-Last upstream verification: 2026-07-28. Phase 15 Trace query/UI notes updated
-2026-07-30 without adding or changing an upstream management-plane field or
-route.
+Last upstream verification: 2026-07-30. Phase 15 Trace query/UI and Phase 16
+Demo Agent/Lab notes add no unverified upstream management-plane field or route.
 
 Phase 13 still prevents direct browser contact with either upstream. The
 agentgateway adapter reads request-log summary, complete detail, and Analytics
@@ -17,6 +16,10 @@ The OTLP Collector uses the official OpenTelemetry protobuf contract and never
 reads agentgateway or AgentGuard management fields.
 Phase 15 reads only AgentsharkX-owned Trace tables through its OpenAPI contract;
 it does not change either upstream adapter or claim a new compatibility fact.
+Phase 16 uses the already verified agentgateway custom completions Provider,
+referenced Model, `/v1/models`, chat-completions listener, AgentGuard health,
+approval, and session-plugin contracts. Demo readiness never treats the
+source-owned `demo_tripwire` plugin as a runtime rule.
 
 ## Pinned baseline
 
@@ -372,6 +375,52 @@ that exact revision into ignored `third_party/AgentGuard/`, verifies `HEAD`,
 `LICENSE`, and `pyproject.toml`, and refuses a mismatched checkout. This is the
 documented exception to the implementation plan's submodule preference; it
 preserves the immutable pin without introducing floating or copied source.
+
+Phase 16A additionally verifies the pinned public `wrap_tool()` facade and the
+exact `backend.runtime.plugins.tool_before.demo_tripwire` configuration with an
+empty client plugin list and a server-side `demo_tripwire` entry. Invoking the
+fixed simulated HTTP action produces the pinned source-owned `HUMAN_CHECK`
+decision, and the upstream `ReviewQueue` contract is exercised for both approve
+and deny. The SDK passes a deep copy of that verified session plugin
+configuration to `Guard`. After `Guard.start`, the pinned facade's exact
+`client_plugin_config`, `remote_plugin_config`, and `_sync_remote_session`
+contract is used to keep client and server scopes distinct for the current
+Session. This prevents the pinned server from treating an identical combined
+document as a client echo and falling back to its global plugin configuration;
+no global AgentGuard rule or plugin configuration is mutated.
+
+The same pinned facade accepts a source-owned `PermissionProfile` through
+`Guard(..., sandbox_profile=...)` and otherwise constructs its local sandbox
+with `PermissionProfile.restricted()`. The SDK exposes that profile only as an
+optional per-runtime pass-through; it does not reproduce AgentGuard's sandbox
+schema. Each Demo Run creates a new local profile with network capability and an
+allowlist containing only `quarantine.example.com`, while subprocess and write
+capabilities remain disabled. The pinned domain check uses host substring
+membership, so the simulated action additionally enforces the exact URL and body
+and never performs network I/O. This changes no global AgentGuard policy or
+plugin state.
+
+The Phase 16A MCP fixture uses the pinned MCP `1.29.0` Streamable HTTP client.
+The SDK's explicit MCP wrapper now reuses a current span only when that span is
+already an OpenInference Tool span; a LangGraph Chain parent receives a distinct
+MCP Tool child. This is an AgentsharkX telemetry-classification correction and
+does not claim a new upstream management contract.
+
+The isolated `deploy/agentgateway/demo-config.yaml` passed the pinned v1.3.1
+binary's `--validate-only` parser and semantic validation on 2026-07-30. A
+running pinned container advertised exactly `agentshark-demo-model-v1` from
+`GET /v1/models`; a fixed `POST /v1/chat/completions` traversed the custom
+Provider to the deterministic fixture and returned its stable content and token
+usage. This proves the Demo data path without modifying or reading the
+operator-owned `deploy/agentgateway/config.yaml`.
+
+Agentgateway per-Run log correlation is intentionally reported unavailable
+unless exactly three unique upstream log records carry the Runner's Trace ID.
+A successful Trace-store match or a partial/duplicate log set does not promote
+gateway evidence, and no request time, model, or sequence fallback exists. Only
+the complete expected set is reported as verified; it links the native Demo
+gateway console by one returned upstream log ID. The BFF management URL and
+browser console URL are configured separately.
 
 For Phase 7, the production image embeds only the AgentsharkX Web build and Go
 BFF. agentgateway and AgentGuard remain separate Compose services and SPDX

@@ -2,6 +2,10 @@ import type { AuditData, OverviewData, UnifiedEvent } from "../types";
 import type {
   Approval,
   ConnectSummary,
+  DemoRun,
+  DemoScenario,
+  DemoScenarioDefinition,
+  DemoStatus,
   GatewayMCPServer,
   GatewayModel,
   GatewayProvider,
@@ -1256,6 +1260,256 @@ mockTraceDetails[largeTraceId] = {
   totalLinks: 0,
   spansTruncated: false,
   linksTruncated: false,
+};
+
+export const demoTraceIds: Record<DemoScenario, string> = {
+  happy: "c1111111111111111111111111111111",
+  approval: "c2222222222222222222222222222222",
+  failure: "c3333333333333333333333333333333",
+};
+
+const demoRunIDs: Record<DemoScenario, string> = {
+  happy: "11111111-1111-4111-8111-111111111111",
+  approval: "22222222-2222-4222-8222-222222222222",
+  failure: "33333333-3333-4333-8333-333333333333",
+};
+
+export const demoScenarioDefinitions: DemoScenarioDefinition[] = [
+  {
+    id: "happy",
+    label: "Happy path",
+    description: "All deterministic capabilities complete normally.",
+    expectedMetrics: {
+      llmCalls: 3,
+      mcpCalls: 2,
+      localToolCalls: 1,
+      a2aCalls: 1,
+      humanChecks: 0,
+      errorCount: 0,
+    },
+  },
+  {
+    id: "approval",
+    label: "Approval",
+    description: "A simulated guarded action waits for an AgentGuard decision.",
+    expectedMetrics: {
+      llmCalls: 3,
+      mcpCalls: 2,
+      localToolCalls: 2,
+      a2aCalls: 1,
+      humanChecks: 1,
+      errorCount: 0,
+    },
+  },
+  {
+    id: "failure",
+    label: "Degraded",
+    description: "One deterministic MCP call fails and the run completes in degraded mode.",
+    expectedMetrics: {
+      llmCalls: 3,
+      mcpCalls: 2,
+      localToolCalls: 1,
+      a2aCalls: 1,
+      humanChecks: 0,
+      errorCount: 1,
+    },
+  },
+];
+
+for (const [index, scenario] of (["happy", "approval", "failure"] as const).entries()) {
+  const traceId = demoTraceIds[scenario];
+  const runId = demoRunIDs[scenario];
+  const taskId = `demo-task-${runId}`;
+  const sessionId = `demo-session-${runId}`;
+  const base = mockTraceDetails[mainTraceId];
+  const spans = base.spans.map((span) => ({
+    ...span,
+    traceId,
+    taskId,
+    sessionId,
+    agentId:
+      span.agentId === "verification-agent" ? "demo-risk-reviewer" : "demo-incident-investigator",
+    peerAgentId: span.peerAgentId ? "demo-risk-reviewer" : undefined,
+    statusCode:
+      scenario === "failure" && span.spanId === "7000000000000007" ? "error" : span.statusCode,
+  }));
+  if (scenario === "approval") {
+    spans.push({
+      ...spans[0],
+      spanId: "9000000000000009",
+      parentSpanId: spans[0].spanId,
+      name: "Guarded simulated action",
+      openInferenceKind: "TOOL",
+      toolKind: "local",
+      toolName: "send_http",
+      startedAt: "2026-07-30T07:58:06.100Z",
+      endedAt: "2026-07-30T07:58:06.300Z",
+      durationMs: 200,
+      countable: true,
+    });
+  }
+  const expected = demoScenarioDefinitions.find((item) => item.id === scenario)!.expectedMetrics;
+  const summary: TraceSummary = {
+    ...base.summary,
+    traceId,
+    taskId,
+    sessionId,
+    rootAgentId: "demo-incident-investigator",
+    llmCalls: expected.llmCalls,
+    toolCalls: expected.mcpCalls + expected.localToolCalls,
+    mcpCalls: expected.mcpCalls,
+    localToolCalls: expected.localToolCalls,
+    a2aCalls: expected.a2aCalls,
+    errorCount: expected.errorCount,
+    riskLevel: scenario === "approval" ? "high" : scenario === "failure" ? "medium" : "low",
+    spanCount: spans.length,
+    updatedAt: new Date(Date.parse("2026-07-30T08:00:00Z") + index * 60_000).toISOString(),
+  };
+  const detail: TraceDetail = {
+    ...base,
+    summary,
+    rootSpan: spans[0],
+    spans,
+    links: base.links.map((link) => ({ ...link, traceId, linkedTraceId: traceId })),
+    coverage: {
+      ...base.coverage,
+      agentIds: ["demo-incident-investigator", "demo-risk-reviewer"],
+      peerAgentIds: ["demo-risk-reviewer"],
+      mcpServers: ["demo-security"],
+    },
+    totalSpans: spans.length,
+  };
+  mockTraceSummaries.unshift(summary);
+  mockTraceDetails[traceId] = detail;
+}
+
+function completedDemoRun(scenario: DemoScenario, index: number): DemoRun {
+  const definition = demoScenarioDefinitions.find((item) => item.id === scenario)!;
+  const runId = demoRunIDs[scenario];
+  const traceId = demoTraceIds[scenario];
+  const requestedAt = new Date(Date.parse("2026-07-30T08:00:00Z") - index * 300_000);
+  const startedAt = new Date(requestedAt.getTime() + 100);
+  const completedAt = new Date(startedAt.getTime() + 6_500);
+  const outcome = scenario === "happy" ? "normal" : scenario === "failure" ? "degraded" : "denied";
+  return {
+    runId,
+    scenario,
+    status: "succeeded",
+    outcome,
+    requestedAt: requestedAt.toISOString(),
+    startedAt: startedAt.toISOString(),
+    completedAt: completedAt.toISOString(),
+    lastHeartbeatAt: completedAt.toISOString(),
+    runVersion: 9,
+    delayMs: index ? 0 : 700,
+    taskId: `demo-task-${runId}`,
+    sessionId: `demo-session-${runId}`,
+    traceId,
+    rootSpanId: "1000000000000001",
+    rootAgentId: "demo-incident-investigator",
+    approval:
+      scenario === "approval"
+        ? {
+            ticketId: "ticket-demo-history",
+            upstreamId: "ticket-upstream-demo-history",
+            source: "agentguard",
+            fetchedAt: new Date(startedAt.getTime() + 5_100).toISOString(),
+            rawRef: { source: "agentguard", id: "/v1/backend/approvals/0" },
+            sessionId: `demo-session-${runId}`,
+            agentId: "demo-incident-investigator",
+            agentUpstreamId: "demo-incident-investigator",
+            eventType: "tool_invoke",
+            tool: "send_http",
+            phase: "tool_before",
+            action: "human_check",
+            reason: "The deterministic example.com action requires review.",
+            riskScore: 0.91,
+            matchedRules: ["demo_tripwire"],
+            status: "denied",
+            createdAt: new Date(startedAt.getTime() + 5_000).toISOString(),
+            correlationBasis: "Identical session_id reported by AgentGuard",
+          }
+        : undefined,
+    currentStep: "finish",
+    completedSteps: scenario === "approval" ? 9 : 8,
+    totalSteps: scenario === "approval" ? 9 : 8,
+    fixtureVersion: "v1",
+    expectedMetrics: definition.expectedMetrics,
+    observedMetrics: definition.expectedMetrics,
+    correlations: {
+      runId,
+      taskId: `demo-task-${runId}`,
+      sessionId: `demo-session-${runId}`,
+      trace: { status: "verified", basis: "Identical task_id and session_id", value: traceId },
+      approval:
+        scenario === "approval"
+          ? {
+              status: "verified",
+              basis: "Identical session_id reported by AgentGuard",
+              value: `demo-session-${runId}`,
+            }
+          : { status: "unavailable", basis: "Scenario does not create an approval" },
+      gatewayLogs: {
+        status: "verified",
+        basis: "Identical trace_id reported by agentgateway",
+        value: traceId,
+      },
+    },
+    links: {
+      trace: `/audit/traces/${traceId}`,
+      audit: `/audit/security-events?sessionId=${encodeURIComponent(`demo-session-${runId}`)}`,
+      approval:
+        scenario === "approval" ? "/protect/approvals?ticketId=ticket-demo-history" : undefined,
+      gatewayLogs: `/audit/traffic?trace=${traceId}`,
+    },
+  };
+}
+
+export const demoRuns: DemoRun[] = [
+  completedDemoRun("happy", 0),
+  completedDemoRun("failure", 1),
+  completedDemoRun("approval", 2),
+];
+
+export const demoStatus: DemoStatus = {
+  enabled: true,
+  ready: true,
+  activeRunId: null,
+  maxConcurrency: 1,
+  components: [
+    {
+      id: "database",
+      label: "Database",
+      status: "healthy",
+      required: true,
+      checkedAt: connectFetchedAt,
+      remediation: "Apply the current migrations and restore PostgreSQL connectivity.",
+    },
+    {
+      id: "demo-runner",
+      label: "Demo Runner",
+      status: "healthy",
+      required: true,
+      checkedAt: connectFetchedAt,
+      remediation: "Start demo-runner and verify its internal token configuration.",
+    },
+    {
+      id: "agentgateway",
+      label: "agentgateway fixture route",
+      status: "healthy",
+      required: true,
+      checkedAt: connectFetchedAt,
+      remediation: "Restore the fixed agentshark-demo route and model.",
+    },
+    {
+      id: "agentguard",
+      label: "AgentGuard demo_tripwire",
+      status: "healthy",
+      required: true,
+      checkedAt: connectFetchedAt,
+      remediation: "Restore AgentGuard and the verified demo_tripwire rule.",
+    },
+  ],
 };
 
 export const mockTraceSpanDetails: Record<string, TraceSpanDetail> = {};

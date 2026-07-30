@@ -1,6 +1,6 @@
 # Architecture
 
-Status: Phase 15 Trace query and analysis over the Phase 14 OTLP ingest and persistent Phase 13 management surface, verified 2026-07-30.
+Status: Phase 16 deterministic Demo Lab over the Phase 15 Trace query surface, verified 2026-07-30.
 
 ## Context
 
@@ -60,10 +60,12 @@ The Go BFF is organized into the following packages:
   activity snapshot.
 - `trace`: authenticated, payload-safe Trace list/detail projections and
   authenticated single-Span detail reads over the Trace storage contract.
+- `demo`: fixed-scenario run orchestration, strict Runner protocol, exact-ID
+  correlation, readiness probes, optimistic state transitions, and monitoring.
 - `aggregate`: source-preserving view models and partial-result handling.
-- `storage`: small Audit and Trace write/read, payload, checkpoint, outbox,
-  readiness, migration, and retention interfaces with PostgreSQL production and
-  memory test adapters.
+- `storage`: small Audit, Trace, and Demo control-state write/read, payload,
+  checkpoint, outbox, readiness, migration, and retention interfaces with
+  PostgreSQL production and memory test adapters.
 - `telemetry/normalize`: centralized OTLP semantic mapping with unknown
   attributes retained and credentials/content defensively separated.
 - `telemetry/assembler`: exact, explicit Trace summary rules; it never uses
@@ -117,6 +119,10 @@ drawer can be restored after refresh. The application shell renders the active
 workspace's section routes as nested sidebar links; page headers do not duplicate
 that navigation. The URL remains the source of truth for the selected section,
 including after reload and while the desktop sidebar is collapsed.
+Demo Lab is also a supporting Tools route. Navigation is absent while the
+server reports it disabled. Its dedicated SSE stream is scoped to one Run,
+deduplicates persistent sequence IDs, closes at terminal state, and falls back
+to a two-second detail poll without resetting the selected Trace Span.
 
 The application shell also owns presentation locale and time-zone policy. The
 English/Chinese selection is persisted only as a non-sensitive browser preference
@@ -396,6 +402,35 @@ same Trace and a dashed edge only for an explicit OTLP Span Link. Time order is
 layout input, never causality. Bounded grouping and incremental Span rows keep
 large traces usable; reduced-motion mode disables arrival animation.
 
+## Phase 16 Demo Lab boundary
+
+Demo Lab is disabled by default and accepts only `happy`, `approval`, and
+`failure` plus a bounded node delay. The Go BFF never executes a shell or agent
+workflow; it persists one active Run, calls a private authenticated Python
+Runner, monitors its bounded snapshot, and publishes payload-free run events
+through the existing durable outbox. Run state and event insertion share one
+transaction and an optimistic version.
+
+The Runner uses a fixed LangGraph graph. Three LLM calls pass through the
+separate namespaced agentgateway listener before reaching a deterministic
+OpenAI-compatible fixture. Two explicit `tools/call` requests use a real MCP
+Streamable HTTP client. The local action returns a simulated receipt without
+network, host, file, or shell side effects. The approval scenario loads the
+pinned source-owned `demo_tripwire` as a session server plugin and resumes only
+after the existing AgentGuard approval protocol resolves.
+
+The Runner supplies the preallocated Run, Task, and Session IDs and reports the
+SDK Trace ID. The BFF verifies Trace evidence only through exact Trace, Task,
+and Session equality, and approval evidence only through exact Session
+equality. Gateway log evidence remains unavailable unless agentgateway returns
+the exact Trace ID; an exact match produces a link containing that upstream log
+ID. No timestamp, model name, step order, or proximity is a correlation signal.
+
+`demo_runs` contains bounded public control state only. Demo list/SSE responses
+never include prompts, completions, tool arguments/results, authorization
+values, or raw Span fields. Existing authenticated Audit and Span detail
+contracts remain unchanged.
+
 ## Security baseline
 
 - `AGENTSHARK_ADMIN_TOKEN` is mandatory outside explicitly loopback-only
@@ -471,6 +506,16 @@ The portable fallback keeps the original fully containerized topology and pins
 agentgateway by tag plus image digest. In that mode the Compose wrapper resolves
 the config file owner UID/GID and runs only the gateway container as that
 non-root identity; extra business listeners require explicit published ports.
+
+The opt-in Phase 16 overlay deliberately uses the container topology so every
+Demo dependency shares one private network. It mounts
+`deploy/agentgateway/demo-config.yaml` into a separate pinned gateway process;
+the operator-owned gateway config is not edited or merged. Runner and fixtures
+publish no host ports, the Demo gateway keeps its SQLite log store on tmpfs,
+and its native management console is published only on a distinct configurable
+loopback port. All images or build inputs are version-pinned. Stopping the overlay removes
+only stateless Demo containers and recreates the normal preview without
+deleting PostgreSQL or user Audit/Trace data.
 
 The release E2E runs contract-shaped upstream fixtures as separate processes
 and exercises the actual BFF session, Connect probe, Audit poll/SSE path, and

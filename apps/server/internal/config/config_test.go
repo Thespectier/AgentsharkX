@@ -20,6 +20,8 @@ func TestLoadValidConfigurationAndRedactsSecrets(t *testing.T) {
 		"AGENTGUARD_BASE_URL":                 "http://guard.test:38080",
 		"AGENTGUARD_ADMIN_TOKEN":              "guard-secret-with-enough-entropy",
 		"AGENTGUARD_CONSOLE_URL":              "http://localhost:38008",
+		"AGENTSHARK_DEMO_GATEWAY_ADMIN_URL":   "http://demo-gateway.internal:15000",
+		"AGENTSHARK_DEMO_GATEWAY_CONSOLE_URL": "http://127.0.0.1:15010",
 		"AGENTSHARK_UPSTREAM_TIMEOUT":         "750ms",
 		"AGENTSHARK_SCAN_TIMEOUT":             "45s",
 		"AGENTSHARK_UPSTREAM_RETRY_MAX":       "2",
@@ -50,6 +52,10 @@ func TestLoadValidConfigurationAndRedactsSecrets(t *testing.T) {
 	}
 	if cfg.Database.AutoMigrate {
 		t.Fatal("database auto-migrate should honor the configured false value")
+	}
+	if cfg.Demo.GatewayAdminURL != values["AGENTSHARK_DEMO_GATEWAY_ADMIN_URL"] ||
+		cfg.Demo.GatewayConsoleURL != values["AGENTSHARK_DEMO_GATEWAY_CONSOLE_URL"] {
+		t.Fatalf("Demo gateway management and browser endpoints were conflated: %#v", cfg.Demo)
 	}
 	if got := cfg.AdminToken.Value(); got != values["AGENTSHARK_ADMIN_TOKEN"] {
 		t.Fatalf("admin token did not round trip")
@@ -178,5 +184,35 @@ func TestLoadRejectsUnsafeConsoleURL(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), "AGENTGATEWAY_CONSOLE_URL") || strings.Contains(err.Error(), "user:secret") {
 		t.Fatalf("expected secret-safe console URL rejection, got %v", err)
+	}
+}
+
+func TestLoadDemoDefaultsDisabledAndValidatesEnabledToken(t *testing.T) {
+	t.Parallel()
+	base := map[string]string{
+		"AGENTSHARK_LISTEN_ADDR":   "127.0.0.1:8080",
+		"AGENTSHARK_ENVIRONMENT":   "local",
+		"AGENTSHARK_ADMIN_TOKEN":   "admin-token-with-enough-entropy",
+		"AGENTGUARD_ADMIN_TOKEN":   "guard-secret-with-enough-entropy",
+		"AGENTSHARK_DATABASE_URL":  "postgresql://agentshark:secret@postgres.test:5432/agentshark",
+		"AGENTSHARK_COOKIE_SECURE": "false",
+	}
+	lookup := func(key string) (string, bool) { value, ok := base[key]; return value, ok }
+	cfg, err := Load(lookup)
+	if err != nil || cfg.Demo.Enabled {
+		t.Fatalf("disabled Demo defaults: cfg=%#v err=%v", cfg.Demo, err)
+	}
+	if cfg.Demo.LLMModel != "agentshark-demo-model-v1" || cfg.Demo.GatewayAdminURL != "http://agentshark-demo-gateway:15000" {
+		t.Fatalf("Demo model/admin defaults = %#v", cfg.Demo)
+	}
+	base["AGENTSHARK_DEMO_ENABLED"] = "true"
+	if _, err := Load(lookup); err == nil || !strings.Contains(err.Error(), "AGENTSHARK_DEMO_RUNNER_TOKEN") {
+		t.Fatalf("missing enabled Runner token error = %v", err)
+	}
+	base["AGENTSHARK_DEMO_RUNNER_TOKEN"] = "0123456789abcdef0123456789abcdef"
+	base["AGENTSHARK_DEMO_LLM_MODEL"] = "custom-demo-model"
+	base["AGENTSHARK_DEMO_GATEWAY_ADMIN_URL"] = "http://demo-gateway.test:15000"
+	if cfg, err = Load(lookup); err != nil || !cfg.Demo.Enabled || cfg.Demo.LLMModel != "custom-demo-model" || cfg.Demo.GatewayAdminURL != "http://demo-gateway.test:15000" {
+		t.Fatalf("enabled Demo configuration: cfg=%#v err=%v", cfg.Demo, err)
 	}
 }

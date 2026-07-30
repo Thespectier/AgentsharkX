@@ -11,6 +11,7 @@ required_files=(
   apps/server/migrations/000001_persistent_audit.sql
   apps/server/migrations/000002_trace_ingest.sql
   apps/server/migrations/000003_trace_query.sql
+  apps/server/migrations/000004_demo_lab.sql
   apps/server/cmd/agentshark-collector/main.go
   apps/server/cmd/e2e-trace/main.go
   apps/server/internal/telemetry/normalize/normalize.go
@@ -23,9 +24,12 @@ required_files=(
   deploy/compose.yaml
   deploy/compose.standalone-gateway.yaml
   deploy/compose.standalone-gateway.host-network.yaml
+  deploy/compose.demo.yaml
   deploy/Dockerfile
   deploy/versions.env
   deploy/agentgateway/example.env
+  deploy/agentgateway/demo-config.yaml
+  docs/demo-lab.md
   docs/quickstart.md
   docs/database.md
   docs/agent-integration.md
@@ -35,6 +39,9 @@ required_files=(
   docs/release/security-scan.md
   examples/agentguard_minimal.py
   examples/agentshark_trace_minimal.py
+  examples/demo-agent/pyproject.toml
+  examples/demo-agent/uv.lock
+  examples/demo-agent/Dockerfile
   sdk/python/pyproject.toml
   sdk/python/constraints.txt
   sdk/python/README.md
@@ -56,6 +63,8 @@ required_files=(
   scripts/standalone-compose.sh
   scripts/preview.sh
   scripts/preview-compose.sh
+  scripts/demo.sh
+  scripts/demo-smoke.sh
   scripts/gateway-config-write-smoke.sh
   scripts/gateway-observability-smoke.sh
   scripts/release-e2e.sh
@@ -130,6 +139,12 @@ if ! grep -qx 'AGENTSHARK_COLLECTOR_BIND=127.0.0.1' deploy/example.env ||
   exit 1
 fi
 
+if ! grep -qx 'AGENTSHARK_DEMO_GATEWAY_ADMIN_BIND=127.0.0.1' deploy/example.env ||
+  ! grep -Fqx '      - "${AGENTSHARK_DEMO_GATEWAY_ADMIN_BIND:-127.0.0.1}:${AGENTSHARK_DEMO_GATEWAY_ADMIN_PORT:-15010}:15000"' deploy/compose.demo.yaml; then
+  echo "the Demo gateway management console must remain loopback-published" >&2
+  exit 1
+fi
+
 if ! grep -Fqx '      AGENTSHARK_COLLECTOR_LISTEN_ADDR: 0.0.0.0:4318' deploy/compose.yaml ||
   ! grep -Fqx '      AGENTSHARK_TRACE_RETENTION: ${AGENTSHARK_TRACE_RETENTION}' deploy/compose.yaml ||
   ! grep -Fqx '      AGENTSHARK_OUTBOX_RETENTION: ${AGENTSHARK_OUTBOX_RETENTION}' deploy/compose.yaml ||
@@ -153,6 +168,8 @@ for script in \
   scripts/release-e2e.sh \
   scripts/standalone-compose.sh \
   scripts/preview.sh \
+  scripts/demo.sh \
+  scripts/demo-smoke.sh \
   scripts/test-postgres.sh; do
   if [[ ! -x "$script" ]]; then
     echo "standalone preview script is not executable: $script" >&2
@@ -169,6 +186,8 @@ bash -n \
   scripts/bootstrap-sdk.sh \
   scripts/verify-agentguard-sdk.sh \
   scripts/release-e2e.sh \
+  scripts/demo.sh \
+  scripts/demo-smoke.sh \
   scripts/test-postgres.sh
 
 if command -v rg >/dev/null 2>&1; then

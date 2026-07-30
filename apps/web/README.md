@@ -52,6 +52,12 @@ parent/Link lanes, bounded large-Trace rendering, and an on-demand Span drawer.
 The list and Trace Detail never receive payload bodies; the drawer uses the
 separate authenticated Span Detail operation.
 
+When the BFF reports Demo Lab enabled, a supporting **Tools / Demo Lab** route
+provides fixed scenario controls, readiness, run history, exact correlation
+evidence, the shared TraceFlow/Span drawer, and the existing Protect approval
+decision dialog. Its run-scoped SSE closes at terminal state and falls back to
+a two-second poll if disconnected.
+
 The demo-state selector in the top bar exposes live mock, empty, loading,
 partial-failure, and total-failure states. `?scenario=...` keeps each state
 shareable and deterministic.

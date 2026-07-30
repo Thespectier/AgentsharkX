@@ -51,12 +51,12 @@ if command -v go >/dev/null 2>&1; then
   (
     cd "$root_dir/apps/server"
     AGENTSHARK_TEST_DATABASE_URL="postgresql://agentshark:$database_password@127.0.0.1:$host_port/agentshark_test?sslmode=disable" \
-      go test -count=1 -run '^TestPostgresStoreLifecycle$' ./internal/storage/postgres
+      go test -count=1 -run '^TestPostgres(StoreLifecycle|DemoRunLifecycle)$' ./internal/storage/postgres
   )
 else
   docker run --rm --add-host host.docker.internal:host-gateway \
     -v "$root_dir:/src" -w /src/apps/server \
     -e "AGENTSHARK_TEST_DATABASE_URL=postgresql://agentshark:$database_password@host.docker.internal:$host_port/agentshark_test?sslmode=disable" \
     golang:1.26.5 \
-    go test -count=1 -run '^TestPostgresStoreLifecycle$' ./internal/storage/postgres
+    go test -count=1 -run '^TestPostgres(StoreLifecycle|DemoRunLifecycle)$' ./internal/storage/postgres
 fi

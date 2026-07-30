@@ -6,11 +6,16 @@ import threading
 import weakref
 
 import pytest
-from helpers import FailingExporter, FakeGuard, runtime
+from helpers import FailingExporter, FakeGuard, environment, runtime
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 from opentelemetry.trace import StatusCode
 
-from agentshark import AgentAlreadyAttachedError, ConcurrentTaskError, RuntimeClosedError
+from agentshark import (
+    AgentAlreadyAttachedError,
+    AgentShark,
+    ConcurrentTaskError,
+    RuntimeClosedError,
+)
 from agentshark.context import current_task
 from agentshark.integrations.langchain import attachments
 
@@ -35,7 +40,94 @@ def test_task_root_success_and_guard_context() -> None:
     assert span.attributes["agentshark.task.goal.length"] == len("private prompt")
     assert "private prompt" not in repr(span.attributes)
     assert guard.contexts[0].trace_id == f"{span.context.trace_id:032x}"
+    assert task.root_span_id == f"{span.context.span_id:016x}"
     assert guard.restore_count == 1
+    sdk.close()
+
+
+def test_demo_task_attributes_propagate_without_overriding_child_values() -> None:
+    sdk, exporter, _ = runtime()
+    with sdk.task(
+        task_id="task-demo",
+        attributes={
+            "agentshark.demo": True,
+            "agentshark.demo.run_id": "run-a",
+            "agentshark.demo.scenario": "happy",
+        },
+    ):
+        with sdk._tracer.start_as_current_span(
+            "child",
+            attributes={"agentshark.demo.scenario": "explicit-child"},
+        ):
+            pass
+    sdk.flush()
+    spans = finished(exporter)
+    root = next(span for span in spans if span.name == "agentshark.task")
+    child = next(span for span in spans if span.name == "child")
+    assert root.attributes["agentshark.demo"] is True
+    assert child.attributes["agentshark.demo.run_id"] == "run-a"
+    assert child.attributes["agentshark.demo.scenario"] == "explicit-child"
+    sdk.close()
+
+
+@pytest.mark.parametrize(
+    "attributes",
+    [
+        {"custom.demo": True},
+        {"agentshark.demo.token": "not-allowed"},
+        {"agentshark.demo.values": ["not", "scalar"]},
+    ],
+)
+def test_demo_task_attributes_reject_unbounded_or_sensitive_values(attributes: dict) -> None:
+    sdk, _, _ = runtime()
+    with pytest.raises((TypeError, ValueError)):
+        sdk.task(task_id="invalid-attributes", attributes=attributes)
+    sdk.close()
+
+
+def test_explicit_guard_tool_uses_runtime_guard() -> None:
+    sdk, _, guard = runtime()
+
+    def calculate(value: int) -> int:
+        return value + 1
+
+    wrapped = sdk.guard_tool(
+        calculate,
+        name="calculate_risk_score",
+        description="Deterministic local score",
+        capabilities=("local_compute",),
+    )
+    assert wrapped(4) == 5
+    assert guard.guarded_tools == [
+        {
+            "name": "calculate_risk_score",
+            "description": "Deterministic local score",
+            "capabilities": ("local_compute",),
+        }
+    ]
+    sdk.close()
+
+
+def test_from_env_forwards_guard_sandbox_profile_to_runtime_integration(monkeypatch) -> None:
+    guard = FakeGuard()
+    observed: dict[str, object] = {}
+
+    def guard_factory(*args: object, **kwargs: object) -> FakeGuard:
+        observed["args"] = args
+        observed.update(kwargs)
+        return guard
+
+    monkeypatch.setattr("agentshark.runtime.AgentGuardIntegration", guard_factory)
+    sandbox_profile = object()
+    sdk = AgentShark.from_env(
+        agent_id="agent-sandbox",
+        session_id="session-sandbox",
+        environ=environment(),
+        _exporter=InMemorySpanExporter(),
+        guard_sandbox_profile=sandbox_profile,
+    )
+
+    assert observed["guard_sandbox_profile"] is sandbox_profile
     sdk.close()
 
 

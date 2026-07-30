@@ -13,6 +13,7 @@ interface OperationOptions {
   signal?: AbortSignal;
   path?: Record<string, string>;
   query?: Record<string, string | number | undefined>;
+  requestId?: string;
 }
 
 let csrfToken: string | undefined;
@@ -75,6 +76,7 @@ export async function mutateOperation<K extends WriteOperation>(
     definition.method as "POST" | "PATCH" | "DELETE",
     body,
     options.signal,
+    options.requestId,
   )) as OperationResponse<K>;
 }
 
@@ -114,6 +116,7 @@ export async function requestMutation<T>(
   method: "POST" | "PATCH" | "DELETE",
   body?: unknown,
   signal?: AbortSignal,
+  requestId?: string,
 ): Promise<T | undefined> {
   const response = await fetch(path, {
     method,
@@ -122,6 +125,7 @@ export async function requestMutation<T>(
       Accept: "application/json",
       ...(body === undefined ? {} : { "Content-Type": "application/json" }),
       ...(csrfToken ? { "X-CSRF-Token": csrfToken } : {}),
+      ...(requestId?.trim() ? { "X-Request-ID": requestId.trim() } : {}),
     },
     body: body === undefined ? undefined : JSON.stringify(body),
     signal,

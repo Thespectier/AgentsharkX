@@ -9,6 +9,7 @@ const pages = [
   "/trust/agents",
   "/protect/policies",
   "/protect/guardrails",
+  "/demo",
   "/audit/analytics",
   "/audit/traces",
   "/audit/traces/11111111111111111111111111111111",

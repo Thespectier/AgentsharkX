@@ -7,7 +7,7 @@ information architecture for connection management, trusted runtime context,
 protection workflows, and audit views without entering the agent data plane or
 reimplementing either upstream.
 
-The repository is at the **0.9.0 Phase 15 preview** with the Phase 8 Connect LLM,
+The repository is at the **Phase 16 preview** with the Phase 8 Connect LLM,
 Phase 9 Connect MCP, Phase 10 Connect Traffic, Phase 11 Protect gateway-policy,
 and Phase 12 Protect guardrail management rounds applied. Connect reads explicit
 agentgateway providers, models, MCP targets, and routes, and manages verified
@@ -63,6 +63,12 @@ pagination and summary-only Trace updates locate a task without moving the
 current page; deterministic parent and Link edges use only explicit OTLP IDs.
 Trace detail contains graph projections but no payload body. Opening one Span
 loads its complete retained attributes, Resource, Events, and payloads on demand.
+Phase 16 adds an opt-in **Demo Lab** supporting tool with three fixed,
+deterministic scenarios. Its LangGraph agent sends three real LLM requests
+through an isolated agentgateway listener, makes two real Streamable HTTP MCP
+calls, emits SDK Trace telemetry, and uses the pinned AgentGuard approval flow.
+All external-looking actions are simulated and accept no operator-supplied
+prompt, URL, command, or target.
 The preview adds a reproducible non-root production image with the real Web
 bundle embedded in the Go BFF, source-specific System diagnostics, a full-path
 release E2E, supply-chain artifacts, and eight screenshot baselines.
@@ -78,8 +84,8 @@ release E2E, supply-chain artifacts, and eight screenshot baselines.
   agent traffic, or add a new rules engine, business-traffic replay system, or
   business-traffic proxy. Agent runtimes send standard OTLP telemetry directly
   to the independent Collector. PostgreSQL stores AgentsharkX-owned Audit
-  projections, Trace records, optional payload detail, ingest checkpoints, and
-  SSE delivery records.
+  projections, Trace records, optional payload detail, Demo control state,
+  ingest checkpoints, and SSE delivery records.
 
 See [architecture](docs/architecture.md), the
 [capability matrix](docs/capability-matrix.md), and
@@ -111,12 +117,24 @@ Open <http://localhost:8080>, log in with the generated
 AgentGuard client. Its real tool event appears under **Audit → Security events**
 within three seconds. The example does not require an LLM or provider key.
 
+To launch the complete deterministic Demo Lab instead, run:
+
+```bash
+make demo-up
+make demo-smoke
+```
+
+Open <http://localhost:8080/demo>. The Demo overlay uses its own namespaced
+agentgateway configuration and never merges resources into
+`deploy/agentgateway/config.yaml`. See [Demo Lab](docs/demo-lab.md) for the
+scenario and lifecycle contract.
+
 For a complete Chinese walkthrough covering startup, Agent integration,
 operations, development, release verification, and troubleshooting, see the
 [中文使用指南](docs/usage-guide.zh-CN.md).
 
-The bootstrap command preserves an existing `.env`, adds missing Phase 13/14
-database and Collector settings, generates random non-placeholder credentials with mode
+The bootstrap command preserves an existing `.env`, adds missing Phase 13/14/16
+database, Collector, and optional Demo settings, generates random non-placeholder credentials with mode
 `0600`, and creates an ignored
 `.agentgateway.env` for provider credentials. `make preview-up` downloads the
 exact pinned agentgateway binary, verifies its SHA-256 digest and embedded
@@ -131,7 +149,7 @@ npm ci --prefix apps/web
 make verify
 ```
 
-This checks Go formatting/tests, Python SDK tests/lint/types, the frontend
+This checks Go formatting/tests, Python SDK and Demo Agent tests/lint/types, the frontend
 format/type/unit/build suite, repository invariants, the OpenAPI contract, and
 the fully rendered Compose model. `make sdk-agentguard-contract` additionally
 clones and verifies the pinned AgentGuard public API.

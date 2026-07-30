@@ -1,0 +1,110 @@
+services:
+  agentshark:
+    environment:
+      AGENTSHARK_DEMO_ENABLED: "true"
+      AGENTSHARK_DEMO_RUNNER_URL: http://demo-runner:39100
+      AGENTSHARK_DEMO_RUNNER_TOKEN: ${AGENTSHARK_DEMO_RUNNER_TOKEN}
+      AGENTSHARK_DEMO_MAX_CONCURRENCY: "1"
+      AGENTSHARK_DEMO_DEFAULT_DELAY_MS: ${AGENTSHARK_DEMO_DEFAULT_DELAY_MS:-700}
+      AGENTSHARK_DEMO_RUN_TIMEOUT: ${AGENTSHARK_DEMO_RUN_TIMEOUT:-10m}
+      AGENTSHARK_DEMO_MONITOR_INTERVAL: ${AGENTSHARK_DEMO_MONITOR_INTERVAL:-750ms}
+      AGENTSHARK_DEMO_COLLECTOR_READY_URL: http://agentshark-collector:4318/readyz
+      AGENTSHARK_DEMO_LLM_BASE_URL: http://agentshark-demo-gateway:39000/v1
+      AGENTSHARK_DEMO_LLM_MODEL: ${AGENTSHARK_DEMO_LLM_MODEL:-agentshark-demo-model-v1}
+      AGENTSHARK_DEMO_MCP_URL: http://demo-fixtures:39200/mcp
+      AGENTSHARK_DEMO_GATEWAY_ADMIN_URL: http://agentshark-demo-gateway:15000
+      AGENTSHARK_DEMO_GATEWAY_CONSOLE_URL: http://${AGENTSHARK_DEMO_GATEWAY_ADMIN_BIND:-127.0.0.1}:${AGENTSHARK_DEMO_GATEWAY_ADMIN_PORT:-15010}
+    depends_on:
+      demo-runner:
+        condition: service_healthy
+
+  demo-fixtures:
+    image: ${AGENTSHARK_DEMO_IMAGE}:${AGENTSHARK_DEMO_VERSION}
+    build:
+      context: ..
+      dockerfile: examples/demo-agent/Dockerfile
+    command: ["agentshark-demo-fixtures"]
+    restart: unless-stopped
+    expose:
+      - "39200"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:39200/healthz', timeout=2).read()",
+        ]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+
+  agentshark-demo-gateway:
+    image: ${AGENTGATEWAY_IMAGE}:${AGENTGATEWAY_VERSION}
+    command: ["-f", "/etc/agentgateway/demo-config.yaml"]
+    working_dir: /workspace
+    restart: unless-stopped
+    environment:
+      ADMIN_ADDR: 0.0.0.0:15000
+      STATS_ADDR: 0.0.0.0:15020
+      READINESS_ADDR: 0.0.0.0:15021
+    expose:
+      - "39000"
+      - "15021"
+    ports:
+      - "${AGENTSHARK_DEMO_GATEWAY_ADMIN_BIND:-127.0.0.1}:${AGENTSHARK_DEMO_GATEWAY_ADMIN_PORT:-15010}:15000"
+    volumes:
+      - ./agentgateway/demo-config.yaml:/etc/agentgateway/demo-config.yaml:ro
+    tmpfs:
+      - /workspace:uid=65532,gid=65532,mode=0700
+    depends_on:
+      demo-fixtures:
+        condition: service_healthy
+
+  demo-runner:
+    image: ${AGENTSHARK_DEMO_IMAGE}:${AGENTSHARK_DEMO_VERSION}
+    build:
+      context: ..
+      dockerfile: examples/demo-agent/Dockerfile
+    command: ["agentshark-demo-runner"]
+    restart: unless-stopped
+    environment:
+      AGENTSHARK_DEMO_RUNNER_TOKEN: ${AGENTSHARK_DEMO_RUNNER_TOKEN}
+      AGENTSHARK_DEMO_MAX_CONCURRENCY: "1"
+      AGENTSHARK_DEMO_LLM_BASE_URL: http://agentshark-demo-gateway:39000/v1
+      AGENTSHARK_DEMO_LLM_MODEL: ${AGENTSHARK_DEMO_LLM_MODEL:-agentshark-demo-model-v1}
+      AGENTSHARK_DEMO_MCP_URL: http://demo-fixtures:39200/mcp
+      AGENTSHARK_DEMO_REQUEST_TIMEOUT_SECONDS: "10"
+      AGENTSHARK_TRACE_ENDPOINT: http://agentshark-collector:4318/v1/traces
+      AGENTSHARK_TRACE_INGEST_TOKEN: ${AGENTSHARK_TRACE_INGEST_TOKEN}
+      AGENTSHARK_TRACE_CONTENT_MODE: metadata
+      AGENTSHARK_SERVICE_NAME: agentshark-demo-agent
+      AGENTSHARK_ENVIRONMENT: demo
+      AGENTSHARK_GUARD_ENABLED: "true"
+      AGENTSHARK_GUARD_FAILURE_MODE: closed
+      AGENTSHARK_GUARD_TIMEOUT_SECONDS: "5"
+      AGENTSHARK_GUARD_REMOTE_RETRIES: "0"
+      AGENTGUARD_SERVER_URL: http://agentguard:38080
+      AGENTGUARD_API_KEY: ${AGENTGUARD_ADMIN_TOKEN}
+    expose:
+      - "39100"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:39100/healthz', timeout=2).read()",
+        ]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+    depends_on:
+      agentguard:
+        condition: service_healthy
+      agentshark-demo-gateway:
+        condition: service_started
+      demo-fixtures:
+        condition: service_healthy

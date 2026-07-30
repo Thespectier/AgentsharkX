@@ -25,6 +25,22 @@ describe("audit filters", () => {
       filterAuditEvents(baseEvents, { source: "all", severity: "all", query: "" }),
     ).toHaveLength(baseEvents.length);
   });
+
+  it("applies a case-sensitive exact session identifier from a Demo deep link", () => {
+    const filters = { source: "all" as const, severity: "all" as const, query: "" };
+    const expected = baseEvents
+      .filter(
+        (event) =>
+          event.subject?.sessionId === "ses_rg_84f2" ||
+          event.correlation?.sessionId === "ses_rg_84f2",
+      )
+      .map((event) => event.id);
+
+    expect(filterAuditEvents(baseEvents, filters, "ses_rg_84f2").map((event) => event.id)).toEqual(
+      expected,
+    );
+    expect(filterAuditEvents(baseEvents, filters, "SES_RG_84F2")).toEqual([]);
+  });
 });
 
 describe("audit event detail", () => {

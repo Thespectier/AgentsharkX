@@ -37,6 +37,7 @@ var (
 	ErrRuleCheckRequired = errors.New("a current successful rule check is required")
 	ErrMutationInFlight  = errors.New("protect mutation already in progress")
 	ErrAuditPersistence  = errors.New("approval outcome could not be persisted")
+	ErrApprovalAmbiguous = errors.New("multiple pending approvals share the same session ID")
 )
 
 type Gateway interface {
@@ -170,6 +171,35 @@ func (service *Service) Approvals(ctx context.Context, cursor string, limit int)
 	return model.ResourcePageEnvelope[model.Approval]{
 		Data: page, Meta: model.Meta{Source: model.SourceAgentGuard, FetchedAt: fetchedAt},
 	}, err
+}
+
+// PendingApprovalForSession provides the only Demo approval correlation path.
+// It deliberately requires an identical, verified AgentGuard session ID and
+// never falls back to timestamps, descriptions, or other heuristic fields.
+func (service *Service) PendingApprovalForSession(ctx context.Context, sessionID string) (model.Approval, error) {
+	sessionID = strings.TrimSpace(sessionID)
+	if sessionID == "" || len(sessionID) > 256 {
+		return model.Approval{}, ErrInvalidRequest
+	}
+	approvals, _, err := service.guard.Approvals(ctx)
+	if err != nil {
+		return model.Approval{}, err
+	}
+	var selected *model.Approval
+	for index := range approvals {
+		approval := &approvals[index]
+		if approval.SessionID != sessionID || !strings.EqualFold(strings.TrimSpace(approval.Status), "pending") {
+			continue
+		}
+		if selected != nil {
+			return model.Approval{}, ErrApprovalAmbiguous
+		}
+		selected = approval
+	}
+	if selected == nil {
+		return model.Approval{}, ErrNotFound
+	}
+	return *selected, nil
 }
 
 func (service *Service) CheckRule(ctx context.Context, source string) (model.RuntimeRuleCheck, error) {

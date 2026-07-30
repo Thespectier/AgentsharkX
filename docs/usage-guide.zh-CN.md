@@ -1,6 +1,6 @@
 # AgentsharkX 中文使用指南
 
-本文档适用于 AgentsharkX `0.9.0 Phase 14 preview`，介绍预览环境启动、登录、
+本文档适用于 AgentsharkX `Phase 16 preview`，介绍预览环境启动、登录、
 真实 Agent 接入、四个工作区、日常运维、本地开发、发布验证和常见故障处理。
 
 除非特别说明，所有命令都在仓库根目录执行：
@@ -26,7 +26,7 @@ AgentsharkX 是管理平面，不在 Agent 数据平面中，因此：
   独立 Collector；
 - AgentsharkX 不代理 Agent 流量，不根据时间或名称推断 Agent/任务，也不实现新的规则
   引擎、业务流量回放系统或业务流量采集器。PostgreSQL 保存 AgentsharkX 自己的 Audit
-  归一化记录、Trace Span/Link/Summary、可选详情、采集检查点和 SSE Outbox。
+  归一化记录、Trace Span/Link/Summary、可选详情、Demo 控制状态、采集检查点和 SSE Outbox。
 
 ## 2. 快速启动预览环境
 
@@ -61,7 +61,7 @@ make preview-bootstrap
 - 将 `.env` 权限设置为 `0600`；
 - 默认把所有发布端口绑定到 `127.0.0.1`；
 - 生成独立的 Trace Collector Bearer Token；
-- 在 `.env` 已存在时保留原值并补充缺少的 Phase 13/14 数据库和 Collector 项，也不会把生成的凭据
+- 在 `.env` 已存在时保留原值并补充缺少的 Phase 13/14/16 数据库、Collector 和 Demo 项，也不会把生成的凭据
   输出到终端。
 
 不要直接使用未修改的 `deploy/example.env` 启动服务。模板中的占位令牌会被 BFF
@@ -124,7 +124,33 @@ sed -n 's/^AGENTSHARK_ADMIN_TOKEN=//p' .env
 令牌不会持久化到浏览器存储。页面重新加载后，前端会通过认证会话接口恢复新的内存
 CSRF 值。
 
-### 2.5 检查系统健康状态
+### 2.5 启动确定性 Demo Lab
+
+Demo Lab 默认关闭，不影响正常预览环境。启动完整演示链路：
+
+```bash
+make demo-up
+make demo-status
+make demo-smoke
+```
+
+然后打开 <http://localhost:8080/demo>。页面只提供 `happy`、`approval`
+和 `failure` 三个固定场景，不接受任意 Prompt、URL、命令或目标。
+LLM 请求真实经过独立的 `agentshark-demo-gateway`，MCP、Trace 和
+AgentGuard 审批也使用真实协议；所有对外动作都是 `SIMULATED`，不产生
+网络、主机、文件或 Shell 副作用。
+Demo gateway 原生管理页面仅绑定在 <http://127.0.0.1:15010>，Demo Lab
+只有在上游日志返回完全相同的 Trace ID 时才会链接具体日志。
+
+```bash
+make demo-down
+```
+
+该命令只移除无状态 Demo 容器并恢复普通预览模式，不删除 PostgreSQL
+中的 Audit、Trace 和 Demo 历史，也不修改用户的
+`deploy/agentgateway/config.yaml`。详细说明见 [Demo Lab](demo-lab.md)。
+
+### 2.6 检查系统健康状态
 
 登录后先打开 **System**。agentgateway 和 AgentGuard 两张来源卡片都应显示健康。
 
@@ -871,6 +897,7 @@ make release-gate
 
 - [10 分钟预览快速开始](quickstart.md)
 - [Agent 接入说明](agent-integration.md)
+- [Demo Lab](demo-lab.md)
 - [架构说明](architecture.md)
 - [数据库运维](database.md)
 - [能力矩阵](capability-matrix.md)

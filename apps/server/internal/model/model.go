@@ -1044,11 +1044,12 @@ type OperationalSnapshot struct {
 }
 
 type APIError struct {
-	Code      string  `json:"code"`
-	Message   string  `json:"message"`
-	Source    *Source `json:"source,omitempty"`
-	RequestID string  `json:"requestId"`
-	Retryable bool    `json:"retryable"`
+	Code         string                `json:"code"`
+	Message      string                `json:"message"`
+	Source       *Source               `json:"source,omitempty"`
+	RequestID    string                `json:"requestId"`
+	Retryable    bool                  `json:"retryable"`
+	FailedChecks []DemoStatusComponent `json:"failedChecks,omitempty"`
 }
 
 type ErrorEnvelope struct {

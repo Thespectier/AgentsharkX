@@ -1,3 +1,5 @@
+import type { ErrorEnvelope } from "../generated/api-client";
+
 export type Source = "agentgateway" | "agentguard";
 export type HealthStatus = "healthy" | "connecting" | "degraded" | "down" | "unknown";
 export type Severity = "info" | "low" | "medium" | "high" | "critical";
@@ -31,15 +33,7 @@ export interface Envelope<T> {
   meta: ResponseMeta;
 }
 
-export interface ApiFailure {
-  error: {
-    code: string;
-    message: string;
-    source?: Source;
-    requestId: string;
-    retryable: boolean;
-  };
-}
+export type ApiFailure = ErrorEnvelope;
 
 export interface Metric {
   id: string;

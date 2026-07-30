@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -12,6 +14,25 @@ import (
 type retryingHealthRecorder struct {
 	failuresRemaining int
 	attempts          []model.SourceHealth
+}
+
+func TestDemoModelProbeUsesExactOpenAIModelsEndpoint(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.URL.Path != "/v1/models" {
+			t.Errorf("probe path = %q", request.URL.Path)
+			http.NotFound(writer, request)
+			return
+		}
+		_, _ = writer.Write([]byte(`{"object":"list","data":[{"id":"agentshark-demo-model-v1","object":"model"}]}`))
+	}))
+	defer server.Close()
+	if err := demoModelProbe(server.URL+"/v1", "agentshark-demo-model-v1")(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if err := demoModelProbe(server.URL+"/v1", "other-model")(t.Context()); err == nil {
+		t.Fatal("probe accepted a response without the configured deterministic model")
+	}
 }
 
 func (recorder *retryingHealthRecorder) RecordHealth(_ context.Context, health model.SourceHealth) error {

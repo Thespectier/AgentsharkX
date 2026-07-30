@@ -144,6 +144,29 @@ func TestSnapshotPreservesValidatedNativeConsoleLinks(t *testing.T) {
 	}
 }
 
+func TestPendingApprovalForSessionRequiresOneIdenticalSession(t *testing.T) {
+	t.Parallel()
+	guard := &fakeGuard{approvals: []model.Approval{
+		{ProtectResourceBase: model.ProtectResourceBase{ID: "ticket-a"}, SessionID: "demo-session-a", Status: "pending"},
+		{ProtectResourceBase: model.ProtectResourceBase{ID: "ticket-b"}, SessionID: "demo-session-b", Status: "pending"},
+		{ProtectResourceBase: model.ProtectResourceBase{ID: "resolved"}, SessionID: "demo-session-a", Status: "approved"},
+	}}
+	service := New(fakeGateway{}, guard, model.ConsoleLinks{})
+	approval, err := service.PendingApprovalForSession(t.Context(), "demo-session-a")
+	if err != nil || approval.ID != "ticket-a" {
+		t.Fatalf("exact approval = %#v err=%v", approval, err)
+	}
+	if _, err := service.PendingApprovalForSession(t.Context(), "missing"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("missing exact session error = %v", err)
+	}
+	guard.approvals = append(guard.approvals, model.Approval{
+		ProtectResourceBase: model.ProtectResourceBase{ID: "ticket-duplicate"}, SessionID: "demo-session-a", Status: "pending",
+	})
+	if _, err := service.PendingApprovalForSession(t.Context(), "demo-session-a"); !errors.Is(err, ErrApprovalAmbiguous) {
+		t.Fatalf("ambiguous exact session error = %v", err)
+	}
+}
+
 func TestRulePublishRequiresCurrentSuccessfulOneTimeCheck(t *testing.T) {
 	t.Parallel()
 	const source = "RULE safe\nACTION ALLOW"

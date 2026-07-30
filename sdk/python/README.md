@@ -55,6 +55,35 @@ with runtime.task(task_id="task-7", goal="Summarize the report"):
 runtime.close()
 ```
 
+Demo runtimes may add bounded `agentshark.demo` Task attributes. The immutable
+context returned by `task()` exposes both the generated `trace_id` and
+`root_span_id`; child spans in that Trace inherit the validated Demo attributes.
+Explicit local tools can be routed through the same per-runtime AgentGuard
+session without reading private SDK state:
+
+```python
+with runtime.task(
+    task_id="demo-task",
+    attributes={"agentshark.demo": True, "agentshark.demo.run_id": "run-42"},
+) as task_context:
+    guarded_action = runtime.guard_tool(send_http, name="send_http")
+    result = guarded_action(url="https://quarantine.example.com/hosts/web-01")
+    print(task_context.trace_id, task_context.root_span_id)
+```
+
+`guard_plugin_config` on `AgentShark`/`AgentShark.from_env` forwards a
+caller-owned session plugin configuration to the pinned AgentGuard facade. The
+SDK deep-copies it during construction so a later caller mutation cannot alter
+the active Guard.
+
+`guard_sandbox_profile` optionally forwards one pinned AgentGuard
+`PermissionProfile` to that runtime's Guard. Omitting it preserves AgentGuard's
+default local restricted profile. Callers must pass the source-owned profile
+object, not an inferred mapping. The Demo creates a fresh profile per Run that
+allows the fixed `quarantine.example.com` network capability while keeping
+subprocess and file-write capabilities disabled; its action implementation still
+performs no network I/O and rejects every other URL and body.
+
 Phase 14 provides ingest and persistence only. BFF Trace query/detail routes
 and the frontend Trace experience are deliberately deferred to Phase 15.
 

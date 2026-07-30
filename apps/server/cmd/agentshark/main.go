@@ -3,8 +3,13 @@ package main
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"strings"
@@ -17,6 +22,7 @@ import (
 	"github.com/Thespectier/AgentsharkX/apps/server/internal/auth"
 	"github.com/Thespectier/AgentsharkX/apps/server/internal/config"
 	"github.com/Thespectier/AgentsharkX/apps/server/internal/connect"
+	"github.com/Thespectier/AgentsharkX/apps/server/internal/demo"
 	"github.com/Thespectier/AgentsharkX/apps/server/internal/gateway"
 	"github.com/Thespectier/AgentsharkX/apps/server/internal/guard"
 	"github.com/Thespectier/AgentsharkX/apps/server/internal/model"
@@ -89,11 +95,47 @@ func main() {
 	auditService := audit.NewPersistent(gatewayClient, guardClient, hub, databaseStore, consoleLinks)
 	traceService := tracequery.New(databaseStore)
 	protectService := protect.New(gatewayClient, protectGuardClient, consoleLinks, auditService)
+	var demoRunner demo.Runner
+	var demoGatewayLogs demo.GatewayLogReader
+	if cfg.Demo.Enabled {
+		runnerClient, err := demo.NewRunnerClient(cfg.Demo.RunnerURL, cfg.Demo.RunnerToken.Value(), &http.Client{Timeout: cfg.UpstreamTimeout})
+		if err != nil {
+			logger.Error("demo runner configuration rejected", "error", err.Error())
+			os.Exit(1)
+		}
+		demoRunner = runnerClient
+		demoGatewayClient, err := gateway.New(cfg.Demo.GatewayAdminURL, &http.Client{Timeout: cfg.UpstreamTimeout}, cfg.UpstreamRetryMax)
+		if err != nil {
+			logger.Error("demo gateway adapter rejected", "error", err.Error())
+			os.Exit(1)
+		}
+		demoGatewayLogs = demoGatewayClient
+	}
+	demoService := demo.New(databaseStore, databaseStore, demoRunner, protectService, databaseStore, hub, demo.Options{
+		Enabled: cfg.Demo.Enabled, DefaultDelayMS: cfg.Demo.DefaultDelayMS,
+		MaxConcurrency: cfg.Demo.MaxConcurrency, RunTimeout: cfg.Demo.RunTimeout,
+		MonitorInterval: cfg.Demo.MonitorInterval,
+		RunnerLostAfter: cfg.UpstreamTimeout + 2*cfg.Demo.MonitorInterval,
+		GatewayLogs:     demoGatewayLogs, GatewayConsoleURL: cfg.Demo.GatewayConsoleURL,
+		Probes: []demo.ComponentProbe{
+			{ID: "collector", Label: "Trace Collector", Required: true, Remediation: "Start agentshark-collector and verify its database migrations.", Check: httpStatusProbe(cfg.Demo.CollectorURL)},
+			{ID: "agentgateway-demo-route", Label: "agentgateway Demo route", Required: true, Remediation: "Apply the namespaced Demo listener and verify its OpenAI-compatible model route.", Check: demoModelProbe(cfg.Demo.LLMBaseURL, cfg.Demo.LLMModel)},
+			{ID: "agentguard", Label: "AgentGuard", Required: true, Remediation: "Start AgentGuard and verify its management health endpoint.", Check: func(ctx context.Context) error {
+				health := guardClient.Health(ctx)
+				if health.Status != model.HealthHealthy {
+					return errors.New("AgentGuard is not healthy")
+				}
+				return nil
+			}},
+			{ID: "llm-fixture", Label: "Deterministic LLM fixture", Required: true, Remediation: "Start demo-fixtures and verify its health endpoint.", Check: httpStatusProbe(fixtureHealthURL(cfg.Demo.MCPURL))},
+			{ID: "mcp-fixture", Label: "Deterministic MCP fixture", Required: true, Remediation: "Start demo-fixtures and verify its health endpoint.", Check: httpStatusProbe(fixtureHealthURL(cfg.Demo.MCPURL))},
+		},
+	})
 	aggregator.SetOperational(auditService)
 	sessions := auth.New(cfg.AdminToken.Value(), auth.Options{CookieSecure: cfg.CookieSecure, TTL: 8 * time.Hour})
 	apiHandler := api.New(api.ServerConfig{
 		Sessions: sessions, Aggregate: aggregator, Connect: connectService, Trust: trustService, Protect: protectService,
-		Audit: auditService, Traces: traceService, Stream: hub, Logger: logger, AuthEnabled: !cfg.AuthDisabled,
+		Audit: auditService, Traces: traceService, Demo: demoService, Stream: hub, Logger: logger, AuthEnabled: !cfg.AuthDisabled,
 	})
 	handler := webconsole.New(apiHandler)
 
@@ -106,6 +148,7 @@ func main() {
 		go recoverPersistence(rootContext, databaseStore, auditService, aggregator, logger, cfg.PollInterval, cfg.Database.AutoMigrate)
 	}
 	go maintainPersistence(rootContext, databaseStore, logger)
+	go demoService.Monitor(rootContext)
 
 	httpServer := &http.Server{
 		Addr:              cfg.ListenAddr,
@@ -128,6 +171,70 @@ func main() {
 		logger.Error("server stopped unexpectedly", "error", err.Error())
 		os.Exit(1)
 	}
+}
+
+func httpStatusProbe(rawURL string) func(context.Context) error {
+	return func(ctx context.Context) error {
+		request, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
+		if err != nil {
+			return errors.New("readiness endpoint is invalid")
+		}
+		response, err := http.DefaultClient.Do(request)
+		if err != nil {
+			return errors.New("readiness endpoint is unavailable")
+		}
+		defer response.Body.Close()
+		_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 4096))
+		if response.StatusCode < 200 || response.StatusCode >= 300 {
+			return fmt.Errorf("readiness endpoint returned status %d", response.StatusCode)
+		}
+		return nil
+	}
+}
+
+func demoModelProbe(baseURL, expectedModel string) func(context.Context) error {
+	endpoint := strings.TrimRight(baseURL, "/") + "/models"
+	return func(ctx context.Context) error {
+		request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+		if err != nil {
+			return errors.New("Demo model endpoint is invalid")
+		}
+		response, err := http.DefaultClient.Do(request)
+		if err != nil {
+			return errors.New("Demo model endpoint is unavailable")
+		}
+		defer response.Body.Close()
+		if response.StatusCode < 200 || response.StatusCode >= 300 {
+			_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 4096))
+			return fmt.Errorf("Demo model endpoint returned status %d", response.StatusCode)
+		}
+		var payload struct {
+			Data []struct {
+				ID string `json:"id"`
+			} `json:"data"`
+		}
+		if err := json.NewDecoder(io.LimitReader(response.Body, 64*1024)).Decode(&payload); err != nil {
+			return errors.New("Demo model endpoint returned incompatible JSON")
+		}
+		for _, item := range payload.Data {
+			if item.ID == expectedModel {
+				return nil
+			}
+		}
+		return errors.New("deterministic Demo model was not advertised")
+	}
+}
+
+func fixtureHealthURL(rawURL string) string {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return rawURL
+	}
+	parsed.Path = "/healthz"
+	parsed.RawPath = ""
+	parsed.RawQuery = ""
+	parsed.Fragment = ""
+	return parsed.String()
 }
 
 func monitorAudit(ctx context.Context, service *audit.Service, interval time.Duration) {

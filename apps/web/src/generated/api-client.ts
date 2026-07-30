@@ -10,6 +10,166 @@ export type StreamReset = {
   oldestAvailable: number;
 };
 
+export type HealthStatus = "healthy" | "degraded" | "down" | "unknown";
+
+export type DemoScenario = "happy" | "approval" | "failure";
+
+export type DemoRunStatus =
+  | "queued"
+  | "starting"
+  | "running"
+  | "waiting_approval"
+  | "succeeded"
+  | "failed"
+  | "cancelled"
+  | "interrupted"
+  | "expired";
+
+export type DemoRunOutcome =
+  "none" | "normal" | "approved" | "denied" | "degraded" | "cancelled" | "failed";
+
+export type DemoMetrics = {
+  llmCalls: number;
+  mcpCalls: number;
+  localToolCalls: number;
+  a2aCalls: number;
+  humanChecks: number;
+  errorCount: number;
+};
+
+export type DemoObservedMetrics = {
+  llmCalls: number;
+  mcpCalls: number;
+  localToolCalls: number;
+  a2aCalls: number;
+  humanChecks: number;
+  errorCount: number;
+} | null;
+
+export type DemoApproval = {
+  ticketId: string;
+  upstreamId: string;
+  source: GuardSource;
+  fetchedAt: string;
+  rawRef: RawRef;
+  sessionId: string;
+  agentId?: string;
+  agentUpstreamId?: string;
+  eventId?: string;
+  eventType: string;
+  tool?: string;
+  phase: string;
+  action: string;
+  reason?: string;
+  riskScore: number;
+  matchedRules: Array<string>;
+  status: string;
+  createdAt: string;
+  correlationBasis: string;
+};
+
+export type DemoCorrelationEvidence = {
+  status: "verified" | "pending" | "unavailable";
+  basis: string;
+  value?: string;
+};
+
+export type DemoCorrelations = {
+  runId: string;
+  taskId: string;
+  sessionId: string;
+  trace: DemoCorrelationEvidence;
+  approval: DemoCorrelationEvidence;
+  gatewayLogs: DemoCorrelationEvidence;
+};
+
+export type DemoLinks = { trace?: string; audit: string; approval?: string; gatewayLogs?: string };
+
+export type DemoRun = {
+  runId: string;
+  scenario: DemoScenario;
+  status: DemoRunStatus;
+  outcome: DemoRunOutcome;
+  statusReasonCode?: string;
+  requestedAt: string;
+  startedAt: string | null;
+  completedAt: string | null;
+  lastHeartbeatAt: string | null;
+  runVersion: number;
+  delayMs: number;
+  taskId: string;
+  sessionId: string;
+  traceId?: string;
+  rootSpanId?: string;
+  rootAgentId: string;
+  approval?: DemoApproval;
+  currentStep?: string;
+  completedSteps: number;
+  totalSteps: number;
+  fixtureVersion: string;
+  errorCode?: string;
+  errorSummary?: string;
+  expectedMetrics: DemoMetrics;
+  observedMetrics: DemoObservedMetrics;
+  correlations: DemoCorrelations;
+  links: DemoLinks;
+};
+
+export type DemoRunEnvelope = { data: DemoRun; meta: Meta };
+
+export type DemoRunListEnvelope = {
+  data: { items: Array<DemoRun>; nextCursor: string | null; total: number };
+  meta: Meta;
+};
+
+export type DemoScenarioDefinition = {
+  id: DemoScenario;
+  label: string;
+  description: string;
+  expectedMetrics: DemoMetrics;
+};
+
+export type DemoScenariosEnvelope = { data: Array<DemoScenarioDefinition>; meta: Meta };
+
+export type DemoStatusComponent = {
+  id: string;
+  label: string;
+  status: HealthStatus;
+  required: boolean;
+  checkedAt: string;
+  message?: string;
+  remediation?: string;
+};
+
+export type DemoStatus = {
+  enabled: boolean;
+  ready: boolean;
+  activeRunId: string | null;
+  maxConcurrency: number;
+  components: Array<DemoStatusComponent>;
+};
+
+export type DemoStatusEnvelope = { data: DemoStatus; meta: Meta };
+
+export type DemoCreateRunRequest = { scenario: DemoScenario; delayMs?: number };
+
+export type DemoCancelRunRequest = { confirm: boolean; note: string };
+
+export type DemoRunEvent = {
+  runId: string;
+  type: "run.status" | "run.step" | "run.trace_linked" | "run.approval_linked" | "run.finished";
+  status?: DemoRunStatus;
+  outcome?: DemoRunOutcome;
+  runVersion: number;
+  stepId?: string;
+  traceId?: string;
+  rootSpanId?: string;
+  approval?: DemoApproval;
+  completedSteps?: number;
+  totalSteps?: number;
+  occurredAt: string;
+};
+
 export type Source = "agentgateway" | "agentguard";
 
 export type GatewaySource = "agentgateway";
@@ -1101,13 +1261,22 @@ export type TraceSpanDetail = {
 export type TraceSpanDetailEnvelope = { data: TraceSpanDetail; meta: Meta };
 
 export type ErrorEnvelope = {
-  error: { code: string; message: string; source?: Source; requestId: string; retryable: boolean };
+  error: {
+    code: string;
+    message: string;
+    source?: Source;
+    requestId: string;
+    retryable: boolean;
+    failedChecks?: Array<DemoStatusComponent>;
+  };
 };
 
 export const implementedOperations = {
   approveTicket: { method: "POST", path: "/api/v1/protect/approvals/{ticketId}/approve" },
+  cancelDemoRun: { method: "POST", path: "/api/v1/demo/runs/{runId}/cancel" },
   checkRuntimeRule: { method: "POST", path: "/api/v1/protect/runtime-rules/check" },
   createAdminSession: { method: "POST", path: "/api/v1/auth/session" },
+  createDemoRun: { method: "POST", path: "/api/v1/demo/runs" },
   createLlmModel: { method: "POST", path: "/api/v1/connect/llm/models" },
   createLlmProvider: { method: "POST", path: "/api/v1/connect/llm/providers" },
   createMcpServer: { method: "POST", path: "/api/v1/connect/mcp/servers" },
@@ -1140,6 +1309,8 @@ export const implementedOperations = {
   getCapabilities: { method: "GET", path: "/api/v1/system/capabilities" },
   getConnectAnalytics: { method: "GET", path: "/api/v1/connect/analytics" },
   getConnectSummary: { method: "GET", path: "/api/v1/connect/summary" },
+  getDemoRun: { method: "GET", path: "/api/v1/demo/runs/{runId}" },
+  getDemoStatus: { method: "GET", path: "/api/v1/demo/status" },
   getGatewayMcpServer: { method: "GET", path: "/api/v1/connect/mcp/servers/{resourceId}" },
   getGatewayPolicyConfiguration: {
     method: "GET",
@@ -1162,6 +1333,8 @@ export const implementedOperations = {
   listAuditEvents: { method: "GET", path: "/api/v1/audit/events" },
   listAuditSessions: { method: "GET", path: "/api/v1/audit/sessions" },
   listAuditTraces: { method: "GET", path: "/api/v1/audit/traces" },
+  listDemoRuns: { method: "GET", path: "/api/v1/demo/runs" },
+  listDemoScenarios: { method: "GET", path: "/api/v1/demo/scenarios" },
   listGatewayMcpServers: { method: "GET", path: "/api/v1/connect/mcp/servers" },
   listModels: { method: "GET", path: "/api/v1/connect/llm/models" },
   listPolicies: { method: "GET", path: "/api/v1/protect/policies" },
@@ -1170,6 +1343,7 @@ export const implementedOperations = {
   listTrustResources: { method: "GET", path: "/api/v1/trust/resources" },
   listTrustScans: { method: "GET", path: "/api/v1/trust/scans" },
   publishRuntimeRule: { method: "POST", path: "/api/v1/protect/agents/{agentId}/runtime-rules" },
+  streamDemoRunEvents: { method: "GET", path: "/api/v1/demo/runs/{runId}/events" },
   streamEvents: { method: "GET", path: "/api/v1/stream" },
   updateLlmModel: { method: "PATCH", path: "/api/v1/connect/llm/models/{resourceId}" },
   updateLlmProvider: { method: "PATCH", path: "/api/v1/connect/llm/providers/{resourceId}" },
@@ -1188,8 +1362,10 @@ export const implementedOperations = {
 
 export interface OperationResponses {
   approveTicket: ProtectMutationEnvelope;
+  cancelDemoRun: DemoRunEnvelope;
   checkRuntimeRule: RuntimeRuleCheckEnvelope;
   createAdminSession: undefined;
+  createDemoRun: DemoRunEnvelope;
   createLlmModel: LlmMutationEnvelope;
   createLlmProvider: LlmMutationEnvelope;
   createMcpServer: McpMutationEnvelope;
@@ -1216,6 +1392,8 @@ export interface OperationResponses {
   getCapabilities: CapabilitiesEnvelope;
   getConnectAnalytics: AnalyticsEnvelope;
   getConnectSummary: ConnectSummaryEnvelope;
+  getDemoRun: DemoRunEnvelope;
+  getDemoStatus: DemoStatusEnvelope;
   getGatewayMcpServer: MCPEnvelope;
   getGatewayPolicyConfiguration: GatewayPolicyConfigurationEnvelope;
   getLiveness: Liveness;
@@ -1235,6 +1413,8 @@ export interface OperationResponses {
   listAuditEvents: EventsEnvelope;
   listAuditSessions: AuditSessionsEnvelope;
   listAuditTraces: TraceListEnvelope;
+  listDemoRuns: DemoRunListEnvelope;
+  listDemoScenarios: DemoScenariosEnvelope;
   listGatewayMcpServers: MCPPageEnvelope;
   listModels: ModelPageEnvelope;
   listPolicies: ProtectSnapshotEnvelope;
@@ -1243,6 +1423,7 @@ export interface OperationResponses {
   listTrustResources: TrustResourcePageEnvelope;
   listTrustScans: TrustScanPageEnvelope;
   publishRuntimeRule: ProtectMutationEnvelope;
+  streamDemoRunEvents: string;
   streamEvents: string;
   updateLlmModel: LlmMutationEnvelope;
   updateLlmProvider: LlmMutationEnvelope;
@@ -1258,8 +1439,10 @@ export interface OperationResponses {
 
 export interface OperationBodies {
   approveTicket: ConfirmedActionRequest;
+  cancelDemoRun: DemoCancelRunRequest;
   checkRuntimeRule: RuntimeRuleCheckRequest;
   createAdminSession: LoginRequest;
+  createDemoRun: DemoCreateRunRequest;
   createLlmModel: LlmModelMutationRequest;
   createLlmProvider: LlmProviderMutationRequest;
   createMcpServer: McpServerMutationRequest;
