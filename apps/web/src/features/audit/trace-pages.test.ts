@@ -6,6 +6,21 @@ import { tracePageTestHelpers } from "./trace-pages";
 import type { TraceSummary } from "../../generated/api-client";
 
 describe("Trace list query state", () => {
+  it("keeps Flow as the default and accepts only explicit visualization views", () => {
+    expect(tracePageTestHelpers.normalizeTraceView(null)).toEqual({
+      view: "flow",
+      shouldClean: false,
+    });
+    expect(tracePageTestHelpers.normalizeTraceView("timeline")).toEqual({
+      view: "timeline",
+      shouldClean: false,
+    });
+    expect(tracePageTestHelpers.normalizeTraceView("unknown")).toEqual({
+      view: "flow",
+      shouldClean: true,
+    });
+  });
+
   it("round-trips stable filters and opaque cursor history through the URL", () => {
     const parsed = tracePageTestHelpers.traceFiltersFromSearch(
       '?cursor=opaque-next&trace_history=["","opaque-first"]&status=failed&agent_id=support-agent&has_error=true&has_a2a=false&started_after=2026-07-30T08%3A00&query=task-42',

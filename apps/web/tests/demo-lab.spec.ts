@@ -52,6 +52,19 @@ test("Demo Lab runs the default approval scenario through the shared Protect dec
   await expect(page.getByText("Linked by exact session_id", { exact: true })).toBeVisible();
 });
 
+test("Demo Lab switches between the shared Trace views and keeps Span detail available", async ({
+  page,
+}) => {
+  await page.goto("/demo");
+
+  const tracePanel = page.locator(".demo-trace");
+  await expect(tracePanel.getByRole("group", { name: "Trace flow lanes" })).toBeVisible();
+  await tracePanel.getByRole("button", { name: "Timeline" }).click();
+  await expect(tracePanel.getByRole("region", { name: "Trace timeline" })).toBeVisible();
+  await tracePanel.getByRole("button", { name: "Open span Plan research" }).click();
+  await expect(page.getByRole("dialog", { name: "Plan research" })).toBeVisible();
+});
+
 test("Demo Lab remains ordered, contained, and motion-reduced on mobile", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.emulateMedia({ reducedMotion: "reduce" });
@@ -70,6 +83,9 @@ test("Demo Lab remains ordered, contained, and motion-reduced on mobile", async 
   const positions = await Promise.all(sections.map(verticalTop));
   expect(positions).toEqual([...positions].sort((left, right) => left - right));
   expect(new Set(positions).size).toBe(positions.length);
+
+  await page.locator(".demo-trace").getByRole("button", { name: "Timeline" }).click();
+  await expect(page.locator(".demo-trace .trace-timeline__scroll")).toBeVisible();
 
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
     true,

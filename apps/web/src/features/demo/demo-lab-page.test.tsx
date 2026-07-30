@@ -83,6 +83,19 @@ describe("DemoLabPage", () => {
     expect(screen.queryByRole("button", { name: "Start Run" })).not.toBeInTheDocument();
   });
 
+  it("switches the shared Trace from Flow to Timeline and opens Span detail", async () => {
+    const user = userEvent.setup();
+    const view = renderPage();
+
+    expect(await screen.findByRole("group", { name: "Trace flow lanes" })).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Timeline" }));
+
+    expect(screen.getByRole("region", { name: "Trace timeline" })).toBeVisible();
+    expect(view.container.querySelector(".trace-flow")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Open span Plan research" }));
+    expect(await screen.findByRole("dialog", { name: "Plan research" })).toBeVisible();
+  });
+
   it("keeps unobserved metrics pending while a Run is active", async () => {
     const pendingRun: DemoRun = {
       ...structuredClone(demoRuns[0]),

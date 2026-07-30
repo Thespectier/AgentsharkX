@@ -392,15 +392,19 @@ payload-free summary update through the durable SSE outbox.
 
 Trace Detail returns the summary, root projection, stable time-ordered Span
 projections, explicit links, coverage, and truncation totals needed by
-`TraceFlow`. It never returns raw attributes, Resource values, Events, or
-payload bodies, and there is no separate graph API. Only authenticated Span
-Detail reads those complete retained records. Expired or uncollected content is
-an explicit state, not an empty string.
+the Flow and Timeline visualizations. It never returns raw attributes, Resource
+values, Events, or payload bodies, and there is no separate graph API. Only
+authenticated Span Detail reads those complete retained records. Expired or
+uncollected content is an explicit state, not an empty string.
 
-`TraceFlow` draws a solid edge only for a verified `parent_span_id` inside the
-same Trace and a dashed edge only for an explicit OTLP Span Link. Time order is
-layout input, never causality. Bounded grouping and incremental Span rows keep
-large traces usable; reduced-motion mode disables arrival animation.
+The Flow view draws a solid edge only for a verified `parent_span_id` inside the
+same Trace and a dashed edge only for an explicit OTLP Span Link. The optional
+Timeline view uses one absolute time baseline and derives its call-tree depth
+only from those same explicit parent IDs. Time order is layout input, never
+causality. Both views share URL-backed Span selection and the authenticated
+on-demand detail drawer. Bounded grouping, structural Timeline folding, and
+incremental Span rows keep large traces usable; reduced-motion mode disables
+arrival animation.
 
 ## Phase 16 Demo Lab boundary
 

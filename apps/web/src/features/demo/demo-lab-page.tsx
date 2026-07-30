@@ -20,7 +20,6 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { TraceFlow } from "../../components/trace-flow";
 import { TraceSpanDrawer } from "../../components/trace-span-drawer";
 import {
   Button,
@@ -66,6 +65,7 @@ import {
   approvalSeverity,
   ProtectMutationReceiptNotice,
 } from "../protect/approval-decision";
+import { TraceVisualization } from "../audit/trace-visualization";
 import {
   clampDemoDelay,
   createDemoRequestId,
@@ -261,7 +261,7 @@ export function DemoLabPage() {
               error={traceQuery.error}
               loading={traceQuery.isLoading}
               onSelect={(spanId, trigger) => {
-                spanTriggerRef.current = trigger;
+                if (trigger) spanTriggerRef.current = trigger;
                 setSelectedSpanId(spanId);
               }}
               run={run}
@@ -822,7 +822,7 @@ function DemoTracePanel({
 }: {
   error: Error | null;
   loading: boolean;
-  onSelect: (spanId: string, trigger: HTMLButtonElement) => void;
+  onSelect: (spanId: string, trigger?: HTMLElement) => void;
   run?: DemoRun;
   selectedSpanId?: string;
   trace?: TraceDetail;
@@ -838,10 +838,15 @@ function DemoTracePanel({
             </a>
           ) : undefined
         }
-        description="Live nodes come only from stored spans; edges remain explicit parents or Span Links."
+        description="Switch between the explicit relationship flow and the absolute-time execution timeline."
         title="Live Trace"
       />
-      <div className="demo-trace__body">
+      <div
+        className={cn(
+          "demo-trace__body",
+          !loading && !error && trace && "demo-trace__body--visualization",
+        )}
+      >
         {loading ? <InlineLoading label="Loading linked Trace" /> : null}
         {error ? (
           <ErrorState description={formatError(error)} title="Linked Trace unavailable" />
@@ -856,12 +861,11 @@ function DemoTracePanel({
               </span>
               <code>{trace.summary.traceId}</code>
             </div>
-            <TraceFlow
-              links={trace.links}
-              maxNodes={48}
-              onSelect={onSelect}
+            <TraceVisualization
+              isLive={trace.summary.status === "running"}
+              onSelectSpan={onSelect}
               selectedSpanId={selectedSpanId}
-              spans={trace.spans}
+              trace={trace}
             />
           </>
         ) : null}

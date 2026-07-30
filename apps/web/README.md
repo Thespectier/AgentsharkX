@@ -47,16 +47,17 @@ without moving a user's current list position or selected Span. Hidden
 documents retain data synchronization while LiveFlow reports `paused` and emits
 no particles; native EventSource reconnection resumes from its last SSE ID.
 
-**Audit / Traces** provides stable filtered pagination, deterministic
-parent/Link lanes, bounded large-Trace rendering, and an on-demand Span drawer.
+**Audit / Traces** provides stable filtered pagination, switchable deterministic
+Flow and absolute-time Timeline views, bounded large-Trace rendering, and an
+on-demand Span drawer.
 The list and Trace Detail never receive payload bodies; the drawer uses the
 separate authenticated Span Detail operation.
 
 When the BFF reports Demo Lab enabled, a supporting **Tools / Demo Lab** route
 provides fixed scenario controls, readiness, run history, exact correlation
-evidence, the shared TraceFlow/Span drawer, and the existing Protect approval
-decision dialog. Its run-scoped SSE closes at terminal state and falls back to
-a two-second poll if disconnected.
+evidence, the shared Flow/Timeline visualization and Span drawer, and the
+existing Protect approval decision dialog. Its run-scoped SSE closes at terminal
+state and falls back to a two-second poll if disconnected.
 
 The demo-state selector in the top bar exposes live mock, empty, loading,
 partial-failure, and total-failure states. `?scenario=...` keeps each state

@@ -193,6 +193,17 @@ test("Audit Traces supports list filters, deterministic flow, and on-demand Span
   await expect(page.locator('[data-edge-kind="link"]')).toHaveCount(1);
   await expect(page.getByRole("group", { name: "Trace flow lanes" })).toBeVisible();
 
+  const viewControl = page.getByRole("group", { name: "Trace view" });
+  await viewControl.getByRole("button", { name: "Timeline" }).click();
+  await expect(page).toHaveURL(/view=timeline/);
+  await expect(page.getByRole("region", { name: "Trace timeline" })).toBeVisible();
+  await expect(page.locator(".trace-timeline__bar")).toHaveCount(8);
+  await viewControl.getByRole("button", { name: "Flow" }).click();
+  await expect(page).not.toHaveURL(/view=/);
+  await expect(page.getByRole("group", { name: "Trace flow lanes" })).toBeVisible();
+  await viewControl.getByRole("button", { name: "Timeline" }).click();
+  await expect(page).toHaveURL(/view=timeline/);
+
   await page.getByRole("button", { name: "Open span Plan research" }).click();
   const drawer = page.getByRole("dialog", { name: "Plan research" });
   await expect(drawer).toBeVisible();
@@ -202,8 +213,8 @@ test("Audit Traces supports list filters, deterministic flow, and on-demand Span
 
   await page.reload();
   await expect(page.getByRole("dialog", { name: "Plan research" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Open span Plan research" })).toHaveClass(
-    /trace-flow__node--selected/,
+  await expect(page.locator('[data-span-id="2000000000000002"]')).toHaveClass(
+    /trace-timeline__row--selected/,
   );
 });
 
@@ -230,6 +241,13 @@ test("Trace coverage remains readable and contained on mobile", async ({ page })
   expect(
     await coverageLabel.evaluate((element) => element.scrollWidth <= element.clientWidth),
   ).toBe(true);
+
+  await page.getByRole("button", { name: "Timeline" }).click();
+  const timeline = page.locator(".trace-timeline__scroll");
+  await expect(timeline).toBeVisible();
+  expect(await timeline.evaluate((element) => element.scrollWidth > element.clientWidth)).toBe(
+    true,
+  );
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
     true,
   );
@@ -254,7 +272,9 @@ test("a live Span refreshes its Trace summary without clearing the selected node
   const selected = page.getByRole("button", { name: "Open span Assess incident" });
   await selected.click();
   await expect(selected).toHaveClass(/trace-flow__node--selected/);
-  await expect(page.locator(".trace-flow-controls")).toContainText("3 spans", { timeout: 8_000 });
+  await expect(page.locator(".trace-visualization__summary")).toContainText("3 spans", {
+    timeout: 8_000,
+  });
   await expect(selected).toHaveClass(/trace-flow__node--selected/);
   await expect(page.locator(".trace-metrics")).toContainText("Local tools1");
   await expect(page.getByRole("button", { name: "Open span Live tool update 1" })).toBeVisible();

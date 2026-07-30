@@ -15,6 +15,7 @@ const pages = [
   "/audit/traffic",
   "/audit/traces",
   "/audit/traces/11111111111111111111111111111111",
+  "/audit/traces/11111111111111111111111111111111?view=timeline",
 ];
 
 test.use({ reducedMotion: "reduce" });

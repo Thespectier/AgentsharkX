@@ -27,7 +27,6 @@ import {
   type Column,
 } from "../../components/ui";
 import { PageFrame, useDocumentTitle } from "../../components/workspace";
-import { TraceFlow } from "../../components/trace-flow";
 import { TraceSpanDrawer } from "../../components/trace-span-drawer";
 import type {
   TraceDetail,
@@ -38,6 +37,8 @@ import type {
 import { ApiError, formatError, getScenario, requestOperation } from "../../lib/api";
 import { formatCount, formatDateTimeWithZone, formatTraceDuration } from "../../lib/format";
 import { useI18n } from "../../lib/i18n";
+import { TraceVisualization } from "./trace-visualization";
+import type { TraceVisualizationView } from "./trace-toolbar";
 
 const pageSize = 25;
 const initialSpanRows = 100;
@@ -372,13 +373,15 @@ export function TraceDetailPage() {
   const navigate = useNavigate();
   const scenario = getScenario();
   const traceId = location.pathname.split("/").filter(Boolean).at(-1) ?? "";
-  const selectedSpanId = new URLSearchParams(location.searchStr).get("span") ?? undefined;
+  const searchParams = new URLSearchParams(location.searchStr);
+  const selectedSpanId = searchParams.get("span") ?? undefined;
+  const traceView = normalizeTraceView(searchParams.get("view"));
   const triggerRef = useRef<HTMLElement | null>(null);
   const [spanRowLimit, setSpanRowLimit] = useState(initialSpanRows);
-  const [flowNodeLimit, setFlowNodeLimit] = useState(48);
   const listSearch = useMemo(() => {
     const search = new URLSearchParams(location.searchStr);
     search.delete("span");
+    search.delete("view");
     return search.toString();
   }, [location.searchStr]);
   const detailQuery = useQuery({
@@ -405,6 +408,28 @@ export function TraceDetailPage() {
     },
     [location.pathname, location.searchStr, navigate],
   );
+  const setTraceView = useCallback(
+    (view: TraceVisualizationView) => {
+      const search = new URLSearchParams(location.searchStr);
+      if (view === "timeline") search.set("view", view);
+      else search.delete("view");
+      void navigate({
+        href: `${location.pathname}${search.size ? `?${search}` : ""}`,
+        replace: true,
+      });
+    },
+    [location.pathname, location.searchStr, navigate],
+  );
+
+  useEffect(() => {
+    if (!traceView.shouldClean) return;
+    const search = new URLSearchParams(location.searchStr);
+    search.delete("view");
+    void navigate({
+      href: `${location.pathname}${search.size ? `?${search}` : ""}`,
+      replace: true,
+    });
+  }, [location.pathname, location.searchStr, navigate, traceView.shouldClean]);
 
   if (detailQuery.isLoading) return <PageSkeleton label="Loading trace detail" />;
   if (detailQuery.isError || !detailQuery.data) {
@@ -443,40 +468,22 @@ export function TraceDetailPage() {
       <TraceStateBanner detail={detail} />
       <TraceIdentity detail={detail} />
       <TraceMetrics summary={detail.summary} />
-      <Card className="trace-flow-card">
+      <Card className="trace-visualization-card">
         <CardHeader
-          action={
-            <div className="trace-flow-controls">
-              <span className="fetched-at">
-                <GitBranch size={13} />
-                {t("{spans} spans · {links} links", {
-                  spans: formatCount(detail.totalSpans),
-                  links: formatCount(detail.totalLinks),
-                })}
-              </span>
-              <label>
-                <span>{t("Nodes")}</span>
-                <select
-                  aria-label={t("TraceFlow node limit")}
-                  onChange={(event) => setFlowNodeLimit(Number(event.target.value))}
-                  value={flowNodeLimit}
-                >
-                  <option value="24">24</option>
-                  <option value="48">48</option>
-                  <option value="72">72</option>
-                </select>
-              </label>
-            </div>
+          description={
+            traceView.view === "flow"
+              ? "Solid lines are verified parent_span_id edges. Dashed lines are explicit Span Links."
+              : "Every bar uses the same absolute time baseline. Tree depth comes only from explicit parent_span_id relationships."
           }
-          description="Solid lines are verified parent_span_id edges. Dashed lines are explicit Span Links."
-          title="TraceFlow"
+          title="Trace visualization"
         />
-        <TraceFlow
-          links={detail.links}
-          maxNodes={flowNodeLimit}
-          onSelect={(spanId, trigger) => setSelectedSpan(spanId, trigger)}
+        <TraceVisualization
+          isLive={detail.summary.status === "running"}
+          onSelectSpan={(spanId, trigger) => setSelectedSpan(spanId, trigger)}
+          onViewChange={setTraceView}
           selectedSpanId={selectedSpanId}
-          spans={detail.spans}
+          trace={detail}
+          view={traceView.view}
         />
       </Card>
       <TraceSpanTable
@@ -944,4 +951,14 @@ export const tracePageTestHelpers = {
   buildSearch: traceSearchParams,
   formatTraceDuration,
   reconcileTracePage,
+  normalizeTraceView,
 };
+
+function normalizeTraceView(value: string | null): {
+  view: TraceVisualizationView;
+  shouldClean: boolean;
+} {
+  if (value === "timeline") return { view: "timeline", shouldClean: false };
+  if (value === null || value === "flow") return { view: "flow", shouldClean: false };
+  return { view: "flow", shouldClean: true };
+}
