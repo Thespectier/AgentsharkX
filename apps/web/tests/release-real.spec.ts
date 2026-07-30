@@ -14,11 +14,7 @@ test("release path starts, authenticates, connects, emits an event, and approves
   await page.getByLabel("Administrator token").fill("release-admin-token-with-entropy");
   await page.getByRole("button", { name: "Continue securely" }).click();
 
-  await expect(
-    page.getByRole("heading", { name: "Connect agents to every destination" }),
-  ).toBeVisible();
-  await page.goto("/connect/setup");
-  await expect(page.getByText("Connection verified")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Connection overview" })).toBeVisible();
 
   await page.goto("/audit/traces");
   const trace = page.getByRole("row", { name: /release-task/ });

@@ -18,12 +18,12 @@ describe("console primitives", () => {
     render(
       <div>
         <SourceBadge source="agentguard" />
-        <StatusOrb label="AgentGuard degraded" status="degraded" />
+        <StatusOrb label="Runtime protection degraded" status="degraded" />
       </div>,
     );
 
-    expect(screen.getByText("AgentGuard")).toBeVisible();
-    expect(screen.getByText("AgentGuard degraded")).toHaveClass("sr-only");
+    expect(screen.getByText("Runtime protection")).toBeVisible();
+    expect(screen.getByText("Runtime protection degraded")).toHaveClass("sr-only");
   });
 
   it("forwards button refs for focus-managed overlays", () => {
@@ -58,7 +58,7 @@ describe("console primitives", () => {
       <>
         <button ref={triggerRef}>Selected event</button>
         <DetailDrawer
-          eyebrow="AgentGuard"
+          eyebrow="Runtime protection"
           onClose={onClose}
           open={open}
           returnFocusRef={triggerRef}

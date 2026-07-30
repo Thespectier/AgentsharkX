@@ -2,9 +2,10 @@ import { Link } from "@tanstack/react-router";
 import { ArrowLeft, Compass } from "lucide-react";
 
 import { EmptyState } from "../components/ui";
-import { PageFrame } from "../components/workspace";
+import { PageFrame, useDocumentTitle } from "../components/workspace";
 
 export function NotFoundPage() {
+  useDocumentTitle("Workspace not found");
   return (
     <PageFrame>
       <div className="not-found">
@@ -14,7 +15,7 @@ export function NotFoundPage() {
               <ArrowLeft size={14} /> Return home
             </Link>
           }
-          description="This route is not part of the Connect, Trust, Protect, Audit, or System information architecture."
+          description="This route is not part of the Home, Connect, Trust, Protect, or Audit information architecture."
           title="Workspace not found"
         />
         <Compass aria-hidden="true" size={180} />

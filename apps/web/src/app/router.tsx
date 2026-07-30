@@ -1,4 +1,4 @@
-import { createRootRoute, createRoute, createRouter } from "@tanstack/react-router";
+import { createRootRoute, createRoute, createRouter, redirect } from "@tanstack/react-router";
 
 import { AppShell } from "./app-shell";
 import { AuditPage } from "../features/audit/audit-page";
@@ -7,7 +7,6 @@ import { ConnectPage } from "../features/connect/connect-page";
 import { DemoLabPage } from "../features/demo/demo-lab-page";
 import { HomePage } from "../features/home/home-page";
 import { ProtectPage } from "../features/protect/protect-page";
-import { SystemPage } from "../features/system-page";
 import { TrustPage } from "../features/trust/trust-page";
 import { NotFoundPage } from "../features/not-found-page";
 import type { Scenario } from "../types";
@@ -41,37 +40,66 @@ const homeRoute = createRoute({ getParentRoute: () => rootRoute, path: "/", comp
 const connectRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "connect",
-  component: ConnectPage,
+  beforeLoad: ({ search }) => {
+    throw redirect({ to: "/connect/$section", params: { section: "overview" }, search });
+  },
 });
 const connectSectionRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "connect/$section",
   component: ConnectPage,
+  beforeLoad: ({ params, search }) => {
+    if (["overview", "agents", "llm", "mcp", "traffic"].includes(params.section)) return;
+    throw redirect({ to: "/connect/$section", params: { section: "overview" }, search });
+  },
 });
 const trustRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "trust",
-  component: TrustPage,
+  beforeLoad: ({ search }) => {
+    throw redirect({ to: "/trust/$section", params: { section: "overview" }, search });
+  },
 });
 const trustSectionRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "trust/$section",
   component: TrustPage,
+  beforeLoad: ({ params, search }) => {
+    if (["overview", "guardrails", "runtime-rules", "policy"].includes(params.section)) return;
+    if (params.section === "policies") {
+      throw redirect({ to: "/trust/$section", params: { section: "policy" }, search });
+    }
+    throw redirect({ to: "/trust/$section", params: { section: "overview" }, search });
+  },
 });
 const protectRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "protect",
-  component: ProtectPage,
+  beforeLoad: ({ search }) => {
+    throw redirect({ to: "/protect/$section", params: { section: "overview" }, search });
+  },
 });
 const protectSectionRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "protect/$section",
   component: ProtectPage,
+  beforeLoad: ({ params, search }) => {
+    if (["overview", "approvals"].includes(params.section)) return;
+    if (params.section === "guardrails" || params.section === "runtime-rules") {
+      throw redirect({ to: "/trust/$section", params: { section: params.section }, search });
+    }
+    if (params.section === "policies") {
+      throw redirect({ to: "/trust/$section", params: { section: "policy" }, search });
+    }
+    throw redirect({ to: "/protect/$section", params: { section: "overview" }, search });
+  },
 });
 const auditRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "audit",
-  component: TraceListPage,
+  beforeLoad: ({ search }) => {
+    throw redirect({ to: "/audit/traces", search });
+  },
 });
 const auditTracesRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -87,11 +115,10 @@ const auditSectionRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "audit/$section",
   component: AuditPage,
-});
-const systemRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "system",
-  component: SystemPage,
+  beforeLoad: ({ params, search }) => {
+    if (["traffic", "security-events"].includes(params.section)) return;
+    throw redirect({ to: "/audit/traces", search });
+  },
 });
 const demoRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -112,7 +139,6 @@ const routeTree = rootRoute.addChildren([
   auditTraceDetailRoute,
   auditSectionRoute,
   demoRoute,
-  systemRoute,
 ]);
 
 export const router = createRouter({

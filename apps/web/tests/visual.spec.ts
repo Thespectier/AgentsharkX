@@ -11,15 +11,17 @@ test("desktop home visual baseline", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByRole("heading", { name: /agents are in control/i })).toBeVisible();
   await waitForStableShell(page);
-  await expect(page.locator(".live-flow")).toHaveAttribute("data-motion", "reduced");
-  await expect(page.getByText("7 · recent events", { exact: true })).toBeVisible();
+  await expect(page.getByText("Monitored agents", { exact: true })).toBeVisible();
+  await expect(page.getByText("Runtime state is not reported")).toBeVisible();
   await expect(page).toHaveScreenshot("home-1440.png");
 });
 
 test("laptop audit visual baseline", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
-  await page.goto("/audit/analytics");
-  await expect(page.getByRole("heading", { name: "See every verified signal" })).toBeVisible();
+  await page.goto("/audit/traces");
+  await expect(
+    page.getByRole("heading", { level: 1, name: "Agent Trace", exact: true }),
+  ).toBeVisible();
   await waitForStableShell(page);
   await expect(page).toHaveScreenshot("audit-1280.png");
 });
@@ -27,36 +29,30 @@ test("laptop audit visual baseline", async ({ page }) => {
 test("laptop Connect visual baseline", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.goto("/connect/overview");
-  await expect(
-    page.getByRole("heading", { name: "Connect agents to every destination" }),
-  ).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Connection overview" })).toBeVisible();
   await waitForStableShell(page);
   await expect(page).toHaveScreenshot("connect-1280.png");
 });
 
 test("laptop Trust visual baseline", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
-  await page.goto("/trust/agents");
-  await expect(
-    page.getByRole("heading", { name: "Know what every agent can reach" }),
-  ).toBeVisible();
+  await page.goto("/trust/overview");
+  await expect(page.getByRole("heading", { name: "Trust overview" })).toBeVisible();
   await waitForStableShell(page);
   await expect(page).toHaveScreenshot("trust-1280.png");
 });
 
 test("laptop Protect visual baseline", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
-  await page.goto("/protect/policies");
-  await expect(
-    page.getByRole("heading", { name: "Enforce every critical boundary" }),
-  ).toBeVisible();
+  await page.goto("/protect/overview");
+  await expect(page.getByRole("heading", { name: "Protection overview" })).toBeVisible();
   await waitForStableShell(page);
   await expect(page).toHaveScreenshot("protect-1280.png");
 });
 
 test("laptop Guardrails visual baseline", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
-  await page.goto("/protect/guardrails");
+  await page.goto("/trust/guardrails");
   await expect(page.getByRole("heading", { name: "LLM guardrails" })).toBeVisible();
   await waitForStableShell(page);
   await expect(page).toHaveScreenshot("guardrails-1280.png");
@@ -64,21 +60,17 @@ test("laptop Guardrails visual baseline", async ({ page }) => {
 
 test("runtime rule composer visual baseline", async ({ page }) => {
   await page.setViewportSize({ width: 800, height: 700 });
-  await page.goto("/protect/runtime-rules");
+  await page.goto("/trust/runtime-rules");
   await waitForStableShell(page);
   await page.getByRole("button", { name: "New rule" }).click();
   await expect(page.getByRole("dialog", { name: "Publish runtime rule" })).toBeVisible();
   await expect(page).toHaveScreenshot("runtime-rule-dialog-800.png");
 });
 
-test("degraded System diagnostic visual baseline", async ({ page }) => {
-  await page.setViewportSize({ width: 1440, height: 1200 });
+test("mobile monitored Agents visual baseline", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
   await page.clock.setFixedTime(new Date("2026-07-21T06:00:00Z"));
-  await page.goto("/system?scenario=partial");
-  await expect(
-    page.getByRole("heading", { name: "Sources, versions & capabilities" }),
-  ).toBeVisible();
-  await expect(page.getByText(/AgentGuard management probes are unavailable/)).toBeVisible();
-  await waitForStableShell(page);
-  await expect(page).toHaveScreenshot("system-degraded-1440.png", { fullPage: true });
+  await page.goto("/connect/agents");
+  await expect(page.getByRole("heading", { name: "Monitored Agents" })).toBeVisible();
+  await expect(page).toHaveScreenshot("agents-mobile-390.png", { fullPage: true });
 });

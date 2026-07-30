@@ -1,14 +1,13 @@
 import { useQuery } from "@tanstack/react-query";
-import { Cable, CheckCircle2, Network, RefreshCw, Route, Waypoints } from "lucide-react";
+import { Cable, CheckCircle2, Network, Route, Waypoints } from "lucide-react";
 
-import { PageFrame, useWorkspaceSection } from "../../components/workspace";
+import { AgentMonitoringOverview } from "../../components/agent-monitoring";
+import { PageFrame, useDocumentTitle, useWorkspaceSection } from "../../components/workspace";
 import {
-  Button,
   Card,
   CardHeader,
   DefinitionList,
   ErrorState,
-  ExternalButton,
   PageHeader,
   PageSkeleton,
   PartialBanner,
@@ -25,20 +24,22 @@ import { TrafficManager } from "./traffic-manager";
 
 export function ConnectPage() {
   const section = useWorkspaceSection("connect", "overview");
+  const heading = connectHeadings[section] ?? connectHeadings.overview;
+  useDocumentTitle(heading.title);
   const scenario = getScenario();
   const summary = useQuery({
     queryKey: ["connect-summary", scenario],
     queryFn: ({ signal }) => requestOperation("getConnectSummary", signal),
     retry: false,
   });
-  if (summary.isLoading) return <PageSkeleton label="Loading gateway resources" />;
+  if (summary.isLoading) return <PageSkeleton label="Loading connection resources" />;
   if (summary.isError || !summary.data)
     return (
       <PageFrame>
         <PageHeader
-          description="agentgateway listeners, providers, models, MCP targets, and routes."
-          eyebrow="Connect / agentgateway"
-          title="Gateway data unavailable"
+          description="Agents, providers, models, MCP tools, listeners, and routes."
+          eyebrow="Connect / Overview"
+          title="Connection data unavailable"
         />
         <ErrorState
           description={formatError(summary.error)}
@@ -50,28 +51,50 @@ export function ConnectPage() {
   return (
     <PageFrame>
       <PageHeader
-        actions={
-          data.links.rawConfig || data.links.console ? (
-            <ExternalButton href={data.links.rawConfig ?? data.links.console!}>
-              Configure agentgateway
-            </ExternalButton>
-          ) : undefined
-        }
-        description="Manage verified LLM, MCP, listener, and route configuration through the agentgateway management plane."
-        eyebrow="Connect / agentgateway"
-        title="Connect agents to every destination"
+        description={heading.description}
+        eyebrow={`Connect / ${heading.label}`}
+        title={heading.title}
       />
       <PartialBanner meta={meta} />
       {section === "overview" ? (
         <ConnectOverview summary={data} fetchedAt={meta.fetchedAt} />
       ) : null}
+      {section === "agents" ? <AgentMonitoringOverview /> : null}
       {section === "llm" ? <LlmManager /> : null}
       {section === "mcp" ? <McpManager /> : null}
       {section === "traffic" ? <TrafficManager /> : null}
-      {section === "setup" ? <SetupView /> : null}
     </PageFrame>
   );
 }
+
+const connectHeadings: Record<string, { label: string; title: string; description: string }> = {
+  overview: {
+    label: "Overview",
+    title: "Connection overview",
+    description: "Review connection health, configured destinations, and recent request activity.",
+  },
+  agents: {
+    label: "Agents",
+    title: "Monitored Agents",
+    description: "Review Agent identities and activity explicitly reported by the monitoring API.",
+  },
+  llm: {
+    label: "LLM / Provider",
+    title: "LLM / Provider",
+    description:
+      "Manage verified provider, model, credential reference, and virtual model settings.",
+  },
+  mcp: {
+    label: "MCP / Tools",
+    title: "MCP / Tools",
+    description: "Manage MCP targets, tool exposure, and verified connection settings.",
+  },
+  traffic: {
+    label: "Traffic",
+    title: "Traffic configuration",
+    description: "Manage verified listeners and routes without proxying Agent business traffic.",
+  },
+};
 
 function ConnectOverview({ summary, fetchedAt }: { summary: ConnectSummary; fetchedAt: string }) {
   const { t } = useI18n();
@@ -143,94 +166,7 @@ function ConnectOverview({ summary, fetchedAt }: { summary: ConnectSummary; fetc
           )}
         </Card>
       </div>
-      <NativeLinks links={summary.links} />
     </>
-  );
-}
-
-function SetupView() {
-  const { t } = useI18n();
-  const query = useQuery({
-    queryKey: ["connect-setup", getScenario()],
-    queryFn: ({ signal }) => requestOperation("verifyGatewaySetup", signal),
-    retry: false,
-  });
-  if (query.isLoading) return <PageSkeleton label="Verifying agentgateway management access" />;
-  if (query.isError || !query.data)
-    return (
-      <ErrorState description={formatError(query.error)} onRetry={() => void query.refetch()} />
-    );
-  const setup = query.data.data;
-  return (
-    <div className="setup-grid">
-      <Card elevated>
-        <CardHeader
-          description="Live BFF checks against /api/runtime and /api/config."
-          title="Management verification"
-        />
-        <div className="connection-check">
-          <StatusOrb status={setup.status} />
-          <div>
-            <strong>
-              {t(setup.configurationReadable ? "Connection verified" : "Configuration unreadable")}
-            </strong>
-            <span>
-              {setup.version ?? t("Version unavailable")} · {setup.latencyMs ?? "—"} ms ·{" "}
-              {t("Checked")} {formatTimeWithZone(setup.checkedAt)}
-            </span>
-          </div>
-        </div>
-        {setup.message ? <p className="resource-note">{setup.message}</p> : null}
-        <Button onClick={() => void query.refetch()} variant="secondary">
-          <RefreshCw size={14} /> Run check
-        </Button>
-      </Card>
-      <Card>
-        <CardHeader
-          description="Advanced editors stay in the pinned agentgateway console."
-          title="Native console tools"
-        />
-        <NativeLinks links={setup.links} compact />
-      </Card>
-    </div>
-  );
-}
-
-function NativeLinks({
-  links,
-  compact = false,
-}: {
-  links: { rawConfig?: string; cel?: string; llmPlayground?: string; mcpPlayground?: string };
-  compact?: boolean;
-}) {
-  const { t } = useI18n();
-  const values = [
-    ["Raw Config", links.rawConfig],
-    ["CEL Playground", links.cel],
-    ["LLM Playground", links.llmPlayground],
-    ["MCP Playground", links.mcpPlayground],
-  ] as const;
-  const available = values.flatMap(([label, href]) => (href ? [{ label, href }] : []));
-  if (!available.length)
-    return compact ? (
-      <p className="resource-note">{t("No validated console URL is configured.")}</p>
-    ) : null;
-  return (
-    <Card className={compact ? "native-links native-links--compact" : "native-links"}>
-      {!compact ? (
-        <CardHeader
-          description="Use upstream-native tools for advanced editing and testing."
-          title="Open in agentgateway"
-        />
-      ) : null}
-      <div className="native-links__actions">
-        {available.map(({ label, href }) => (
-          <ExternalButton href={href} key={label}>
-            {label}
-          </ExternalButton>
-        ))}
-      </div>
-    </Card>
   );
 }
 

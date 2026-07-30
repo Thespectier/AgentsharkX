@@ -107,7 +107,7 @@ describe("ApprovalDecisionDialog", () => {
     const user = await completeConfirmation();
 
     await user.click(screen.getByRole("button", { name: "Approve" }));
-    expect(await screen.findByRole("alert")).toHaveTextContent("AgentGuard timed out");
+    expect(await screen.findByRole("alert")).toHaveTextContent("Agentshark Runtime timed out");
     expect(requestCount).toBe(1);
     expect(onReceipt).not.toHaveBeenCalled();
 

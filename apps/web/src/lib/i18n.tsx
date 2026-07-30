@@ -8,6 +8,8 @@ import {
   useState,
 } from "react";
 
+import { productizeText } from "./format";
+
 export type Locale = "en" | "zh-CN";
 
 const localeStorageKey = "agentshark.locale";
@@ -16,6 +18,7 @@ const zhCN: Record<string, string> = {
   "CONTROL PLANE": "控制平面",
   Environment: "环境",
   Connecting: "连接中",
+  "Runtime protection": "运行时防护",
   "Environment health": "环境健康状态",
   Workspaces: "工作区",
   Home: "首页",
@@ -38,14 +41,16 @@ const zhCN: Record<string, string> = {
   Analytics: "分析",
   "Security events": "安全事件",
   Sessions: "会话",
-  System: "系统",
-  Documentation: "文档",
+  "LLM / Provider": "LLM / 提供商",
+  "MCP / Tools": "MCP / 工具",
+  "Agent Trace": "Agent 追踪",
+  Policy: "策略",
   "Demo Lab": "演示实验室",
   "Tools / Demo Lab": "工具 / 演示实验室",
   "Open Demo Lab": "打开演示实验室",
   "Deterministic capability walkthrough": "确定性能力演示流程",
-  "Run a fixed simulated incident workflow through the real gateway, guard, SDK, and Trace management paths.":
-    "通过真实的网关、防护、SDK 和追踪管理路径运行固定的模拟事件工作流。",
+  "Run a fixed simulated incident workflow through Agentshark connection, runtime protection, SDK, and Trace management paths.":
+    "通过 Agentshark 连接、运行时防护、SDK 和追踪管理路径运行固定的模拟事件工作流。",
   "DETERMINISTIC FIXTURE": "确定性夹具",
   "SIMULATED - no external side effects": "模拟运行 - 无外部副作用",
   "Loading Demo Lab readiness": "正在加载演示实验室就绪状态",
@@ -233,7 +238,6 @@ const zhCN: Record<string, string> = {
   Type: "类型",
   "Labels / detector": "标签 / 检测器",
   Action: "操作",
-  Policy: "策略",
   Phase: "阶段",
   Manage: "管理",
   Agent: "智能体",
@@ -274,7 +278,6 @@ const zhCN: Record<string, string> = {
   "Traffic, decisions, approvals, and audit arrays remain empty until their verified integration phases.":
     "流量、决策、审批和审计数据在完成验证接入前保持为空。",
   "BFF boundary active": "BFF 边界已启用",
-  "Use System to inspect live capability probes": "在系统页面查看实时能力探测",
   "View security events": "查看安全事件",
   "Review approvals": "处理审批",
   "Probe timed out · cached view": "探测超时 · 显示缓存视图",
@@ -315,20 +318,9 @@ const zhCN: Record<string, string> = {
     "此页面的动态元素由明确标注的 MSW REST 与 SSE 夹具数据驱动。",
   "Dynamic elements on this page are driven by authenticated BFF REST and SSE responses.":
     "此页面的动态元素由经过身份验证的 BFF REST 与 SSE 响应驱动。",
-  "Live control plane": "实时控制平面",
-  "Agent traffic & decisions": "智能体流量与决策",
-  "Live agent traffic topology": "实时智能体流量拓扑",
-  "Live agent traffic summary": "实时智能体流量摘要",
-  "Gateway traffic": "网关流量",
-  "Guard decisions": "防护决策",
-  "AgentGuard activity": "AgentGuard 活动",
   Activity: "活动",
-  Gateway: "网关",
-  Guard: "防护",
   Errors: "错误",
   Decisions: "决策",
-  "recent events": "近期事件",
-  "Rolling 60 minutes · source-preserved": "滚动 60 分钟 · 保留来源",
   "Last 60 minutes · gateway analytics": "最近 60 分钟 · 网关分析",
   "Last 60 minutes · nearest-rank P95": "最近 60 分钟 · nearest-rank P95",
   "Last 60 minutes · AgentGuard traffic": "最近 60 分钟 · AgentGuard 流量",
@@ -1101,21 +1093,6 @@ const zhCN: Record<string, string> = {
   ok: "正常",
   error: "错误",
 
-  "System / Diagnostics": "系统 / 诊断",
-  "Sources, versions & capabilities": "数据源、版本与能力",
-  "Diagnostics support the four product workspaces; System is not a fifth capability layer.":
-    "诊断功能服务于四个产品工作区；系统页面不是第五个能力层。",
-  "Standalone management plane": "独立运行的管理平面",
-  "Runtime security control plane": "运行时安全控制平面",
-  "No latency sample": "无延迟样本",
-  "Live management probe": "实时管理探测",
-  Checked: "检查于",
-  "Troubleshooting guide": "故障排查指南",
-  "Capability registry": "能力注册表",
-  "The UI hides, disables, or links out according to this registry. Version numbers alone never enable a feature.":
-    "界面根据此注册表隐藏、禁用或跳转；仅凭版本号不会启用功能。",
-  "Probe based": "基于探测",
-
   "Partial data": "部分数据",
   "Loading console data": "正在加载控制台数据",
   "This view could not be loaded": "无法加载此视图",
@@ -1144,15 +1121,14 @@ const zhCN: Record<string, string> = {
   "Close detail drawer": "关闭详情抽屉",
   "Return home": "返回首页",
   "Workspace not found": "未找到工作区",
-  "This route is not part of the Connect, Trust, Protect, Audit, or System information architecture.":
-    "此路由不属于连接、信任、防护、审计或系统信息架构。",
+  "This route is not part of the Home, Connect, Trust, Protect, or Audit information architecture.":
+    "此路由不属于首页、连接、信任、防护或审计信息架构。",
 
   "Open Home": "打开首页",
   "Open Connect": "打开连接",
   "Open Trust": "打开信任",
   "Open Protect": "打开防护",
   "Open Audit": "打开审计",
-  "Open System": "打开系统",
   "Runtime posture": "运行态势",
   "Gateway resources": "网关资源",
   "Agents and resources": "智能体与资源",
@@ -1169,6 +1145,50 @@ const zhCN: Record<string, string> = {
   "Command palette": "命令面板",
   "Search commands": "搜索命令",
   "Jump to a workspace or action…": "跳转到工作区或操作…",
+
+  "Connection overview": "连接概览",
+  "Monitored Agents": "受监控的 Agent",
+  "Traffic configuration": "流量配置",
+  "Trust overview": "信任概览",
+  "Runtime Rules": "运行时规则",
+  "Protection overview": "防护概览",
+  "Security Events": "安全事件",
+  "Agent monitoring overview": "Agent 监控概览",
+  "Monitored agents": "已监控 Agent",
+  "Running agents": "正在运行 Agent",
+  "Explicitly reported identities": "明确上报的身份",
+  "Runtime state is not reported": "未上报运行状态",
+  "Explicit running status": "明确上报的运行状态",
+  "Monitored agent status": "受监控 Agent 状态",
+  "Loading monitored agents": "正在加载受监控 Agent",
+  "Loading monitored agents...": "正在加载受监控 Agent...",
+  "Framework not reported": "未上报框架",
+  "Activity not reported": "未上报活动时间",
+  "No monitored agents": "没有受监控 Agent",
+  "Configured policies": "已配置策略",
+  "Published runtime rules": "已发布运行时规则",
+  "Control status": "控制状态",
+  Passed: "通过",
+  Blocked: "阻止",
+  Approved: "批准",
+  "Decision coverage": "决策覆盖",
+  "Connection request evidence": "连接请求证据",
+  "Runtime protection evidence": "运行时防护证据",
+  "Runtime event ID": "运行时事件 ID",
+  "Runtime event type": "运行时事件类型",
+  "Connect / Overview": "连接 / 概览",
+  "Connect / Agents": "连接 / Agent",
+  "Connect / LLM / Provider": "连接 / LLM / 提供商",
+  "Connect / MCP / Tools": "连接 / MCP / 工具",
+  "Connect / Traffic": "连接 / 流量",
+  "Trust / Overview": "信任 / 概览",
+  "Trust / Guardrails": "信任 / 护栏",
+  "Trust / Runtime Rules": "信任 / 运行时规则",
+  "Trust / Policy": "信任 / 策略",
+  "Protect / Overview": "防护 / 概览",
+  "Protect / Approvals": "防护 / 审批",
+  "Audit / Traffic": "审计 / 流量",
+  "Audit / Security Events": "审计 / 安全事件",
 
   "AgentsharkX / Admin session": "AgentsharkX / 管理员会话",
   "Unlock the control plane": "解锁控制平面",
@@ -1192,7 +1212,7 @@ function interpolate(message: string, variables?: Variables): string {
 
 export function translate(message: string, locale: Locale, variables?: Variables): string {
   const translated = locale === "zh-CN" ? (zhCN[message] ?? message) : message;
-  return interpolate(translated, variables);
+  return productizeText(interpolate(translated, variables));
 }
 
 type I18nValue = {
@@ -1206,7 +1226,7 @@ const I18nContext = createContext<I18nValue>({
   locale: "en",
   setLocale: () => undefined,
   toggleLocale: () => undefined,
-  t: (message, variables) => interpolate(message, variables),
+  t: (message, variables) => productizeText(interpolate(message, variables)),
 });
 
 function initialLocale(): Locale {

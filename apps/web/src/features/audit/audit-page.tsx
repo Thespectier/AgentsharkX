@@ -1,18 +1,9 @@
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate, useRouterState } from "@tanstack/react-router";
-import {
-  Activity,
-  Braces,
-  CheckCircle2,
-  CircleSlash,
-  Filter,
-  ListFilter,
-  Radio,
-} from "lucide-react";
+import { Braces, CheckCircle2, CircleSlash, Filter, ListFilter } from "lucide-react";
 import { useCallback, useMemo, useRef, useState } from "react";
 
-import { RequestTrendChart } from "../../motion/dashboard-motion";
-import { PageFrame, useWorkspaceSection } from "../../components/workspace";
+import { PageFrame, useDocumentTitle, useWorkspaceSection } from "../../components/workspace";
 import {
   Button,
   Card,
@@ -22,9 +13,7 @@ import {
   DetailDrawer,
   EmptyState,
   ErrorState,
-  ExternalButton,
   InlineLoading,
-  MetricCard,
   PageHeader,
   PageSkeleton,
   PartialBanner,
@@ -33,7 +22,7 @@ import {
   StatusBadge,
   type Column,
 } from "../../components/ui";
-import { displayTimeZoneLabel, formatCount, formatDateTimeWithZone } from "../../lib/format";
+import { formatDateTimeWithZone, productizeText, sourceLabel } from "../../lib/format";
 import { formatError, getScenario, requestOperation } from "../../lib/api";
 import { useI18n } from "../../lib/i18n";
 import { mergeLiveEvents, useSharedLiveEvents } from "../../lib/use-live-events";
@@ -49,7 +38,12 @@ const defaultFilters: AuditFilters = { source: "all", severity: "all", query: ""
 
 export function AuditPage() {
   const { t } = useI18n();
-  const section = useWorkspaceSection("audit", "analytics");
+  const section = useWorkspaceSection("audit", "traffic");
+  const heading =
+    section === "security-events"
+      ? { label: "Security Events", title: "Security Events" }
+      : { label: "Traffic", title: "Traffic" };
+  useDocumentTitle(heading.title);
   const scenario = getScenario();
   const location = useRouterState({ select: (state) => state.location });
   const navigate = useNavigate();
@@ -129,7 +123,7 @@ export function AuditPage() {
     return (
       <PageFrame>
         <PageHeader
-          description="Gateway traffic and AgentGuard security records remain source-distinct."
+          description="Connection activity and runtime security records remain source-distinct."
           eyebrow="Audit / Evidence"
           title="Audit data unavailable"
         />
@@ -153,9 +147,9 @@ export function AuditPage() {
               : ""}
           </Button>
         }
-        description="Analyze gateway traffic and runtime security evidence without inventing task-level correlation."
-        eyebrow="Audit / Traffic & security"
-        title="See every verified signal"
+        description="Inspect normalized source evidence without inventing task-level correlation."
+        eyebrow={`Audit / ${heading.label}`}
+        title={heading.title}
       />
       <PartialBanner meta={meta} />
       {filtersOpen ? (
@@ -166,17 +160,11 @@ export function AuditPage() {
           onReset={resetFilters}
         />
       ) : null}
-      {section === "analytics" ? (
-        <AnalyticsView
-          data={filteredData}
-          onOpen={(event, trigger) => setEvent(event.id, trigger)}
-        />
-      ) : null}
       {section === "traffic" ? (
         <EventsView
           events={filteredData.events.filter((event) => event.source === "agentgateway")}
           onOpen={(event, trigger) => setEvent(event.id, trigger)}
-          title="Gateway traffic"
+          title="Connection traffic"
         />
       ) : null}
       {section === "security-events" ? (
@@ -186,13 +174,12 @@ export function AuditPage() {
           title="Security events"
         />
       ) : null}
-      {section === "sessions" ? <SessionsView data={filteredData} /> : null}
       <DetailDrawer
-        eyebrow={selectedDetail?.source ?? "Event detail"}
+        eyebrow={selectedDetail ? sourceLabel(selectedDetail.source) : "Event detail"}
         onClose={closeEvent}
         open={Boolean(selected)}
         returnFocusRef={triggerRef}
-        title={selectedDetail?.summary ?? "Event not found"}
+        title={selectedDetail ? productizeText(selectedDetail.summary) : "Event not found"}
       >
         {detailQuery.isError ? (
           <ErrorState
@@ -204,7 +191,6 @@ export function AuditPage() {
           <EventDetail
             detailReady={Boolean(detailQuery.data)}
             event={selectedDetail}
-            gatewayLogs={data.links.gatewayLogs}
             loading={detailQuery.isFetching}
           />
         ) : null}
@@ -254,8 +240,8 @@ function AuditFilterPanel({
             value={filters.source}
           >
             <option value="all">{t("All sources")}</option>
-            <option value="agentgateway">agentgateway</option>
-            <option value="agentguard">AgentGuard</option>
+            <option value="agentgateway">{t(sourceLabel("agentgateway"))}</option>
+            <option value="agentguard">{t(sourceLabel("agentguard"))}</option>
           </select>
         </label>
         <label>
@@ -332,53 +318,6 @@ function activeFilterCount(filters: AuditFilters, exactSessionId?: string): numb
   );
 }
 
-function AnalyticsView({
-  data,
-  onOpen,
-}: {
-  data: AuditData;
-  onOpen: (event: UnifiedEvent, trigger: HTMLTableRowElement) => void;
-}) {
-  if (!data.events.length)
-    return (
-      <EmptyState
-        description="No gateway traffic or AgentGuard security records exist in this time range."
-        title="No audit data yet"
-      />
-    );
-  return (
-    <>
-      <div className="metric-grid">
-        {data.metrics.map((metric) => (
-          <MetricCard key={metric.id} metric={metric} />
-        ))}
-      </div>
-      <div className="content-grid content-grid--wide">
-        <Card className="chart-card">
-          <CardHeader
-            action={
-              <span className="live-caption">
-                <Radio size={13} /> 12 × 5m · {displayTimeZoneLabel}
-              </span>
-            }
-            description="Last 60 minutes; verified request volume and explicit denies use independent axes."
-            title="Traffic trend"
-          />
-          <RequestTrendChart data={data.trend} />
-        </Card>
-        <Card className="chart-card">
-          <CardHeader
-            description="Nearest-rank P95 from the bounded request-log summary sample; tooltips show sample size and gaps mean no samples."
-            title="Latency trend"
-          />
-          <RequestTrendChart data={data.trend} mode="latency" />
-        </Card>
-      </div>
-      <EventsView events={data.events} onOpen={onOpen} title="Unified activity" />
-    </>
-  );
-}
-
 const eventColumns: Column<UnifiedEvent>[] = [
   {
     key: "time",
@@ -398,7 +337,7 @@ const eventColumns: Column<UnifiedEvent>[] = [
     key: "summary",
     header: "Summary",
     className: "table-summary",
-    render: (item) => <span>{item.summary}</span>,
+    render: (item) => <span>{productizeText(item.summary)}</span>,
   },
   {
     key: "subject",
@@ -460,89 +399,18 @@ function EventsView({
   );
 }
 
-function SessionsView({ data }: { data: AuditData }) {
-  const { t } = useI18n();
-  const columns = [
-    {
-      key: "session",
-      header: "Session",
-      render: (item: AuditData["sessions"][number]) => (
-        <div className="primary-cell">
-          <Activity size={15} />
-          <span>
-            <strong>{item.id}</strong>
-            <small>{item.agentId}</small>
-          </span>
-        </div>
-      ),
-    },
-    {
-      key: "principal",
-      header: "Principal",
-      render: (item: AuditData["sessions"][number]) => <code>{item.principal}</code>,
-    },
-    {
-      key: "events",
-      header: "Events",
-      render: (item: AuditData["sessions"][number]) => formatCount(item.events),
-    },
-    {
-      key: "denies",
-      header: "Denies",
-      render: (item: AuditData["sessions"][number]) => item.denies,
-    },
-    {
-      key: "last-seen",
-      header: "Last seen",
-      render: (item: AuditData["sessions"][number]) =>
-        item.lastSeen ? (
-          <time dateTime={item.lastSeen}>{formatDateTimeWithZone(item.lastSeen)}</time>
-        ) : (
-          t("Not reported")
-        ),
-    },
-    {
-      key: "status",
-      header: "Status",
-      render: (item: AuditData["sessions"][number]) => <StatusBadge status={item.status} />,
-    },
-    {
-      key: "source",
-      header: "Source",
-      render: (item: AuditData["sessions"][number]) => <SourceBadge source={item.source} />,
-    },
-  ];
-  return data.sessions.length ? (
-    <Card>
-      <CardHeader
-        description="AgentGuard sessions only; counts use exact session-ID matches and do not imply a task DAG."
-        title="Runtime sessions"
-      />
-      <DataTable columns={columns} data={data.sessions} label="AgentGuard runtime sessions" />
-    </Card>
-  ) : (
-    <EmptyState
-      description="AgentGuard has not reported any runtime sessions."
-      title="No sessions found"
-    />
-  );
-}
-
 function EventDetail({
   event,
-  gatewayLogs,
   detailReady,
   loading,
 }: {
   event: UnifiedEvent;
-  gatewayLogs?: string;
   detailReady: boolean;
   loading: boolean;
 }) {
   const { t } = useI18n();
   const evidence = detailReady ? sourceEvidenceRows(event) : [];
   const payloadSections = detailReady ? gatewayPayloadSections(event) : [];
-  const sourceLogHref = gatewayLogHref(gatewayLogs, event);
   return (
     <div className="event-detail">
       <div className="event-detail__badges">
@@ -592,17 +460,13 @@ function EventDetail({
       {evidence.length ? (
         <section className="event-detail__section">
           <h3>
-            {t(event.source === "agentgateway" ? "Gateway request evidence" : "Guard evidence")}
+            {t(
+              event.source === "agentgateway"
+                ? "Connection request evidence"
+                : "Runtime protection evidence",
+            )}
           </h3>
           <DefinitionList items={evidence} />
-        </section>
-      ) : null}
-      {sourceLogHref ? (
-        <section className="event-detail__section">
-          <h3>{t("agentgateway source log")}</h3>
-          <div className="event-detail__source-action">
-            <ExternalButton href={sourceLogHref}>{t("Open exact source log")}</ExternalButton>
-          </div>
         </section>
       ) : null}
       {payloadSections.map((section) => (
@@ -645,13 +509,13 @@ export function sourceEvidenceRows(event: UnifiedEvent): EvidenceRow[] {
   const approval = objectValue(raw.approval);
   return compactRows([
     [
-      "Guard event ID",
+      "Runtime event ID",
       displayValue(guardEvent.eventId) ||
         displayValue(guardEvent.event_id) ||
         displayValue(approval.eventId),
     ],
     [
-      "Guard event type",
+      "Runtime event type",
       displayValue(guardEvent.eventType) ||
         displayValue(guardEvent.event_type) ||
         displayValue(approval.eventType),
@@ -728,28 +592,6 @@ function RawJSONBlock({ title, value }: { title: string; value: unknown }) {
 function formatRawValue(value: unknown): string {
   if (typeof value === "string") return value;
   return JSON.stringify(value, null, 2) ?? String(value);
-}
-
-export function gatewayLogHref(
-  gatewayLogs: string | undefined,
-  event: UnifiedEvent,
-): string | undefined {
-  if (
-    !gatewayLogs ||
-    event.source !== "agentgateway" ||
-    event.rawRef.source !== "agentgateway" ||
-    !event.rawRef.id
-  ) {
-    return undefined;
-  }
-  try {
-    const url = new URL(gatewayLogs);
-    if (url.protocol !== "http:" && url.protocol !== "https:") return undefined;
-    url.searchParams.set("log", event.rawRef.id);
-    return url.toString();
-  } catch {
-    return undefined;
-  }
 }
 
 function compactRows(rows: Array<[string, string | undefined]>): EvidenceRow[] {

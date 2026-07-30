@@ -521,7 +521,7 @@ function EditorDialog({
     : "Edit traffic configuration";
   return (
     <Dialog
-      description="Changes are written to the verified agentgateway configuration and checked after save."
+      description="Changes are written through Agentshark Connection and checked after save."
       onClose={onClose}
       open={Boolean(editor)}
       size="wide"
@@ -903,7 +903,7 @@ function DeleteDialog({
             items={[
               { label: "Resource", value: deleteName(target) },
               ...counts,
-              { label: "Source", value: "agentgateway" },
+              { label: "Source", value: "Agentshark Connection" },
             ]}
           />
           <label className="confirm-field">

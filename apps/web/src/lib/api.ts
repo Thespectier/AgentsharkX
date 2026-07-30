@@ -5,6 +5,7 @@ import {
   type OperationBodies,
   type OperationResponse,
 } from "../generated/api-client";
+import { productizeText } from "./format";
 
 type WriteOperation = keyof OperationBodies & ImplementedOperationId;
 type ReadOperation = Exclude<ImplementedOperationId, WriteOperation>;
@@ -164,7 +165,7 @@ async function apiError(response: Response): Promise<ApiError> {
 }
 
 export function formatError(error: unknown): string {
-  if (error instanceof ApiError) return error.message;
-  if (error instanceof Error) return error.message;
+  if (error instanceof ApiError) return productizeText(error.message);
+  if (error instanceof Error) return productizeText(error.message);
   return "The request failed for an unknown reason.";
 }

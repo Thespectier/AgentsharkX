@@ -21,7 +21,6 @@ import {
   Dialog,
   EmptyState,
   ErrorState,
-  ExternalButton,
   SourceBadge,
   StatusBadge,
   type Column,
@@ -237,10 +236,7 @@ export function LlmManager() {
         setSearch={setModelSearch}
         virtualReferences={virtualReferences}
       />
-      <VirtualModels
-        items={configuration.virtualModels}
-        nativeHref={configuration.links.rawConfig ?? configuration.links.console}
-      />
+      <VirtualModels items={configuration.virtualModels} />
       <EditorDialog
         editor={editor}
         error={save.isError ? save.error : undefined}
@@ -435,7 +431,7 @@ function ModelSettings({
   );
 }
 
-function VirtualModels({ items, nativeHref }: { items: GatewayModel[]; nativeHref?: string }) {
+function VirtualModels({ items }: { items: GatewayModel[] }) {
   const { t } = useI18n();
   const columns: Column<GatewayModel>[] = [
     {
@@ -460,11 +456,6 @@ function VirtualModels({ items, nativeHref }: { items: GatewayModel[]; nativeHre
   return (
     <Card>
       <CardHeader
-        action={
-          nativeHref ? (
-            <ExternalButton href={nativeHref}>Advanced configuration</ExternalButton>
-          ) : undefined
-        }
         description="Virtual routing, failover, and policy fields remain read-only here."
         title="Virtual models"
       />
@@ -473,7 +464,7 @@ function VirtualModels({ items, nativeHref }: { items: GatewayModel[]; nativeHre
       ) : (
         <EmptyState
           compact
-          description="agentgateway has no virtual models configured."
+          description="No virtual models are configured in Agentshark Connection."
           title="No virtual models"
         />
       )}
@@ -604,7 +595,7 @@ function EditorDialog({
       : `${editor?.item ? "Edit" : "Add"} model`;
   return (
     <Dialog
-      description="Verified provider and direct-model settings are written while unowned agentgateway fields are preserved."
+      description="Verified Provider and direct-model settings are written while unrelated connection fields are preserved."
       onClose={onClose}
       open={Boolean(editor)}
       size="wide"
@@ -1142,7 +1133,7 @@ function CredentialFields({
         {t(
           state?.configured
             ? "Authentication is configured upstream as {kind}. Its value is not exposed."
-            : "No credential value is exposed by agentgateway.",
+            : "No credential value is exposed to the browser.",
           { kind: state ? t(state.kind) : t("ambient") },
         )}
       </p>
@@ -1455,14 +1446,14 @@ function DeleteDialog({
   const cascadesModels = target?.kind === "provider" && referencedModels.length > 0;
   return (
     <Dialog
-      description="This removes the item from agentgateway configuration after a fresh revision check."
+      description="This removes the item from Agentshark Connection after a fresh revision check."
       onClose={onClose}
       open={Boolean(target)}
       title={t("Delete {name}", { name })}
     >
       <div className="dialog-form">
         <p className="llm-delete-copy">
-          {t("References are checked again by the server before agentgateway is updated.")}
+          {t("References are checked again by the server before the connection is updated.")}
         </p>
         {cascadesModels ? (
           <div className="llm-delete-impact">
@@ -1483,7 +1474,7 @@ function DeleteDialog({
         {blocked ? (
           <div className="llm-delete-blocker" role="alert">
             {t(
-              "Deletion is blocked because these models are used by a virtual model: {names}. Remove those virtual-model references in agentgateway Raw Config first.",
+              "Deletion is blocked because these models are used by a virtual model: {names}. Remove those virtual-model references before retrying.",
               { names: blockingModels.map((item) => item.name).join(", ") },
             )}
           </div>

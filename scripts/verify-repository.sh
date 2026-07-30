@@ -54,7 +54,7 @@ required_files=(
   docs/screenshots/connect-1280.png
   docs/screenshots/trust-1280.png
   docs/screenshots/protect-1280.png
-  docs/screenshots/system-degraded-1440.png
+  docs/screenshots/agents-mobile-390.png
   docs/screenshots/lighthouse-accessibility.json
   scripts/bootstrap-preview.sh
   scripts/bootstrap-sdk.sh

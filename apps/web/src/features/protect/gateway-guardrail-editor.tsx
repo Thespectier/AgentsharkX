@@ -133,7 +133,7 @@ export function GatewayGuardrailEditor({
         <p>
           {mode === "structured"
             ? t("Structured controls preserve advanced source-owned fields that are not changed.")
-            : t("Complete JSON exposes every verified agentgateway guardrail field.")}
+            : t("Complete JSON exposes every verified connection guardrail field.")}
         </p>
       </div>
 

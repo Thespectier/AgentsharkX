@@ -48,7 +48,7 @@ export function ApprovalDecisionDialog({
 
   return (
     <Dialog
-      description="Review sanitized AgentGuard context, write a note, and explicitly confirm one decision."
+      description="Review the complete runtime context, write a note, and explicitly confirm one decision."
       onClose={() => !mutation.isPending && onClose()}
       open
       title={`Review ${approval.tool || approval.eventType}`}

@@ -26,7 +26,7 @@ import {
   StatusBadge,
   type Column,
 } from "../../components/ui";
-import { PageFrame } from "../../components/workspace";
+import { PageFrame, useDocumentTitle } from "../../components/workspace";
 import { TraceFlow } from "../../components/trace-flow";
 import { TraceSpanDrawer } from "../../components/trace-span-drawer";
 import type {
@@ -71,6 +71,7 @@ const emptyFilters: TraceFilters = {
 };
 
 export function TraceListPage() {
+  useDocumentTitle("Agent Trace");
   const { t } = useI18n();
   const location = useRouterState({ select: (state) => state.location });
   const navigate = useNavigate();
@@ -142,8 +143,8 @@ export function TraceListPage() {
           </Button>
         }
         description="Find one explicit Agent task execution, then inspect its deterministic spans and links."
-        eyebrow="Audit / Traces"
-        title="Trace every agent task"
+        eyebrow="Audit / Agent Trace"
+        title="Agent Trace"
       />
       <TraceFilterPanel
         draft={draft}
@@ -176,12 +177,12 @@ export function TraceListPage() {
               </span>
             }
             description="Stable ingest ordering; complete content is available only from an opened Span."
-            title="Task traces"
+            title="Agent traces"
           />
           <DataTable
             columns={traceColumns}
             data={data.items.map((trace) => ({ ...trace, id: trace.traceId }))}
-            label="Task traces"
+            label="Agent traces"
             onRowClick={(trace) => {
               void navigate({ href: `/audit/traces/${trace.traceId}${location.searchStr}` });
             }}
@@ -365,6 +366,7 @@ function TraceFilterPanel({
 }
 
 export function TraceDetailPage() {
+  useDocumentTitle("Agent Trace detail");
   const { t } = useI18n();
   const location = useRouterState({ select: (state) => state.location });
   const navigate = useNavigate();
@@ -425,7 +427,7 @@ export function TraceDetailPage() {
           </Button>
         }
         description="Explicit parent relationships and Span Links only; time proximity never creates an edge."
-        eyebrow="Audit / Traces / Detail"
+        eyebrow="Audit / Agent Trace / Detail"
         title={detail.summary.taskId || `Trace ${shortID(detail.summary.traceId)}`}
       >
         <button
@@ -661,7 +663,7 @@ function TraceQueryError({
     <PageFrame>
       <PageHeader
         description="The failure is isolated to Trace storage and does not affect upstream Audit evidence."
-        eyebrow="Audit / Traces"
+        eyebrow="Audit / Agent Trace"
         title={title}
       />
       <ErrorState

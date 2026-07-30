@@ -104,5 +104,11 @@ export function formatDateTimeWithZone(value: string): string {
 }
 
 export function sourceLabel(source: Source): string {
-  return source === "agentgateway" ? "agentgateway" : "AgentGuard";
+  return source === "agentgateway" ? "Connection" : "Runtime protection";
+}
+
+export function productizeText(value: string): string {
+  return value
+    .replace(/agentgateway/gi, "Agentshark Connection")
+    .replace(/agent\s*guard/gi, "Agentshark Runtime");
 }

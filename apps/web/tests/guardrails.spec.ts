@@ -1,9 +1,9 @@
 import { expect, test } from "@playwright/test";
 
-test("Protect manages complete LLM guardrails with structured and JSON controls", async ({
+test("Trust manages complete LLM guardrails with structured and JSON controls", async ({
   page,
 }) => {
-  await page.goto("/protect/guardrails");
+  await page.goto("/trust/guardrails");
 
   await expect(page.getByRole("heading", { name: "LLM guardrails" })).toBeVisible();
   await expect(page.getByText("/llm/policies/guardrails", { exact: true })).toBeVisible();
@@ -49,10 +49,8 @@ test("Protect manages complete LLM guardrails with structured and JSON controls"
   await expect(reopened.getByLabel("Complete guardrail value")).toHaveValue(/forwardHeaderMatches/);
 });
 
-test("Protect manages ordered MCP guardrail processors and confirmed deletion", async ({
-  page,
-}) => {
-  await page.goto("/protect/guardrails");
+test("Trust manages ordered MCP guardrail processors and confirmed deletion", async ({ page }) => {
+  await page.goto("/trust/guardrails");
   await page.getByRole("tab", { name: "MCP" }).click();
 
   await expect(page.getByRole("heading", { name: "MCP guardrails" })).toBeVisible();
@@ -109,7 +107,7 @@ test("Protect manages ordered MCP guardrail processors and confirmed deletion", 
   await page.getByRole("button", { name: "Delete guardrails: MCP guardrails" }).click();
   const deleteDialog = page.getByRole("dialog", { name: "Delete gateway guardrails" });
   await deleteDialog
-    .getByLabel("I confirm this complete agentgateway guardrail configuration should be removed.")
+    .getByLabel("I confirm this complete connection guardrail configuration should be removed.")
     .check();
   await deleteDialog.getByRole("button", { name: "Delete guardrails" }).click();
   await expect(page.getByText("Guardrails are disabled")).toBeVisible();
@@ -126,7 +124,7 @@ test("Protect manages ordered MCP guardrail processors and confirmed deletion", 
 test("Guardrail JSON validation rejects request-only guards in the response phase", async ({
   page,
 }) => {
-  await page.goto("/protect/guardrails");
+  await page.goto("/trust/guardrails");
   await page.getByRole("button", { name: "Edit guardrails" }).click();
   const dialog = page.getByRole("dialog", { name: "Edit Guardrails" });
   await dialog.getByRole("button", { name: "Complete JSON" }).click();
@@ -140,7 +138,7 @@ test("Guardrail JSON validation rejects request-only guards in the response phas
 });
 
 test("An open Guardrail draft cannot borrow a newer background revision", async ({ page }) => {
-  await page.goto("/protect/guardrails");
+  await page.goto("/trust/guardrails");
   await page.getByRole("button", { name: "Edit guardrails" }).click();
   const dialog = page.getByRole("dialog", { name: "Edit Guardrails" });
   await dialog.getByRole("button", { name: "Complete JSON" }).click();
@@ -203,7 +201,7 @@ test("An open Guardrail draft cannot borrow a newer background revision", async 
 
 test("Guardrails workspace and editor remain contained on mobile", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto("/protect/guardrails");
+  await page.goto("/trust/guardrails");
   await expect(page.getByRole("heading", { name: "LLM guardrails" })).toBeVisible();
   const overflow = await page
     .locator("body")
@@ -219,7 +217,7 @@ test("Guardrails workspace and editor remain contained on mobile", async ({ page
 });
 
 test("Guardrail dialog traps keyboard focus and restores its trigger", async ({ page }) => {
-  await page.goto("/protect/guardrails");
+  await page.goto("/trust/guardrails");
   const trigger = page.getByRole("button", { name: "Edit guardrails" });
   await trigger.focus();
   await trigger.click();

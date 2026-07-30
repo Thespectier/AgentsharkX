@@ -8,7 +8,6 @@ import {
   CircleSlash,
   Clock3,
   DatabaseZap,
-  ExternalLink,
   Inbox,
   LoaderCircle,
   Minus,
@@ -26,7 +25,7 @@ import {
   useRef,
 } from "react";
 
-import { formatMetric, sourceLabel } from "../lib/format";
+import { formatMetric, productizeText, sourceLabel } from "../lib/format";
 import { localizeChildren, useI18n } from "../lib/i18n";
 import type { HealthStatus, Metric, ResponseMeta, Severity, Source } from "../types";
 
@@ -122,16 +121,6 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
   );
 });
 
-export function ExternalButton({ href, children }: { href: string; children: ReactNode }) {
-  const { t } = useI18n();
-  return (
-    <a className="button button--secondary button--md" href={href} rel="noreferrer" target="_blank">
-      {localizeChildren(children, t)}
-      <ExternalLink aria-hidden="true" size={14} />
-    </a>
-  );
-}
-
 export function StatusOrb({ status, label }: { status: HealthStatus; label?: string }) {
   const { t } = useI18n();
   const localizedLabel = t(label ?? status);
@@ -144,10 +133,11 @@ export function StatusOrb({ status, label }: { status: HealthStatus; label?: str
 }
 
 export function SourceBadge({ source }: { source: Source }) {
+  const { t } = useI18n();
   return (
     <span className={cn("source-badge", `source-badge--${source}`)}>
       <span aria-hidden="true" className="source-badge__mark" />
-      {sourceLabel(source)}
+      {t(sourceLabel(source))}
     </span>
   );
 }
@@ -220,7 +210,7 @@ export function PartialBanner({ meta }: { meta?: ResponseMeta }) {
         <strong>{t("Partial data")}</strong>
         <span>
           {meta.sourceFailures
-            .map((failure) => `${sourceLabel(failure.source)}: ${failure.message}`)
+            .map((failure) => `${sourceLabel(failure.source)}: ${productizeText(failure.message)}`)
             .join(" · ")}
         </span>
       </div>

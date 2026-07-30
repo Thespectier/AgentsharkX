@@ -415,7 +415,7 @@ function validateTarget(value: unknown, prefix: string): string | null {
       const hostname = separator >= 0 ? host.slice(0, separator) : "";
       const port = separator >= 0 ? host.slice(separator + 1) : "";
       if (!hostname || !/^\d+$/.test(port) || Number(port) < 0 || Number(port) > 65535) {
-        return `${prefix} host must use agentgateway host:port or unix:/path format.`;
+        return `${prefix} host must use connection host:port or unix:/path format.`;
       }
     }
   }

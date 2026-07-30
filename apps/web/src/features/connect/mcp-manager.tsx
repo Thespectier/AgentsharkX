@@ -20,7 +20,6 @@ import {
   Dialog,
   EmptyState,
   ErrorState,
-  ExternalButton,
   SourceBadge,
   StatusBadge,
   type Column,
@@ -167,10 +166,7 @@ export function McpManager() {
         search={search}
         setSearch={setSearch}
       />
-      <AdvancedTargets
-        inlineServers={configuration.inlineServers}
-        nativeHref={configuration.links.rawConfig ?? configuration.links.console}
-      />
+      <AdvancedTargets inlineServers={configuration.inlineServers} />
       <ServerEditorDialog
         editor={editor}
         error={saveServer.isError ? saveServer.error : undefined}
@@ -214,7 +210,7 @@ function McpSettingsCard({
             <Settings2 size={15} /> Edit settings
           </Button>
         }
-        description="Gateway listener and federation behavior from verified agentgateway fields."
+        description="Listener and federation behavior from verified Agentshark Connection fields."
         title="MCP settings"
       />
       <DefinitionList
@@ -320,7 +316,7 @@ function McpServersCard({
             <Plus size={14} /> Add server
           </Button>
         }
-        description="Top-level MCP targets served by agentgateway."
+        description="Top-level MCP Tools served through Agentshark Connection."
         title="MCP servers"
       />
       <div className="resource-toolbar llm-toolbar">
@@ -348,13 +344,7 @@ function McpServersCard({
   );
 }
 
-function AdvancedTargets({
-  inlineServers,
-  nativeHref,
-}: {
-  inlineServers: GatewayMCPServer[];
-  nativeHref?: string;
-}) {
+function AdvancedTargets({ inlineServers }: { inlineServers: GatewayMCPServer[] }) {
   const columns: Column<GatewayMCPServer>[] = [
     { key: "name", header: "MCP server", render: (item) => <strong>{item.name}</strong> },
     {
@@ -368,11 +358,6 @@ function AdvancedTargets({
   return (
     <Card>
       <CardHeader
-        action={
-          nativeHref ? (
-            <ExternalButton href={nativeHref}>Advanced configuration</ExternalButton>
-          ) : undefined
-        }
         description="Route-owned MCP targets, OpenAPI schemas, and policy bodies remain with their owning advanced configuration."
         title="Route and advanced targets"
       />
@@ -796,7 +781,7 @@ function DeleteDialog({
   const { t } = useI18n();
   return (
     <Dialog
-      description="This removes the top-level target from the active agentgateway configuration."
+      description="This removes the top-level target from Agentshark Connection."
       onClose={onClose}
       open={Boolean(target)}
       title="Delete MCP server"

@@ -154,7 +154,7 @@ describe("gateway guardrail model", () => {
       validateGuardrailValue("llm", {
         request: [{ webhook: { target: { host: "https://guardrail.example.invalid" } } }],
       }),
-    ).toBe("request guard 1 webhook host must use agentgateway host:port or unix:/path format.");
+    ).toBe("request guard 1 webhook host must use connection host:port or unix:/path format.");
     expect(
       validateGuardrailValue("mcp", {
         processors: [

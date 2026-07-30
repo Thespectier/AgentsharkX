@@ -2,12 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { baseEvents } from "../../mocks/data";
 import type { UnifiedEvent } from "../../types";
-import {
-  filterAuditEvents,
-  gatewayLogHref,
-  gatewayPayloadSections,
-  sourceEvidenceRows,
-} from "./audit-page";
+import { filterAuditEvents, gatewayPayloadSections, sourceEvidenceRows } from "./audit-page";
 
 describe("audit filters", () => {
   it("filters by verified source, severity, and displayed event fields", () => {
@@ -106,28 +101,5 @@ describe("audit event detail", () => {
         },
       },
     ]);
-  });
-
-  it("builds an exact native Logs link from the verified upstream log ID", () => {
-    expect(gatewayLogHref("http://localhost:15000/ui/llm/logs", gatewayEvent)).toBe(
-      "http://localhost:15000/ui/llm/logs?log=log-a",
-    );
-    expect(
-      gatewayLogHref("http://localhost:15000/ui/llm/logs", {
-        ...gatewayEvent,
-        rawRef: { source: "agentgateway", id: "log/a?b" },
-      }),
-    ).toBe("http://localhost:15000/ui/llm/logs?log=log%2Fa%3Fb");
-  });
-
-  it("does not create a source link for another source or an unsafe base URL", () => {
-    expect(
-      gatewayLogHref("http://localhost:15000/ui/llm/logs", {
-        ...gatewayEvent,
-        source: "agentguard",
-        rawRef: { source: "agentguard", id: "audit-a" },
-      }),
-    ).toBeUndefined();
-    expect(gatewayLogHref("javascript:alert(1)", gatewayEvent)).toBeUndefined();
   });
 });

@@ -4,13 +4,15 @@ import { expect, test } from "@playwright/test";
 const pages = [
   "/",
   "/connect/overview",
+  "/connect/agents",
   "/connect/mcp",
   "/connect/traffic",
-  "/trust/agents",
-  "/protect/policies",
-  "/protect/guardrails",
+  "/trust/overview",
+  "/trust/policy",
+  "/trust/guardrails",
+  "/protect/overview",
   "/demo",
-  "/audit/analytics",
+  "/audit/traffic",
   "/audit/traces",
   "/audit/traces/11111111111111111111111111111111",
 ];
@@ -36,10 +38,8 @@ for (const path of pages) {
   });
 }
 
-test("gateway policy editor has no serious or critical accessibility violations", async ({
-  page,
-}) => {
-  await page.goto("/protect/policies");
+test("policy editor has no serious or critical accessibility violations", async ({ page }) => {
+  await page.goto("/trust/policy");
   await page
     .getByRole("row", { name: /Basic auth/ })
     .getByRole("button", { name: "Configure policy: Basic auth" })
@@ -54,10 +54,8 @@ test("gateway policy editor has no serious or critical accessibility violations"
   expect(blocking, JSON.stringify(blocking, null, 2)).toEqual([]);
 });
 
-test("gateway guardrail editor has no serious or critical accessibility violations", async ({
-  page,
-}) => {
-  await page.goto("/protect/guardrails");
+test("guardrail editor has no serious or critical accessibility violations", async ({ page }) => {
+  await page.goto("/trust/guardrails");
   await page.getByRole("button", { name: "Edit guardrails" }).click();
   const dialog = page.getByRole("dialog", { name: "Edit Guardrails" });
   await expect(dialog).toBeVisible();

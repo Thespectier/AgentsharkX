@@ -6,20 +6,19 @@ import {
   Cable,
   ChevronLeft,
   ChevronRight,
-  CircleHelp,
   Clock3,
   Command,
   FlaskConical,
   Home,
   Languages,
   Menu,
-  Settings,
   ShieldCheck,
   UserRoundCheck,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { isMockMode, requestOperation } from "../lib/api";
+import { sourceLabel } from "../lib/format";
 import {
   synchronizeLiveEvent,
   synchronizeStreamReset,
@@ -40,35 +39,33 @@ const navItems = [
     icon: Cable,
     sections: [
       { id: "overview", label: "Overview" },
-      { id: "llm", label: "LLM" },
-      { id: "mcp", label: "MCP" },
+      { id: "agents", label: "Agents" },
+      { id: "llm", label: "LLM / Provider" },
+      { id: "mcp", label: "MCP / Tools" },
       { id: "traffic", label: "Traffic" },
-      { id: "setup", label: "Setup" },
     ],
   },
   {
     label: "Trust",
     area: "trust",
     route: "/trust/$section",
-    section: "agents",
+    section: "overview",
     icon: UserRoundCheck,
     sections: [
-      { id: "agents", label: "Agents" },
-      { id: "resources", label: "Resources" },
-      { id: "scans", label: "Scans" },
+      { id: "overview", label: "Overview" },
+      { id: "guardrails", label: "Guardrails" },
+      { id: "runtime-rules", label: "Runtime rules" },
+      { id: "policy", label: "Policy" },
     ],
   },
   {
     label: "Protect",
     area: "protect",
     route: "/protect/$section",
-    section: "policies",
+    section: "overview",
     icon: ShieldCheck,
     sections: [
-      { id: "policies", label: "Policies" },
-      { id: "guardrails", label: "Guardrails" },
-      { id: "runtime-rules", label: "Runtime rules" },
-      { id: "plugins", label: "Plugins" },
+      { id: "overview", label: "Overview" },
       { id: "approvals", label: "Approvals" },
     ],
   },
@@ -79,11 +76,9 @@ const navItems = [
     section: "traces",
     icon: Activity,
     sections: [
-      { id: "traces", label: "Traces" },
-      { id: "analytics", label: "Analytics" },
+      { id: "traces", label: "Agent Trace" },
       { id: "traffic", label: "Traffic" },
       { id: "security-events", label: "Security events" },
-      { id: "sessions", label: "Sessions" },
     ],
   },
 ] as const;
@@ -267,27 +262,6 @@ export function AppShell() {
               <span>{t("Demo Lab")}</span>
             </Link>
           ) : null}
-          <Link
-            aria-label={collapsed ? t("System") : undefined}
-            className={cn("nav-item", location.pathname === "/system" && "nav-item--active")}
-            search={{ scenario: scenario === "normal" ? undefined : scenario }}
-            title={collapsed ? t("System") : undefined}
-            to="/system"
-          >
-            <Settings size={18} />
-            <span>{t("System")}</span>
-          </Link>
-          <a
-            aria-label={collapsed ? t("Documentation") : undefined}
-            className="nav-item"
-            href="https://github.com/Thespectier/AgentsharkX"
-            rel="noreferrer"
-            target="_blank"
-            title={collapsed ? t("Documentation") : undefined}
-          >
-            <CircleHelp size={18} />
-            <span>{t("Documentation")}</span>
-          </a>
           <button
             aria-expanded={!collapsed}
             aria-label={t(collapsed ? "Expand sidebar" : "Collapse sidebar")}
@@ -357,12 +331,12 @@ export function AppShell() {
                 </select>
               </label>
             ) : null}
-            <div className="source-health" aria-label={t("Upstream health")}>
+            <div className="source-health" aria-label={t("Agentshark service health")}>
               {health.length ? (
                 health.map((item) => (
                   <span key={item.source}>
                     <StatusOrb
-                      label={`${item.label} ${t(item.status)}`}
+                      label={`${sourceLabel(item.source)} ${t(item.status)}`}
                       status={
                         scenario === "partial" && item.source === "agentguard"
                           ? "degraded"
@@ -405,10 +379,10 @@ export function AppShell() {
               {pending ? <span>{pending}</span> : null}
             </Link>
             <Link
-              aria-label={`AS · ${t("Open system settings")}`}
+              aria-label={`AS · ${t("Open home")}`}
               className="avatar"
               search={{ scenario: scenario === "normal" ? undefined : scenario }}
-              to="/system"
+              to="/"
             >
               AS
             </Link>

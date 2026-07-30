@@ -6,7 +6,6 @@ import {
   FlaskConical,
   Home,
   Search,
-  Settings,
   ShieldCheck,
   Sparkles,
   UserRoundCheck,
@@ -20,17 +19,17 @@ import { useI18n } from "../lib/i18n";
 
 const commands = [
   { label: "Open Home", hint: "Runtime posture", path: "/", icon: Home },
-  { label: "Open Connect", hint: "Gateway resources", path: "/connect/overview", icon: Cable },
+  { label: "Open Connect", hint: "Agents and connections", path: "/connect/overview", icon: Cable },
   {
     label: "Open Trust",
-    hint: "Agents and resources",
-    path: "/trust/agents",
+    hint: "Guardrails and runtime policy",
+    path: "/trust/overview",
     icon: UserRoundCheck,
   },
   {
     label: "Open Protect",
-    hint: "Policies and approvals",
-    path: "/protect/policies",
+    hint: "Decisions and approvals",
+    path: "/protect/overview",
     icon: ShieldCheck,
   },
   {
@@ -39,10 +38,9 @@ const commands = [
     path: "/audit/traces",
     icon: Activity,
   },
-  { label: "Open System", hint: "Capabilities and sources", path: "/system", icon: Settings },
   {
     label: "Show pending approvals",
-    hint: "3 need review",
+    hint: "Review pending decisions",
     path: "/protect/approvals",
     icon: Sparkles,
   },
@@ -108,7 +106,6 @@ export function CommandPalette({
     const section = path.split("/")[2];
     if (path === "/") void navigate({ to: "/", search: true });
     else if (path === "/demo") void navigate({ to: "/demo", search: true });
-    else if (path === "/system") void navigate({ to: "/system", search: true });
     else if (path.startsWith("/connect/"))
       void navigate({ to: "/connect/$section", params: { section }, search: true });
     else if (path.startsWith("/trust/"))

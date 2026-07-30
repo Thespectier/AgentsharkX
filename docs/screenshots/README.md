@@ -2,23 +2,23 @@
 
 Deterministic Playwright release and feature baselines are stored here:
 
-- [`home-1440.png`](home-1440.png): 1440 × 1000 desktop Home with LiveFlow,
-  Beijing-time greeting, locale switch, metrics, chart, and source-distinct
-  activity.
-- [`audit-1280.png`](audit-1280.png): 1280 × 800 laptop Audit analytics with
-  exact rolling-window traffic and latency charts plus nested Audit navigation.
+- [`home-1440.png`](home-1440.png): 1440 × 1000 desktop Home with the Agent
+  monitoring overview, Beijing-time greeting, live metrics, security queue, and
+  source-distinct activity.
+- [`audit-1280.png`](audit-1280.png): 1280 × 800 laptop Agent Trace list, the
+  default Audit destination, with filters and explicit trace evidence.
 - [`connect-1280.png`](connect-1280.png): 1280 × 900 Connect overview with all
-  five section links in the sidebar.
-- [`trust-1280.png`](trust-1280.png): 1280 × 900 Trust agent inventory with
-  nested section navigation.
-- [`protect-1280.png`](protect-1280.png): 1280 × 900 source-separated Protect
-  policies and the pending-approval sidebar badge.
-- [`guardrails-1280.png`](guardrails-1280.png): 1280 × 900 Protect workspace
+  five current section links in the sidebar.
+- [`agents-mobile-390.png`](agents-mobile-390.png): 390 × 844 Connect Agent
+  monitoring overview with responsive metrics and status rows.
+- [`trust-1280.png`](trust-1280.png): 1280 × 900 Trust overview with configured
+  policy and published runtime-rule status.
+- [`protect-1280.png`](protect-1280.png): 1280 × 900 Protect overview with the
+  four explicit outcome categories and pending-approval sidebar badge.
+- [`guardrails-1280.png`](guardrails-1280.png): 1280 × 900 Trust workspace
   with complete LLM guardrail placement, phases, ordered guards, and source path.
 - [`runtime-rule-dialog-800.png`](runtime-rule-dialog-800.png): 800 × 700
   bounded runtime-rule composer with its validation and confirmation workflow.
-- [`system-degraded-1440.png`](system-degraded-1440.png): full-page 1440 px
-  System view with AgentGuard disconnected and actionable recovery checks.
 - [`lighthouse-accessibility.json`](lighthouse-accessibility.json): Lighthouse
   13.4.1 accessibility result; the committed run scored 100/100.
 

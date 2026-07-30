@@ -187,7 +187,7 @@ export function GatewayGuardrailManager() {
           />
         ) : (
           <EmptyState
-            description="agentgateway did not report the verified global guardrail path for this family."
+            description="The connection service did not report the verified global guardrail path for this family."
             title="Guardrail configuration unavailable"
           />
         )}
@@ -296,7 +296,7 @@ function GuardrailWorkspace({
             </Button>
           }
           compact
-          description="No guardrail object is configured at this verified agentgateway path."
+          description="No guardrail object is configured at this verified connection path."
           title="Guardrails are disabled"
         />
       ) : family === "llm" ? (
@@ -424,7 +424,7 @@ function DeleteGuardrailDialog({
   const { t } = useI18n();
   return (
     <Dialog
-      description="This removes the complete guardrail object from its exact agentgateway configuration path."
+      description="This removes the complete guardrail object from its exact connection configuration path."
       onClose={onClose}
       open={Boolean(item)}
       title="Delete gateway guardrails"
@@ -444,7 +444,7 @@ function DeleteGuardrailDialog({
               onChange={(event) => onToggle(event.target.checked)}
               type="checkbox"
             />
-            {t("I confirm this complete agentgateway guardrail configuration should be removed.")}
+            {t("I confirm this complete connection guardrail configuration should be removed.")}
           </label>
           {error ? <MutationError error={error} /> : null}
           <footer>

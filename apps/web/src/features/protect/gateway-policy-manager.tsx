@@ -191,7 +191,7 @@ export function GatewayPolicyManager() {
       >
         {!selectedSettings.length ? (
           <EmptyState
-            description="agentgateway did not report a verified policy catalog for this family."
+            description="The connection service did not report a verified policy catalog for this family."
             title="No gateway policies reported"
           />
         ) : !visibleSettings.length ? (
@@ -202,7 +202,7 @@ export function GatewayPolicyManager() {
         ) : view === "mcp" ? (
           <div className="gateway-policy-groups">
             <PolicyCollection
-              description="Top-level MCP policies retain their native agentgateway values and placement."
+              description="Top-level MCP policies retain their source-owned values and placement."
               items={mcpSettings}
               onDelete={requestDelete}
               onEdit={edit}
@@ -404,7 +404,7 @@ function PolicyEditorDialog({
 }) {
   return (
     <Dialog
-      description={item?.description || "Complete source-owned agentgateway policy value."}
+      description={item?.description || "Complete source-owned connection policy value."}
       onClose={onClose}
       open={Boolean(item)}
       size="wide"
@@ -522,7 +522,7 @@ function PolicyDeleteDialog({
   const { t } = useI18n();
   return (
     <Dialog
-      description="This removes the selected policy value from the source-owned agentgateway configuration."
+      description="This removes the selected policy value from its source-owned connection configuration."
       onClose={onClose}
       open={Boolean(item)}
       title="Delete gateway policy"
@@ -544,7 +544,7 @@ function PolicyDeleteDialog({
               onChange={(event) => onToggle(event.target.checked)}
               type="checkbox"
             />
-            {t("I confirm this agentgateway policy should be removed.")}
+            {t("I confirm this connection policy should be removed.")}
           </label>
           {error ? <MutationError error={error} /> : null}
           <footer>

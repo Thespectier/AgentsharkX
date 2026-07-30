@@ -39,7 +39,7 @@ import {
   cn,
   type Column,
 } from "../../components/ui";
-import { PageFrame } from "../../components/workspace";
+import { PageFrame, useDocumentTitle } from "../../components/workspace";
 import type {
   DemoCorrelationEvidence,
   DemoRun,
@@ -77,6 +77,7 @@ import {
 const demoHistoryLimit = 10;
 
 export function DemoLabPage() {
+  useDocumentTitle("Demo Lab");
   const { t } = useI18n();
   const queryClient = useQueryClient();
   const mockScenario = getScenario();
@@ -358,7 +359,7 @@ function DemoHeader({ onRefresh }: { onRefresh?: () => void }) {
           </Button>
         ) : undefined
       }
-      description="Run a fixed simulated incident workflow through the real gateway, guard, SDK, and Trace management paths."
+      description="Run a fixed simulated incident workflow through Agentshark connection, runtime protection, SDK, and Trace management paths."
       eyebrow="Tools / Demo Lab"
       title="Demo Lab"
     >
@@ -757,7 +758,7 @@ function ApprovalPanel({
     <Card className="demo-approval">
       <CardHeader
         action={evidence ? <StatusBadge status={evidence.status} /> : undefined}
-        description="Approval remains an AgentGuard record and is correlated only by an identical reported session ID."
+        description="Approval remains a runtime protection record and is correlated only by an identical reported session ID."
         title="Security / Approval"
       />
       <div className="demo-approval__body">
@@ -801,7 +802,7 @@ function ApprovalPanel({
           <p className="demo-placeholder">
             {t(
               run.scenario === "approval"
-                ? "Waiting for the exact-session AgentGuard ticket."
+                ? "Waiting for the exact-session approval ticket."
                 : "This scenario does not expect a human approval.",
             )}
           </p>
@@ -906,7 +907,7 @@ function CapabilityEvidence({ run }: { run?: DemoRun }) {
                   <StatusBadge status={item.status} />
                 </header>
                 <p>{t(item.detail, item.variables)}</p>
-                <small>{item.basis}</small>
+                <small>{t(item.basis)}</small>
                 {item.href ? (
                   <a href={item.href}>
                     {t("Open evidence")} <ExternalLink size={12} />
@@ -943,11 +944,10 @@ function capabilityRows(run?: DemoRun): Array<{
       status: gateway.status,
       detail:
         gateway.status === "verified"
-          ? "All {count} expected LLM calls have exact agentgateway log evidence."
-          : "Gateway request-log evidence is not yet verified.",
+          ? "All {count} expected LLM calls have exact connection log evidence."
+          : "Connection request-log evidence is not yet verified.",
       variables: { count: run?.expectedMetrics.llmCalls ?? "Pending" },
       basis: gateway.basis,
-      href: run?.links.gatewayLogs,
     },
     {
       area: "Trust",
@@ -970,8 +970,8 @@ function capabilityRows(run?: DemoRun): Array<{
       status: approval.status,
       detail:
         approval.status === "verified"
-          ? "AgentGuard ticket {ticket} is session-linked."
-          : "No exact-session AgentGuard approval evidence is verified.",
+          ? "Approval ticket {ticket} is session-linked."
+          : "No exact-session approval evidence is verified.",
       variables: { ticket: run?.approval?.ticketId ?? "Pending" },
       basis: approval.basis,
       href: run?.links.approval,

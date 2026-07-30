@@ -28,9 +28,9 @@ function seededClient() {
     "overview",
     "audit",
     "connect-summary",
-    "trust-agents",
+    "monitored-agents",
+    "trust-controls",
     "protect-approvals",
-    "system-health",
     "admin-session",
     "audit-traces",
   ]) {
@@ -47,10 +47,10 @@ describe("query synchronization", () => {
 
     expect(client.getQueryState(["overview"])?.isInvalidated).toBe(true);
     expect(client.getQueryState(["audit"])?.isInvalidated).toBe(true);
-    expect(client.getQueryState(["trust-agents"])?.isInvalidated).toBe(true);
+    expect(client.getQueryState(["monitored-agents"])?.isInvalidated).toBe(true);
+    expect(client.getQueryState(["trust-controls"])?.isInvalidated).toBe(true);
     expect(client.getQueryState(["protect-approvals"])?.isInvalidated).toBe(true);
     expect(client.getQueryState(["connect-summary"])?.isInvalidated).toBe(false);
-    expect(client.getQueryState(["system-health"])?.isInvalidated).toBe(false);
   });
 
   it("invalidates only Trace consumers for a summary-only Trace delivery", async () => {
@@ -79,7 +79,8 @@ describe("query synchronization", () => {
 
     expect(client.getQueryState(["overview"])?.isInvalidated).toBe(true);
     expect(client.getQueryState(["audit"])?.isInvalidated).toBe(true);
-    expect(client.getQueryState(["trust-agents"])?.isInvalidated).toBe(true);
+    expect(client.getQueryState(["monitored-agents"])?.isInvalidated).toBe(true);
+    expect(client.getQueryState(["trust-controls"])?.isInvalidated).toBe(true);
     expect(client.getQueryState(["protect-approvals"])?.isInvalidated).toBe(true);
     expect(client.getQueryState(["connect-summary"])?.isInvalidated).toBe(false);
   });
@@ -93,9 +94,9 @@ describe("query synchronization", () => {
       "overview",
       "audit",
       "connect-summary",
-      "trust-agents",
+      "monitored-agents",
+      "trust-controls",
       "protect-approvals",
-      "system-health",
     ]) {
       expect(client.getQueryState([key])?.isInvalidated).toBe(true);
     }

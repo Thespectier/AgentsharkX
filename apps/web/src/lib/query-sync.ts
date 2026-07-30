@@ -4,24 +4,14 @@ import type { UnifiedEvent } from "../types";
 import type { TraceSummary } from "../generated/api-client";
 
 const overviewQueries = [["overview"]] as const;
-const systemQueries = [["system-health"], ["system-capabilities"], ["system-diagnostics"]] as const;
 const gatewayQueries = [
   ["connect-summary"],
-  ["connect-setup"],
-  ["connect-providers"],
-  ["connect-models"],
-  ["connect-mcp"],
-  ["connect-routes"],
-  ["connect-detail"],
+  ["connect-llm-configuration"],
+  ["connect-mcp-configuration"],
+  ["connect-traffic-configuration"],
+  ["protect-gateway-policy-configuration"],
 ] as const;
-const guardQueries = [
-  ["trust-agents"],
-  ["trust-agent"],
-  ["trust-resources"],
-  ["trust-scans"],
-  ["protect"],
-  ["protect-approvals"],
-] as const;
+const guardQueries = [["monitored-agents"], ["trust-controls"], ["protect-approvals"]] as const;
 const auditQueries = [["audit"], ["audit-event"]] as const;
 
 async function invalidate(queryClient: QueryClient, prefixes: readonly (readonly string[])[]) {
@@ -36,12 +26,7 @@ export async function synchronizeAgentGuardData(queryClient: QueryClient) {
 
 export async function synchronizeLiveEvent(queryClient: QueryClient, event: UnifiedEvent) {
   const sourceQueries = event.source === "agentgateway" ? gatewayQueries : guardQueries;
-  await invalidate(queryClient, [
-    ...overviewQueries,
-    ...auditQueries,
-    ...sourceQueries,
-    ...(event.kind === "health" ? systemQueries : []),
-  ]);
+  await invalidate(queryClient, [...overviewQueries, ...auditQueries, ...sourceQueries]);
 }
 
 export async function synchronizeTraceUpdate(queryClient: QueryClient, summary: TraceSummary) {

@@ -1,10 +1,10 @@
 import { expect, test } from "@playwright/test";
 
 const workspaces = [
-  ["/connect/overview", "Connect agents to every destination"],
-  ["/trust/agents", "Know what every agent can reach"],
-  ["/protect/policies", "Enforce every critical boundary"],
-  ["/audit/analytics", "See every verified signal"],
+  ["/connect/overview", "Connection overview"],
+  ["/trust/overview", "Trust overview"],
+  ["/protect/overview", "Protection overview"],
+  ["/audit/traces", "Agent Trace"],
 ] as const;
 
 test("all five primary pages render from labelled mock data", async ({ page }) => {
@@ -18,25 +18,17 @@ test("all five primary pages render from labelled mock data", async ({ page }) =
   }
 });
 
-test("Home activity flow uses live source categories and updates with SSE", async ({ page }) => {
+test("Home shows monitored Agent counts and explicit runtime-state availability", async ({
+  page,
+}) => {
   await page.goto("/");
-  const flow = page.locator(".live-flow");
-  const topology = flow.getByRole("img", { name: "Live agent traffic topology" });
-  await expect(flow.getByText("Agent traffic & decisions")).toBeVisible();
-  for (const category of ["Requests", "Errors", "Decisions", "Denied"]) {
-    await expect(topology.getByText(category, { exact: true })).toBeVisible();
-  }
-  await expect(topology.getByText(/18,406 · Last 60m/)).toBeVisible();
-  await expect(flow.getByText("31 explicit IDs")).toHaveCount(0);
-  await expect(flow.getByText("3 providers")).toHaveCount(0);
-
-  const recentEvents = topology.getByText(/recent events$/);
-  const initialCount = await recentEvents.textContent();
-  await expect.poll(() => recentEvents.textContent(), { timeout: 7_000 }).not.toBe(initialCount);
-
-  await page.setViewportSize({ width: 390, height: 844 });
-  await expect(topology).toBeHidden();
-  await expect(flow.getByRole("group", { name: "Live agent traffic summary" })).toBeVisible();
+  const overview = page.getByRole("region", { name: "Agent monitoring overview" });
+  await expect(overview.getByText("Monitored agents", { exact: true })).toBeVisible();
+  await expect(overview.getByText("3", { exact: true }).first()).toBeVisible();
+  await expect(overview.getByText("Running agents", { exact: true })).toBeVisible();
+  await expect(overview.getByText("Runtime state is not reported")).toBeVisible();
+  await expect(overview.getByText("research-copilot", { exact: true })).toBeVisible();
+  await expect(page.getByText("Agent traffic & decisions")).toHaveCount(0);
 });
 
 test("Home greeting follows Beijing time and the persisted language switch localizes the shell", async ({
@@ -62,16 +54,16 @@ test("Home greeting follows Beijing time and the persisted language switch local
 
   await page.reload();
   await expect(page.locator("html")).toHaveAttribute("lang", "zh-CN");
-  await expect(page.getByRole("link", { name: "系统", exact: true })).toBeVisible();
-  await page.getByRole("link", { name: "系统", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "数据源、版本与能力" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "系统", exact: true })).toHaveCount(0);
+  await page.getByRole("link", { name: "信任", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "信任概览" })).toBeVisible();
 });
 
 test("sidebar subnavigation renders immediately without a hard refresh", async ({ page }) => {
   await page.goto("/connect/overview");
   const connectNavigation = page.getByRole("group", { name: "Connect sections" });
   await expect(connectNavigation).toBeVisible();
-  for (const name of ["Overview", "LLM", "MCP", "Traffic", "Setup"]) {
+  for (const name of ["Overview", "Agents", "LLM / Provider", "MCP / Tools", "Traffic"]) {
     await expect(connectNavigation.getByRole("link", { name, exact: true })).toBeVisible();
   }
   await expect(connectNavigation.getByRole("link", { name: "Overview" })).toHaveAttribute(
@@ -79,27 +71,29 @@ test("sidebar subnavigation renders immediately without a hard refresh", async (
     "page",
   );
   await expect(page.locator(".workspace-tabs")).toHaveCount(0);
-  await connectNavigation.getByRole("link", { name: "LLM", exact: true }).click();
+  await connectNavigation.getByRole("link", { name: "LLM / Provider", exact: true }).click();
   await expect(page).toHaveURL(/\/connect\/llm$/);
   await expect(page.getByRole("heading", { name: "Providers" })).toBeVisible();
 
-  await page.goto("/trust/agents");
+  await page.goto("/trust/overview");
   const trustNavigation = page.getByRole("group", { name: "Trust sections" });
-  await trustNavigation.getByRole("link", { name: "Resources", exact: true }).click();
-  await expect(page).toHaveURL(/\/trust\/resources$/);
-  await expect(page.getByRole("heading", { name: "Runtime resources" })).toBeVisible();
-
-  await page.goto("/protect/policies");
-  const protectNavigation = page.getByRole("group", { name: "Protect sections" });
-  await protectNavigation.getByRole("link", { name: "Guardrails", exact: true }).click();
-  await expect(page).toHaveURL(/\/protect\/guardrails$/);
+  await trustNavigation.getByRole("link", { name: "Guardrails", exact: true }).click();
+  await expect(page).toHaveURL(/\/trust\/guardrails$/);
   await expect(page.getByRole("heading", { name: "LLM guardrails" })).toBeVisible();
 
-  await page.goto("/audit/analytics");
+  await page.goto("/protect/overview");
+  const protectNavigation = page.getByRole("group", { name: "Protect sections" });
+  await protectNavigation.getByRole("link", { name: "Approvals", exact: true }).click();
+  await expect(page).toHaveURL(/\/protect\/approvals$/);
+  await expect(page.getByRole("heading", { name: "Approvals" })).toBeVisible();
+
+  await page.goto("/audit/traces");
   const auditNavigation = page.getByRole("group", { name: "Audit sections" });
   await auditNavigation.getByRole("link", { name: "Security events", exact: true }).click();
   await expect(page).toHaveURL(/\/audit\/security-events$/);
-  await expect(page.getByRole("heading", { name: "Security events" })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { level: 1, name: "Security Events", exact: true }),
+  ).toBeVisible();
 });
 
 test("desktop sidebar collapses into a compact icon rail and restores", async ({ page }) => {
@@ -163,32 +157,24 @@ test("mobile navigation exposes subpages even after desktop sidebar was collapse
   await page.getByRole("button", { name: "Open navigation" }).click();
   const connectNavigation = page.getByRole("group", { name: "Connect sections" });
   await expect(connectNavigation).toBeVisible();
-  await expect(connectNavigation.getByRole("link", { name: "Setup" })).toBeVisible();
+  await expect(connectNavigation.getByRole("link", { name: "Agents" })).toBeVisible();
 });
 
-test("interactive controls have observable behavior", async ({ page }) => {
-  await page.goto("/audit/analytics");
+test("Audit evidence filters have observable behavior", async ({ page }) => {
+  await page.goto("/audit/security-events");
   await page.getByRole("button", { name: "Filter" }).click();
   await page.getByPlaceholder("Summary, agent, model, or resource").fill("shell invocation");
   await page.getByLabel("Source").selectOption("agentguard");
   await page.getByLabel("Severity").selectOption("critical");
   await expect(page.locator("tbody tr")).toHaveCount(1);
   await expect(page.locator("tbody tr")).toContainText("shell invocation");
-
-  await page.getByRole("link", { name: /Open system settings/ }).click();
-  await expect(page).toHaveURL(/\/system$/);
-  await expect(
-    page.getByRole("heading", { name: "Sources, versions & capabilities" }),
-  ).toBeVisible();
 });
 
 test("Audit Traces supports list filters, deterministic flow, and on-demand Span detail", async ({
   page,
 }) => {
   await page.goto("/audit/traces");
-  await expect(
-    page.getByRole("heading", { level: 1, name: "Trace every agent task" }),
-  ).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1, name: "Agent Trace" })).toBeVisible();
   await page.getByLabel("Filter by A2A").selectOption("true");
   await page.getByRole("button", { name: "Apply" }).click();
   await expect(page).toHaveURL(/has_a2a=true/);
@@ -294,38 +280,15 @@ test("Audit Traces exposes empty, partial, missing, forbidden, and database fail
   ).toBeVisible();
 });
 
-test("configuration entry points target both native control planes", async ({ page }) => {
-  await page.goto("/connect/overview");
-  await expect(page.getByRole("link", { name: "Configure agentgateway" })).toHaveAttribute(
-    "href",
-    "http://localhost:15000/ui/raw-config",
-  );
-
-  await page.goto("/protect/policies");
-  await expect(page.getByRole("link", { name: "Configure AgentGuard" })).toHaveAttribute(
-    "href",
-    "http://localhost:38008",
-  );
-});
-
 test("console text uses the enlarged readable scale", async ({ page }) => {
   await page.goto("/connect/llm");
   await expect(page.locator(".data-table").first()).toHaveCSS("font-size", "12px");
-  await expect(page.getByRole("link", { name: "Configure agentgateway" })).toHaveCSS(
-    "font-size",
-    "13px",
-  );
 });
 
-test("Connect manages verified LLM providers and direct models, then reruns setup verification", async ({
-  page,
-}) => {
+test("Connect manages verified LLM providers and direct models", async ({ page }) => {
   await page.goto("/connect/overview");
   await expect(page.getByText("Request-log analytics storage is not configured")).toBeVisible();
-  await expect(page.getByRole("link", { name: "Raw Config" })).toHaveAttribute(
-    "href",
-    "http://localhost:15000/ui/raw-config",
-  );
+  await expect(page.getByRole("link", { name: "Raw Config" })).toHaveCount(0);
 
   await page.goto("/connect/llm");
   await page.getByLabel("Filter providers").fill("openai-shared");
@@ -344,7 +307,7 @@ test("Connect manages verified LLM providers and direct models, then reruns setu
   await dialog.getByLabel("Credential mode").selectOption("literal");
   await dialog.getByLabel("Provider API key").fill("browser-write-only-key");
   await dialog.getByRole("button", { name: "Save provider" }).click();
-  await expect(page.getByText("Provider created in agentgateway.")).toBeVisible();
+  await expect(page.getByText("Provider created in Agentshark Connection.")).toBeVisible();
   await expect(page.getByText("browser-write-only-key")).toHaveCount(0);
 
   await page.getByRole("button", { name: "Add model" }).click();
@@ -354,7 +317,7 @@ test("Connect manages verified LLM providers and direct models, then reruns setu
   await dialog.getByLabel("Outgoing model").selectOption("explicit");
   await dialog.getByLabel("Explicit outgoing model").fill("claude-haiku-4-5");
   await dialog.getByRole("button", { name: "Save model" }).click();
-  await expect(page.getByText("Model created in agentgateway.")).toBeVisible();
+  await expect(page.getByText("Model created in Agentshark Connection.")).toBeVisible();
 
   await page.getByLabel("Filter models").fill("backup-chat");
   row = page.getByRole("row", { name: /backup-chat/ });
@@ -368,14 +331,9 @@ test("Connect manages verified LLM providers and direct models, then reruns setu
   await expect(dialog.getByText("backup-chat", { exact: true })).toBeVisible();
   await dialog.getByRole("checkbox").check();
   await dialog.getByRole("button", { name: "Delete", exact: true }).click();
-  await expect(page.getByText("Provider deleted from agentgateway.")).toBeVisible();
+  await expect(page.getByText("Provider deleted from Agentshark Connection.")).toBeVisible();
   await page.getByLabel("Filter models").fill("backup-chat");
   await expect(page.getByRole("row", { name: /backup-chat/ })).toHaveCount(0);
-
-  await page.goto("/connect/setup");
-  await expect(page.getByText("Connection verified")).toBeVisible();
-  await page.getByRole("button", { name: "Run check" }).click();
-  await expect(page.getByText("Connection verified")).toBeVisible();
 });
 
 test("Connect manages verified MCP settings and server transports", async ({ page }) => {
@@ -386,10 +344,7 @@ test("Connect manages verified MCP settings and server transports", async ({ pag
   await expect(
     openapiRow.getByRole("button", { name: "OpenAPI targets use advanced configuration" }).first(),
   ).toBeDisabled();
-  await expect(page.getByRole("link", { name: "Advanced configuration" })).toHaveAttribute(
-    "href",
-    "http://localhost:15000/ui/raw-config",
-  );
+  await expect(page.getByRole("link", { name: "Advanced configuration" })).toHaveCount(0);
 
   await page.getByRole("button", { name: "Edit MCP settings" }).click();
   let dialog = page.getByRole("dialog", { name: "Edit MCP settings" });
@@ -433,7 +388,7 @@ test("Connect manages verified MCP settings and server transports", async ({ pag
   await expect(page.getByRole("row", { name: /search-tools/ })).toHaveCount(0);
 });
 
-test("Connect manages complete agentgateway listeners and HTTP routes", async ({ page }) => {
+test("Connect manages complete listeners and HTTP routes", async ({ page }) => {
   await page.goto("/connect/traffic");
   await expect(page.getByRole("heading", { name: "Traffic listeners" })).toBeVisible();
   await expect(page.getByRole("row", { name: /public-http/ })).toContainText("HTTPS");
@@ -509,48 +464,10 @@ test("Connect manages complete agentgateway listeners and HTTP routes", async ({
   await expect(page.locator(".traffic-bind").filter({ hasText: ":7070" })).toHaveCount(0);
 });
 
-test("Trust uses explicit identities, confirms labels, and recovers a polled scan", async ({
+test("Trust requires a current syntax check and returns rule mutation receipts", async ({
   page,
 }) => {
-  await page.goto("/trust/agents");
-  await page.getByPlaceholder("Filter explicit Trust data").fill("research-copilot");
-  const agentRow = page.getByRole("row", { name: /research-copilot/ });
-  await expect(agentRow).toBeVisible();
-  await agentRow.click();
-  const workspace = page.getByRole("dialog");
-  await expect(
-    workspace.getByRole("heading", { name: "research-copilot", level: 2 }),
-  ).toBeVisible();
-  await expect(workspace).toContainText("agent_id:research-copilot");
-  await page.keyboard.press("Escape");
-
-  await page.goto("/trust/resources");
-  await page.getByRole("button", { name: "Edit labels for send_email_to" }).click();
-  const labels = page.getByRole("dialog");
-  await labels.getByLabel("Boundary").fill("internet");
-  await labels.getByRole("button", { name: "Save labels" }).click();
-  await expect(labels).toContainText("Saving labels…");
-  await expect(labels).toBeHidden();
-  await expect(page.getByRole("row", { name: /send_email_to/ })).toContainText("server-confirmed");
-
-  await page.goto("/trust/resources?scenario=partial");
-  await page.getByRole("button", { name: "Scan web-research" }).click();
-  await expect(page.getByRole("status").filter({ hasText: "Detection running" })).toBeVisible();
-  page.once("dialog", async (dialog) => {
-    expect(dialog.message()).toContain("detection is still running");
-    await dialog.dismiss();
-  });
-  await page.getByRole("link", { name: "Agents" }).click();
-  await expect(page).toHaveURL(/\/trust\/resources/);
-  await expect(page.getByRole("alert").filter({ hasText: "Detection failed" })).toBeVisible();
-  await page.getByRole("button", { name: "Retry scan" }).click();
-  await expect(page.getByRole("status").filter({ hasText: "Detection succeeded" })).toBeVisible();
-});
-
-test("Protect requires a current syntax check and returns rule mutation receipts", async ({
-  page,
-}) => {
-  await page.goto("/protect/runtime-rules");
+  await page.goto("/trust/runtime-rules");
   await page.getByRole("button", { name: "New rule" }).click();
   const dialog = page.getByRole("dialog", { name: "Publish runtime rule" });
   const publish = dialog.getByRole("button", { name: "Publish checked rule" });
@@ -584,8 +501,8 @@ test("Protect requires a current syntax check and returns rule mutation receipts
   );
 });
 
-test("Protect manages complete LLM, model, and MCP policy values", async ({ page }) => {
-  await page.goto("/protect/policies");
+test("Trust manages complete LLM, model, and MCP policy values", async ({ page }) => {
+  await page.goto("/trust/policy");
   await expect(page.getByRole("tab", { name: "LLM / MODEL" })).toHaveAttribute(
     "aria-selected",
     "true",
@@ -633,7 +550,7 @@ test("Protect manages complete LLM, model, and MCP policy values", async ({ page
 
   await row.getByRole("button", { name: "Delete policy: MCP authentication" }).click();
   const deletion = page.getByRole("dialog", { name: "Delete gateway policy" });
-  await deletion.getByLabel("I confirm this agentgateway policy should be removed.").check();
+  await deletion.getByLabel("I confirm this connection policy should be removed.").check();
   await deletion.getByRole("button", { name: "Delete policy" }).click();
   await expect(
     page.getByRole("status").filter({ hasText: "Gateway policy deleted" }),
@@ -641,9 +558,9 @@ test("Protect manages complete LLM, model, and MCP policy values", async ({ page
   await expect(row).toContainText("Disabled");
 });
 
-test("Protect policy manager stays contained on mobile", async ({ page }) => {
+test("Trust policy manager stays contained on mobile", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto("/protect/policies");
+  await page.goto("/trust/policy");
   await expect(page.getByRole("tab", { name: "LLM / MODEL" })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
     true,
@@ -675,7 +592,7 @@ test("runtime rule composer stays contained and clears stale publication state",
   page,
 }) => {
   await page.setViewportSize({ width: 800, height: 700 });
-  await page.goto("/protect/runtime-rules");
+  await page.goto("/trust/runtime-rules");
   await page.getByRole("button", { name: "New rule" }).click();
   const dialog = page.getByRole("dialog", { name: "Publish runtime rule" });
   const layout = await dialog.evaluate((element) => {
@@ -790,7 +707,7 @@ test("empty, loading, partial, and total failure states are explicit", async ({ 
 
   await page.goto("/?scenario=partial");
   await expect(page.getByRole("status").filter({ hasText: "Partial data" })).toContainText(
-    "AgentGuard",
+    "Runtime protection",
   );
   await expect(page.getByRole("heading", { name: /agents are in control/i })).toBeVisible();
 
@@ -835,19 +752,14 @@ test("audit traffic and security tables show the full Beijing calendar date", as
   }
 });
 
-test("gateway audit detail exposes complete BFF payload and exact native log", async ({ page }) => {
+test("audit detail exposes the complete BFF payload without an upstream jump link", async ({
+  page,
+}) => {
   await page.goto("/audit/traffic");
   await page.getByText("Chat completion routed through the primary OpenAI backend.").click();
 
-  const sourceLog = page.getByRole("dialog").getByRole("link", {
-    name: "Open exact source log",
-  });
-  await expect(sourceLog).toHaveAttribute(
-    "href",
-    "http://127.0.0.1:15000/ui/llm/logs?log=log-73b1",
-  );
-  await expect(sourceLog).toHaveAttribute("target", "_blank");
   const dialog = page.getByRole("dialog");
+  await expect(dialog.getByRole("link", { name: "Open exact source log" })).toHaveCount(0);
   const requestPrompt = dialog.getByText("Request prompt", { exact: true }).locator("../..");
   const responseCompletion = dialog
     .getByText("Response completion", { exact: true })
@@ -863,31 +775,8 @@ test("real-time events reach Home and Audit within three seconds", async ({ page
   await page.goto("/");
   await expect(page.getByText(/^\[Mock live\]/).first()).toBeVisible({ timeout: 3_000 });
 
-  await page.goto("/audit/analytics");
-  await expect(page.getByText(/^\[Mock live\]/).first()).toBeVisible({ timeout: 3_000 });
-});
-
-test("hidden documents pause LiveFlow while retaining incoming data", async ({ page }) => {
-  await page.goto("/");
-  await expect(page.getByText(/^\[Mock live\]/).first()).toBeVisible({ timeout: 3_000 });
-  const firstSummary = await page.locator(".activity-item p").first().textContent();
-
-  await page.evaluate(() => {
-    Object.defineProperty(document, "hidden", { configurable: true, get: () => true });
-    document.dispatchEvent(new Event("visibilitychange"));
-  });
-  await expect(page.locator(".live-flow")).toHaveAttribute("data-motion", "paused");
-  await expect(page.locator("animateMotion")).toHaveCount(0);
-  await page.waitForTimeout(4_200);
-
-  await page.evaluate(() => {
-    Object.defineProperty(document, "hidden", { configurable: true, get: () => false });
-    document.dispatchEvent(new Event("visibilitychange"));
-  });
-  await expect(page.locator(".live-flow")).toHaveAttribute("data-motion", "full");
-  await expect(page.locator(".activity-item p").first()).not.toHaveText(firstSummary ?? "", {
-    timeout: 1_500,
-  });
+  await page.goto("/audit/traffic");
+  await expect(page.getByText(/^\[Mock live\]/).first()).toBeVisible({ timeout: 5_000 });
 });
 
 test("the command palette supports keyboard navigation", async ({ page }) => {
@@ -898,19 +787,44 @@ test("the command palette supports keyboard navigation", async ({ page }) => {
   await expect(input).toBeFocused();
   await input.fill("Open Trust");
   await input.press("Enter");
-  await expect(page).toHaveURL(/\/trust\/agents$/);
-  await expect(
-    page.getByRole("heading", { name: "Know what every agent can reach" }),
-  ).toBeVisible();
+  await expect(page).toHaveURL(/\/trust\/overview$/);
+  await expect(page.getByRole("heading", { name: "Trust overview" })).toBeVisible();
 });
 
 test("reduced motion removes continuous animation", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/");
-  await expect(page.locator(".live-flow")).toHaveAttribute("data-motion", "reduced");
   await expect(page.locator("animateMotion")).toHaveCount(0);
   const ambientAnimation = await page.evaluate(
     () => getComputedStyle(document.body, "::before").animationName,
   );
   expect(ambientAnimation).toBe("none");
+});
+
+test("navigation exposes only Agentshark product language and internal destinations", async ({
+  page,
+}) => {
+  for (const path of [
+    "/",
+    "/connect/overview",
+    "/connect/llm",
+    "/connect/mcp",
+    "/trust/overview",
+    "/trust/guardrails",
+    "/protect/overview",
+    "/audit/traces",
+  ]) {
+    await page.goto(path);
+    await expect(page.locator("body")).not.toContainText(/AgentGateway|AgentGuard/i);
+    await expect(page.getByRole("link", { name: "System" })).toHaveCount(0);
+    await expect(page.getByRole("link", { name: "Documentation" })).toHaveCount(0);
+    expect(
+      await page.locator("a").evaluateAll((links) =>
+        links.every((link) => {
+          const href = link.getAttribute("href") ?? "";
+          return !/^https?:\/\//i.test(href);
+        }),
+      ),
+    ).toBe(true);
+  }
 });

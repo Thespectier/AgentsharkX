@@ -1,9 +1,9 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { ArrowRight, CheckCircle2, ShieldCheck, Sparkles, TerminalSquare } from "lucide-react";
-import { ActivityRail, LiveFlow, RequestTrendChart } from "../../motion/dashboard-motion";
+import { ActivityRail } from "../../motion/dashboard-motion";
 import { formatError, getScenario, isMockMode, requestOperation } from "../../lib/api";
-import { formatTimeWithZone } from "../../lib/format";
+import { formatTimeWithZone, productizeText, sourceLabel } from "../../lib/format";
 import { useBeijingGreeting, useI18n } from "../../lib/i18n";
 import { mergeLiveEvents, useSharedLiveEvents } from "../../lib/use-live-events";
 import {
@@ -19,9 +19,11 @@ import {
   StatusOrb,
   TimelineStep,
 } from "../../components/ui";
-import { PageFrame } from "../../components/workspace";
+import { PageFrame, useDocumentTitle } from "../../components/workspace";
+import { AgentMonitoringOverview } from "../../components/agent-monitoring";
 
 export function HomePage() {
+  useDocumentTitle("Home");
   const { t } = useI18n();
   const greeting = useBeijingGreeting();
   const scenario = getScenario();
@@ -37,7 +39,7 @@ export function HomePage() {
     return (
       <PageFrame>
         <PageHeader
-          description="Source-scoped health, gateway traffic, runtime decisions, and actions requiring human attention."
+          description="Agentshark monitoring, runtime decisions, and actions requiring human attention."
           eyebrow="Home / Runtime posture"
           title="Control plane unavailable"
         />
@@ -51,7 +53,7 @@ export function HomePage() {
     return (
       <PageFrame>
         <PageHeader
-          description="Connect both management planes and send one request before AgentsharkX renders operational charts."
+          description="Connect the required management services and send one request before Agentshark renders operational data."
           eyebrow="Home / First run"
           title="Bring your control plane online"
         />
@@ -77,7 +79,7 @@ export function HomePage() {
                 complete={step.complete}
                 description={step.command}
                 key={step.id}
-                label={step.label}
+                label={productizeText(step.label)}
                 last={index === data.setup.steps.length - 1}
               />
             ))}
@@ -85,11 +87,11 @@ export function HomePage() {
           <div className="onboarding-card__actions">
             <Link
               className="button button--primary button--md"
-              params={{ section: "setup" }}
+              params={{ section: "overview" }}
               search={true}
               to="/connect/$section"
             >
-              {t("Open setup")} <ArrowRight size={15} />
+              {t("Review connections")} <ArrowRight size={15} />
             </Link>
             <span>
               <ShieldCheck size={15} /> {t("Credentials stay in the BFF")}
@@ -104,14 +106,17 @@ export function HomePage() {
     return (
       <PageFrame>
         <PageHeader
-          description="The secure BFF is connected and preserving each upstream's independent health and capability state."
+          description="Agentshark is connected and preserving each service's independent health and capability state."
           eyebrow="Home / Phase 2 foundation"
           title="Management planes connected"
         >
           <div className="health-strip">
             {data.health.map((item) => (
               <div className="health-strip__item" key={item.source}>
-                <StatusOrb label={`${item.label} ${item.status}`} status={item.status} />
+                <StatusOrb
+                  label={`${sourceLabel(item.source)} ${item.status}`}
+                  status={item.status}
+                />
                 <div>
                   <SourceBadge source={item.source} />
                   <span>
@@ -143,7 +148,7 @@ export function HomePage() {
             <div className="foundation-status">
               <ShieldCheck size={20} />
               <strong>{t("BFF boundary active")}</strong>
-              <span>{t("Use System to inspect live capability probes")}</span>
+              <span>{t("Connection and runtime health remain independently reported")}</span>
             </div>
           </Card>
         </div>
@@ -186,7 +191,7 @@ export function HomePage() {
             </Link>
           </>
         }
-        description="Source-scoped health, live gateway traffic, runtime decisions, and actions requiring human attention."
+        description="Agent monitoring, live activity, runtime decisions, and actions requiring human attention."
         eyebrow="Home / Runtime posture"
         title={greeting}
       >
@@ -194,7 +199,7 @@ export function HomePage() {
           {data.health.map((item) => (
             <div className="health-strip__item" key={item.source}>
               <StatusOrb
-                label={`${item.label} ${item.status}`}
+                label={`${sourceLabel(item.source)} ${item.status}`}
                 status={
                   scenario === "partial" && item.source === "agentguard" ? "degraded" : item.status
                 }
@@ -216,41 +221,14 @@ export function HomePage() {
       </PageHeader>
       <PartialBanner meta={meta} />
 
-      <div className="home-flow">
-        <LiveFlow
-          events={activity}
-          health={data.health}
-          metrics={data.metrics}
-          status={live.status}
-          trend={data.trend}
-        />
-      </div>
+      <AgentMonitoringOverview compact />
       <div className="metric-grid">
         {data.metrics.map((metric) => (
           <MetricCard key={metric.id} metric={metric} />
         ))}
       </div>
 
-      <div className="content-grid content-grid--wide">
-        <Card className="chart-card">
-          <CardHeader
-            action={
-              <div className="chart-legend">
-                <span>
-                  <i className="legend-dot legend-dot--blue" />
-                  {t("Requests")}
-                </span>
-                <span>
-                  <i className="legend-dot legend-dot--danger" />
-                  {t("Denied")}
-                </span>
-              </div>
-            }
-            description="Exact rolling 60 minutes in 5-minute Beijing-time buckets; requests and explicit denies use independent axes."
-            title="Traffic & decisions"
-          />
-          <RequestTrendChart data={data.trend} />
-        </Card>
+      <div className="content-grid content-grid--single">
         <Card className="security-queue">
           <CardHeader
             action={
