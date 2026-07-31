@@ -5096,9 +5096,9 @@
     },
     {
       "name": "es-toolkit",
-      "SPDXID": "SPDXRef-npm-es-toolkit-1.49.0",
-      "versionInfo": "1.49.0",
-      "downloadLocation": "https://registry.npmjs.org/es-toolkit/-/es-toolkit-1.49.0.tgz",
+      "SPDXID": "SPDXRef-npm-es-toolkit-1.50.0",
+      "versionInfo": "1.50.0",
+      "downloadLocation": "https://registry.npmjs.org/es-toolkit/-/es-toolkit-1.50.0.tgz",
       "filesAnalyzed": false,
       "licenseConcluded": "NOASSERTION",
       "licenseDeclared": "MIT",
@@ -5108,7 +5108,7 @@
         {
           "referenceCategory": "PACKAGE-MANAGER",
           "referenceType": "purl",
-          "referenceLocator": "pkg:npm/es-toolkit@1.49.0"
+          "referenceLocator": "pkg:npm/es-toolkit@1.50.0"
         }
       ],
       "annotations": [
@@ -7514,9 +7514,9 @@
     },
     {
       "name": "react-is",
-      "SPDXID": "SPDXRef-npm-react-is-19.2.7",
-      "versionInfo": "19.2.7",
-      "downloadLocation": "https://registry.npmjs.org/react-is/-/react-is-19.2.7.tgz",
+      "SPDXID": "SPDXRef-npm-react-is-19.2.8",
+      "versionInfo": "19.2.8",
+      "downloadLocation": "https://registry.npmjs.org/react-is/-/react-is-19.2.8.tgz",
       "filesAnalyzed": false,
       "licenseConcluded": "NOASSERTION",
       "licenseDeclared": "MIT",
@@ -7526,7 +7526,7 @@
         {
           "referenceCategory": "PACKAGE-MANAGER",
           "referenceType": "purl",
-          "referenceLocator": "pkg:npm/react-is@19.2.7"
+          "referenceLocator": "pkg:npm/react-is@19.2.8"
         }
       ],
       "annotations": [
@@ -11625,7 +11625,7 @@
     {
       "spdxElementId": "SPDXRef-AgentsharkX-web-0.1.0",
       "relationshipType": "DEPENDS_ON",
-      "relatedSpdxElement": "SPDXRef-npm-es-toolkit-1.49.0"
+      "relatedSpdxElement": "SPDXRef-npm-es-toolkit-1.50.0"
     },
     {
       "spdxElementId": "SPDXRef-AgentsharkX-web-0.1.0",
@@ -12090,7 +12090,7 @@
     {
       "spdxElementId": "SPDXRef-AgentsharkX-web-0.1.0",
       "relationshipType": "DEPENDS_ON",
-      "relatedSpdxElement": "SPDXRef-npm-react-is-19.2.7"
+      "relatedSpdxElement": "SPDXRef-npm-react-is-19.2.8"
     },
     {
       "spdxElementId": "SPDXRef-AgentsharkX-web-0.1.0",
@@ -12772,7 +12772,7 @@
       "annotationDate": "2026-07-29T00:00:00Z",
       "annotationType": "OTHER",
       "annotator": "Tool: AgentsharkX release artifact generator",
-      "comment": "package-lock.json sha256 2726b7560eddd3a363342851f994ffef92b2d55c8af8ce17efa213726ab9723c"
+      "comment": "package-lock.json sha256 47da7c2083a0d517bf5d8023ca081292eecefe8a2aaee7cc05524314d23dcc57"
     },
     {
       "annotationDate": "2026-07-29T00:00:00Z",
@@ -12790,7 +12790,7 @@
       "annotationDate": "2026-07-29T00:00:00Z",
       "annotationType": "OTHER",
       "annotator": "Tool: AgentsharkX release artifact generator",
-      "comment": "Python SDK pyproject.toml sha256 094541f528088eb1101d64771d9b6bbc4a9ac2e44e531ef10177e2b2f7ef5ae8; constraints.txt sha256 fe67758396b6e59ec22c0327069b880dbad6bda0a8a25396310cab6c4829baa1"
+      "comment": "Python SDK pyproject.toml sha256 fd9dfbeb19f4477561c33382578923f6cd08ce35420c245faa2885781fd7d286; constraints.txt sha256 fe67758396b6e59ec22c0327069b880dbad6bda0a8a25396310cab6c4829baa1"
     }
   ]
 }

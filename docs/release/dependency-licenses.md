@@ -247,7 +247,7 @@ Runtime services are separate processes: agentgateway is Apache-2.0, AgentGuard 
 | `enquirer` | `2.4.1` | build | MIT |
 | `entities` | `8.0.0` | build | BSD-2-Clause |
 | `es-module-lexer` | `2.3.1` | build | MIT |
-| `es-toolkit` | `1.49.0` | runtime | MIT |
+| `es-toolkit` | `1.50.0` | runtime | MIT |
 | `escalade` | `3.2.0` | build | MIT |
 | `escape-string-regexp` | `4.0.0` | build | MIT |
 | `esquery` | `1.7.0` | build | BSD-3-Clause |
@@ -340,7 +340,7 @@ Runtime services are separate processes: agentgateway is Apache-2.0, AgentGuard 
 | `react` | `19.2.7` | runtime | MIT |
 | `react-dom` | `19.2.7` | runtime | MIT |
 | `react-is` | `17.0.2` | build | MIT |
-| `react-is` | `19.2.7` | runtime | MIT |
+| `react-is` | `19.2.8` | runtime | MIT |
 | `react-redux` | `9.3.0` | runtime | MIT |
 | `recharts` | `3.10.0` | runtime | MIT |
 | `redent` | `3.0.0` | build | MIT |
